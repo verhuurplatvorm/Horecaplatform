@@ -135,6 +135,65 @@ export type UserCompanyAccess = {
   role_id: string;
 }
 
+export type PriceSourceType = "manual_upload" | "api_sync";
+export type PriceImportStatus =
+  | "wordt_verwerkt"
+  | "wacht_op_controle"
+  | "toegepast"
+  | "mislukt";
+export type PriceImportRowStatus =
+  | "gematcht"
+  | "niet_gematcht"
+  | "toegepast"
+  | "overgeslagen"
+  | "fout";
+export type PriceMatchMethod = "ean" | "artikelnummer" | "handmatig";
+
+export type SupplierPriceSource = {
+  id: string;
+  supplier_id: string;
+  source_type: PriceSourceType;
+  connector_key: string | null;
+  config: Record<string, unknown>;
+  is_active: boolean;
+  last_synced_at: string | null;
+};
+
+export type PriceImportBatch = {
+  id: string;
+  group_id: string;
+  supplier_id: string;
+  price_source_id: string;
+  company_id: string | null;
+  status: PriceImportStatus;
+  original_filename: string | null;
+  total_rows: number;
+  matched_rows: number;
+  unmatched_rows: number;
+  applied_rows: number;
+  error_message: string | null;
+  imported_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type PriceImportRow = {
+  id: string;
+  batch_id: string;
+  row_number: number;
+  raw: Record<string, unknown>;
+  ean_code: string | null;
+  article_number: string | null;
+  description: string | null;
+  packaging_description: string | null;
+  packaging_unit_count: number | null;
+  purchase_price: number | null;
+  matched_product_id: string | null;
+  match_method: PriceMatchMethod | null;
+  status: PriceImportRowStatus;
+  error_message: string | null;
+};
+
 /**
  * Minimale Database-typedefinitie in het formaat dat @supabase/ssr en
  * @supabase/supabase-js verwachten. Alleen de fase 1-tabellen zijn
@@ -213,8 +272,31 @@ export type Database = {
         Update: Partial<UserCompanyAccess>;
         Relationships: [];
       };
+      supplier_price_sources: {
+        Row: SupplierPriceSource;
+        Insert: Partial<SupplierPriceSource>;
+        Update: Partial<SupplierPriceSource>;
+        Relationships: [];
+      };
+      price_import_batches: {
+        Row: PriceImportBatch;
+        Insert: Partial<PriceImportBatch>;
+        Update: Partial<PriceImportBatch>;
+        Relationships: [];
+      };
+      price_import_rows: {
+        Row: PriceImportRow;
+        Insert: Partial<PriceImportRow>;
+        Update: Partial<PriceImportRow>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      apply_price_import_row: {
+        Args: { p_row_id: string };
+        Returns: void;
+      };
+    };
   };
 }

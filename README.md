@@ -33,6 +33,8 @@ CLI: `supabase db push`):
 6. `0006_audit_log.sql` — auditlogging
 7. `0007_rls_policies.sql` — Row Level Security op alle tabellen
 8. `0008_seed_dev.sql` — **optioneel**, alleen voor lokale ontwikkeling/testen (3 demo-bedrijven)
+9. `0009_price_imports.sql` — leveranciersprijzen importeren (CSV/Excel nu, live API-koppelingen later via dezelfde pijplijn)
+10. `0010_rls_price_imports.sql` — Row Level Security op de prijsimport-tabellen
 
 ⚠️ Draai `0008_seed_dev.sql` **niet** in productie.
 
@@ -88,6 +90,17 @@ gebruikers automatisch naar `/login`.
   subrecepturen heen op basis van de actuele inkoopprijs
   (`current_product_cost`-view), zodat een prijswijziging bij de
   leverancier automatisch doorwerkt.
+- **Leveranciersprijzen bijwerken loopt via één gedeelde pijplijn**,
+  ongeacht de bron. Een leverancier heeft een of meer `supplier_price_sources`
+  (nu standaard `manual_upload`); een CSV/Excel-bestand wordt geparst
+  (`src/lib/price-import/parse.ts`), gematcht op EAN/artikelnummer
+  (`match.ts`), en na controle toegepast via de databasefunctie
+  `apply_price_import_row`, die de oude prijs afsluit (`valid_to`) en een
+  nieuwe rij in `supplier_products` aanmaakt — dezelfde functie die een
+  toekomstige live koppeling (bijvoorbeeld een besteltplatform als inOne)
+  zou aanroepen. Zo'n koppeling toevoegen betekent later een extra
+  `source_type = 'api_sync'`-rij plus een achtergrondtaak die dezelfde
+  matching/toepasfunctie hergebruikt, niet een nieuwe pijplijn bouwen.
 - **Auditlogging** loopt via een generieke trigger (`audit_row_change`)
   die aan de gevoeligste tabellen is gekoppeld (kostprijzen, recepturen,
   rechten, bedrijven). Uitbreidbaar naar meer tabellen door de trigger
@@ -130,6 +143,11 @@ later toe als losse module.
   dit bestand handmatig aanpast — een `interface` breekt de
   typeninferentie van `@supabase/supabase-js` op subtiele wijze (elke
   query resolvet dan stilzwijgend naar `never`).
-- Controleer de RLS-policies (`0007_rls_policies.sql`) tegen je eigen
-  rollenmodel voordat gevoelige data (kostprijzen, contracten) wordt
-  ingevoerd.
+- Controleer de RLS-policies (`0007_rls_policies.sql`, `0010_rls_price_imports.sql`)
+  tegen je eigen rollenmodel voordat gevoelige data (kostprijzen,
+  contracten) wordt ingevoerd.
+- Voor Excel-/CSV-import wordt bewust `exceljs` + `papaparse` gebruikt in
+  plaats van het npm-pakket `xlsx` (SheetJS) — dat laatste heeft
+  onopgeloste kwetsbaarheden (prototype pollution, ReDoS) zonder fix via
+  npm. `npm audit` toont daardoor geen kritieke bevindingen in de
+  prijsimportfunctionaliteit zelf.

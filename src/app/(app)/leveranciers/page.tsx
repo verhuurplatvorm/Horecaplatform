@@ -1,4 +1,7 @@
+import Link from "next/link";
+import { Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,7 +16,16 @@ export default async function LeveranciersPage() {
   return (
     <>
       <Topbar title="Leveranciers" />
-      <main className="p-6">
+      <main className="p-6 space-y-4">
+        <div className="flex justify-end">
+          <Link href="/leveranciers/prijzen/importeren">
+            <Button>
+              <Upload className="h-4 w-4" />
+              Prijslijst importeren
+            </Button>
+          </Link>
+        </div>
+
         <Card>
           <CardContent className="p-0">
             <table className="w-full text-sm">
@@ -63,6 +75,14 @@ export default async function LeveranciersPage() {
             </table>
           </CardContent>
         </Card>
+
+        <p className="text-xs text-muted max-w-2xl">
+          Prijzen komen nu binnen via handmatige CSV/Excel-import. Zodra een
+          live koppeling met een leverancier of bestelplatform (bijvoorbeeld
+          inOne) beschikbaar is, loopt die door dezelfde verwerking — de
+          matching, prijshistorie en auditlogging hoeven dan niet opnieuw
+          gebouwd te worden.
+        </p>
       </main>
     </>
   );
