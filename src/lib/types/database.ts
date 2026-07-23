@@ -297,6 +297,10 @@ export type Database = {
         Args: { p_row_id: string };
         Returns: void;
       };
+      calculate_recipe_cost: {
+        Args: { p_recipe_id: string; p_company_id: string };
+        Returns: number;
+      };
     };
   };
 }
