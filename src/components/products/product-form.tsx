@@ -1,0 +1,658 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/client";
+import type {
+  Product,
+  ProductPackaging,
+  Supplier,
+  Unit,
+} from "@/lib/types/database";
+
+const ALLERGENS = [
+  "gluten",
+  "schaaldieren",
+  "eieren",
+  "vis",
+  "pinda",
+  "soja",
+  "melk",
+  "noten",
+  "selderij",
+  "mosterd",
+  "sesam",
+  "sulfiet",
+  "lupine",
+  "weekdieren",
+] as const;
+
+const DIETARY_FLAGS: { key: string; label: string }[] = [
+  { key: "vegan", label: "Vegan" },
+  { key: "vegetarisch", label: "Vegetarisch" },
+  { key: "glutenvrij", label: "Glutenvrij" },
+  { key: "lactosevrij", label: "Lactosevrij" },
+  { key: "halal", label: "Halal" },
+];
+
+interface PackagingRow {
+  id?: string;
+  name: string;
+  quantity_in_base_unit: string; // tekstinvoer, bij opslaan naar number
+  is_default: boolean;
+}
+
+export interface ProductFormProps {
+  /** Bij bewerken: het bestaande product. Leeg = nieuw product. */
+  initialProduct?: Product;
+  initialPackagings?: ProductPackaging[];
+  /** 'page' toont een terugknop en navigeert na opslaan; 'dialog' geeft
+   * het opgeslagen product terug aan de aanroeper (voor snelinvoer vanuit
+   * een receptregel in een latere fase). */
+  mode?: "page" | "dialog";
+  onSaved?: (product: Product) => void;
+  onCancel?: () => void;
+}
+
+export function ProductForm({
+  initialProduct,
+  initialPackagings = [],
+  mode = "page",
+  onSaved,
+  onCancel,
+}: ProductFormProps) {
+  const router = useRouter();
+  const isEdit = Boolean(initialProduct);
+
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  const [name, setName] = useState(initialProduct?.name ?? "");
+  const [brand, setBrand] = useState(initialProduct?.brand ?? "");
+  const [description, setDescription] = useState(
+    initialProduct?.description ?? ""
+  );
+  const [kind, setKind] = useState<Product["kind"]>(
+    initialProduct?.kind ?? "inkoopartikel"
+  );
+  const [productGroup, setProductGroup] = useState(
+    initialProduct?.product_group ?? ""
+  );
+  const [baseUnitId, setBaseUnitId] = useState(
+    initialProduct?.base_unit_id ?? ""
+  );
+  const [eanCode, setEanCode] = useState(initialProduct?.ean_code ?? "");
+  const [articleNumber, setArticleNumber] = useState(
+    initialProduct?.article_number ?? ""
+  );
+  const [taxRate, setTaxRate] = useState(
+    initialProduct?.tax_rate?.toString() ?? ""
+  );
+  const [lossPct, setLossPct] = useState(
+    initialProduct?.default_loss_percentage?.toString() ?? ""
+  );
+  const [preferredSupplierId, setPreferredSupplierId] = useState(
+    initialProduct?.preferred_supplier_id ?? ""
+  );
+  const [minStock, setMinStock] = useState(
+    initialProduct?.min_stock_quantity?.toString() ?? ""
+  );
+  const [reorderQty, setReorderQty] = useState(
+    initialProduct?.reorder_quantity?.toString() ?? ""
+  );
+  const [allergens, setAllergens] = useState<Set<string>>(
+    new Set(initialProduct?.allergens ?? [])
+  );
+  const [dietaryFlags, setDietaryFlags] = useState<Record<string, boolean>>(
+    initialProduct?.dietary_flags ?? {}
+  );
+  const [packagings, setPackagings] = useState<PackagingRow[]>(
+    initialPackagings.length > 0
+      ? initialPackagings.map((p) => ({
+          id: p.id,
+          name: p.name,
+          quantity_in_base_unit: String(p.quantity_in_base_unit),
+          is_default: p.is_default,
+        }))
+      : [{ name: "", quantity_in_base_unit: "", is_default: true }]
+  );
+
+  const [duplicates, setDuplicates] = useState<
+    { id: string; name: string; reason: string }[]
+  >([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("units")
+      .select("*")
+      .order("dimension")
+      .order("sort_order")
+      .then(({ data }) => setUnits((data as Unit[]) ?? []));
+    supabase
+      .from("suppliers")
+      .select("*")
+      .order("name")
+      .then(({ data }) => setSuppliers((data as Supplier[]) ?? []));
+  }, []);
+
+  // Niet-blokkerende duplicaatdetectie: op naam (fuzzy), EAN en
+  // artikelnummer (exact) — spec §5/§11: dubbele artikelen moeten
+  // zichtbaar zijn vóórdat je opslaat, niet pas achteraf ontdekt.
+  useEffect(() => {
+    const trimmedName = name.trim();
+    if (trimmedName.length < 3 && !eanCode && !articleNumber) return;
+
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      const supabase = createClient();
+      const orFilters: string[] = [];
+      if (trimmedName.length >= 3) orFilters.push(`name.ilike.%${trimmedName}%`);
+      if (eanCode) orFilters.push(`ean_code.eq.${eanCode}`);
+      if (articleNumber) orFilters.push(`article_number.eq.${articleNumber}`);
+      if (orFilters.length === 0) return;
+
+      const { data } = await supabase
+        .from("products")
+        .select("id, name, ean_code, article_number")
+        .or(orFilters.join(","))
+        .limit(5);
+
+      if (cancelled) return;
+      const found = (data ?? [])
+        .filter((p) => p.id !== initialProduct?.id)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          reason:
+            p.ean_code && p.ean_code === eanCode
+              ? "zelfde EAN-code"
+              : p.article_number && p.article_number === articleNumber
+              ? "zelfde artikelnummer"
+              : "vergelijkbare naam",
+        }));
+      setDuplicates(found);
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [name, eanCode, articleNumber, initialProduct?.id]);
+
+  const unitsByDimension = useMemo(() => {
+    const groups: Record<string, Unit[]> = {};
+    for (const u of units) {
+      groups[u.dimension] = groups[u.dimension] ?? [];
+      groups[u.dimension].push(u);
+    }
+    return groups;
+  }, [units]);
+
+  const visibleDuplicates =
+    name.trim().length < 3 && !eanCode && !articleNumber ? [] : duplicates;
+
+  function toggleAllergen(a: string) {
+    setAllergens((prev) => {
+      const next = new Set(prev);
+      if (next.has(a)) next.delete(a);
+      else next.add(a);
+      return next;
+    });
+  }
+
+  function updatePackaging(index: number, patch: Partial<PackagingRow>) {
+    setPackagings((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) {
+          // is_default is uniek: als deze rij default wordt, anderen uitzetten
+          return patch.is_default ? { ...row, is_default: false } : row;
+        }
+        return { ...row, ...patch };
+      })
+    );
+  }
+
+  function addPackaging() {
+    setPackagings((prev) => [
+      ...prev,
+      { name: "", quantity_in_base_unit: "", is_default: prev.length === 0 },
+    ]);
+  }
+
+  function removePackaging(index: number) {
+    setPackagings((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!baseUnitId) {
+      setError("Kies een basiseenheid.");
+      return;
+    }
+    const validPackagings = packagings.filter(
+      (p) => p.name.trim() && p.quantity_in_base_unit.trim()
+    );
+
+    setSaving(true);
+    const supabase = createClient();
+
+    const payload = {
+      name: name.trim(),
+      brand: brand.trim() || null,
+      description: description.trim() || null,
+      kind,
+      product_group: productGroup.trim() || null,
+      base_unit_id: baseUnitId,
+      ean_code: eanCode.trim() || null,
+      article_number: articleNumber.trim() || null,
+      tax_rate: taxRate ? Number(taxRate) : null,
+      default_loss_percentage: lossPct ? Number(lossPct) : null,
+      preferred_supplier_id: preferredSupplierId || null,
+      min_stock_quantity: minStock ? Number(minStock) : null,
+      reorder_quantity: reorderQty ? Number(reorderQty) : null,
+      allergens: Array.from(allergens),
+      dietary_flags: dietaryFlags,
+    };
+
+    let productId = initialProduct?.id;
+
+    if (isEdit && productId) {
+      const { error: updateError } = await supabase
+        .from("products")
+        .update(payload)
+        .eq("id", productId);
+      if (updateError) {
+        setError("Opslaan mislukt: " + updateError.message);
+        setSaving(false);
+        return;
+      }
+      // Simpel vervangen i.p.v. per-rij diffen: verwijder bestaande
+      // verpakkingen en schrijf de huidige lijst opnieuw weg.
+      await supabase
+        .from("product_packagings")
+        .delete()
+        .eq("product_id", productId);
+    } else {
+      const { data: created, error: insertError } = await supabase
+        .from("products")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (insertError || !created) {
+        setError("Opslaan mislukt: " + (insertError?.message ?? "onbekende fout"));
+        setSaving(false);
+        return;
+      }
+      productId = created.id;
+    }
+
+    if (validPackagings.length > 0 && productId) {
+      const { error: packagingError } = await supabase
+        .from("product_packagings")
+        .insert(
+          validPackagings.map((p, i) => ({
+            product_id: productId,
+            name: p.name.trim(),
+            quantity_in_base_unit: Number(p.quantity_in_base_unit),
+            is_default: p.is_default,
+            sort_order: i,
+          }))
+        );
+      if (packagingError) {
+        setError("Product opgeslagen, maar verpakkingen niet: " + packagingError.message);
+        setSaving(false);
+        return;
+      }
+    }
+
+    setSaving(false);
+
+    const { data: finalProduct } = await supabase
+      .from("products")
+      .select("*")
+      .eq("id", productId)
+      .single();
+
+    if (mode === "dialog" && onSaved && finalProduct) {
+      onSaved(finalProduct as Product);
+    } else {
+      router.push("/producten");
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {visibleDuplicates.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-copper/40 bg-copper/10 px-4 py-3 text-sm text-copper">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Mogelijk al bestaande artikelen:</p>
+            <ul className="mt-1 list-disc pl-4">
+              {visibleDuplicates.map((d) => (
+                <li key={d.id}>
+                  {d.name} ({d.reason})
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs">
+              Je kunt gewoon doorgaan als dit toch een ander artikel is.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Basisgegevens</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Field label="Naam" required>
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <Field label="Merk">
+            <input
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <Field label="Productgroep">
+            <input
+              value={productGroup}
+              onChange={(e) => setProductGroup(e.target.value)}
+              placeholder="bv. vlees, dranken-alcoholisch"
+              className="input"
+            />
+          </Field>
+          <Field label="Type">
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as Product["kind"])}
+              className="input"
+            >
+              <option value="inkoopartikel">Inkoopartikel</option>
+              <option value="verkoopartikel">Verkoopartikel</option>
+              <option value="beide">Beide</option>
+            </select>
+          </Field>
+          <Field label="Omschrijving" span2>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="input"
+            />
+          </Field>
+          <Field label="EAN-code">
+            <input
+              value={eanCode}
+              onChange={(e) => setEanCode(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <Field label="Artikelnummer">
+            <input
+              value={articleNumber}
+              onChange={(e) => setArticleNumber(e.target.value)}
+              className="input"
+            />
+          </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Eenheid &amp; verpakkingen</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Field label="Basiseenheid (waarin recepturen rekenen)" required>
+            <select
+              required
+              value={baseUnitId}
+              onChange={(e) => setBaseUnitId(e.target.value)}
+              className="input max-w-xs"
+            >
+              <option value="">Kies een eenheid…</option>
+              {Object.entries(unitsByDimension).map(([dimension, list]) => (
+                <optgroup key={dimension} label={dimension}>
+                  {list.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </Field>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">
+                Verpakkingen
+              </label>
+              <Button type="button" variant="secondary" size="sm" onClick={addPackaging}>
+                <Plus className="h-3.5 w-3.5" />
+                Verpakking toevoegen
+              </Button>
+            </div>
+            <p className="mb-2 text-xs text-muted">
+              Geef de inhoud op in de basiseenheid hierboven. Bijvoorbeeld:
+              &quot;doos van 12 flessen&quot; met inhoud 9000 (als basiseenheid ml
+              is en één fles 750 ml bevat).
+            </p>
+            <div className="space-y-2">
+              {packagings.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    placeholder="Naam, bv. doos van 12 flessen"
+                    value={row.name}
+                    onChange={(e) => updatePackaging(i, { name: e.target.value })}
+                    className="input flex-1"
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="Inhoud in basiseenheid"
+                    value={row.quantity_in_base_unit}
+                    onChange={(e) =>
+                      updatePackaging(i, { quantity_in_base_unit: e.target.value })
+                    }
+                    className="input w-48"
+                  />
+                  <label className="flex items-center gap-1 whitespace-nowrap text-xs text-muted">
+                    <input
+                      type="radio"
+                      name="default-packaging"
+                      checked={row.is_default}
+                      onChange={() => updatePackaging(i, { is_default: true })}
+                    />
+                    standaard
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => removePackaging(i)}
+                    className="text-muted hover:text-danger"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Allergenen &amp; dieetkenmerken</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="mb-2 text-sm font-medium text-foreground">
+              Allergenen (14 wettelijk verplichte EU-allergenen)
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {ALLERGENS.map((a) => (
+                <label key={a} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={allergens.has(a)}
+                    onChange={() => toggleAllergen(a)}
+                  />
+                  <span className="capitalize">{a}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-foreground">
+              Dieetkenmerken
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {DIETARY_FLAGS.map((f) => (
+                <label key={f.key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(dietaryFlags[f.key])}
+                    onChange={() =>
+                      setDietaryFlags((prev) => ({
+                        ...prev,
+                        [f.key]: !prev[f.key],
+                      }))
+                    }
+                  />
+                  {f.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Inkoop &amp; voorraad (optioneel)</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Field label="Voorkeursleverancier">
+            <select
+              value={preferredSupplierId}
+              onChange={(e) => setPreferredSupplierId(e.target.value)}
+              className="input"
+            >
+              <option value="">Geen voorkeur</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Btw-percentage">
+            <input
+              type="number"
+              step="0.01"
+              value={taxRate}
+              onChange={(e) => setTaxRate(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <Field label="Standaard verlies-/snijverliespercentage">
+            <input
+              type="number"
+              step="0.01"
+              value={lossPct}
+              onChange={(e) => setLossPct(e.target.value)}
+              placeholder="bv. 20 voor 20%"
+              className="input"
+            />
+          </Field>
+          <Field label="Minimale voorraad (in basiseenheid)">
+            <input
+              type="number"
+              step="any"
+              value={minStock}
+              onChange={(e) => setMinStock(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <Field label="Bestelhoeveelheid (in basiseenheid)">
+            <input
+              type="number"
+              step="any"
+              value={reorderQty}
+              onChange={(e) => setReorderQty(e.target.value)}
+              className="input"
+            />
+          </Field>
+        </CardContent>
+      </Card>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={saving}>
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Product aanmaken"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => (onCancel ? onCancel() : router.push("/producten"))}
+        >
+          Annuleren
+        </Button>
+      </div>
+
+      <style jsx>{`
+        .input {
+          display: block;
+          width: 100%;
+          height: 2.5rem;
+          border-radius: 0.375rem;
+          border: 1px solid var(--border);
+          background: var(--surface);
+          padding: 0 0.75rem;
+          font-size: 0.875rem;
+        }
+        textarea.input {
+          height: auto;
+          padding: 0.5rem 0.75rem;
+        }
+      `}</style>
+    </form>
+  );
+}
+
+function Field({
+  label,
+  required,
+  span2,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  span2?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={span2 ? "sm:col-span-2" : undefined}>
+      <label className="mb-1 block text-sm font-medium text-foreground">
+        {label} {required && <span className="text-danger">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}

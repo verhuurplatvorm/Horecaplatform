@@ -57,16 +57,47 @@ export type Location = {
   is_active: boolean;
 }
 
+export type UnitDimension = "gewicht" | "inhoud" | "aantal";
+
+export type Unit = {
+  id: string;
+  key: string;
+  name: string;
+  dimension: UnitDimension;
+  factor_to_base: number;
+  is_base_unit: boolean;
+  sort_order: number;
+}
+
+export type ProductPackaging = {
+  id: string;
+  product_id: string;
+  name: string;
+  quantity_in_base_unit: number;
+  is_purchase_unit: boolean;
+  is_default: boolean;
+  sort_order: number;
+}
+
 export type Product = {
   id: string;
   group_id: string;
   name: string;
+  brand: string | null;
+  description: string | null;
   kind: "inkoopartikel" | "verkoopartikel" | "beide";
   product_group: string | null;
   base_unit: string;
+  base_unit_id: string | null;
   ean_code: string | null;
   article_number: string | null;
   allergens: string[];
+  dietary_flags: Record<string, boolean>;
+  tax_rate: number | null;
+  default_loss_percentage: number | null;
+  preferred_supplier_id: string | null;
+  min_stock_quantity: number | null;
+  reorder_quantity: number | null;
   is_active: boolean;
 }
 
@@ -288,6 +319,18 @@ export type Database = {
         Row: PriceImportRow;
         Insert: Partial<PriceImportRow>;
         Update: Partial<PriceImportRow>;
+        Relationships: [];
+      };
+      units: {
+        Row: Unit;
+        Insert: Partial<Unit>;
+        Update: Partial<Unit>;
+        Relationships: [];
+      };
+      product_packagings: {
+        Row: ProductPackaging;
+        Insert: Partial<ProductPackaging>;
+        Update: Partial<ProductPackaging>;
         Relationships: [];
       };
     };

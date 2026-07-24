@@ -1,4 +1,7 @@
+import Link from "next/link";
+import { Plus } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,9 +16,7 @@ export default async function ProductenPage() {
   const productIds = (products ?? []).map((p) => p.id);
 
   // Actuele inkoopprijs per product: de rij(en) met valid_to = null zijn
-  // per definitie de op dit moment geldende prijzen (spec §10) — dit was
-  // nog nergens in de UI zichtbaar, vandaar dat een geïmporteerde prijs
-  // leek te "verdwijnen" zodra je terugkwam op deze pagina.
+  // per definitie de op dit moment geldende prijzen (spec §10).
   const { data: currentPrices } = productIds.length
     ? await supabase
         .from("supplier_products")
@@ -50,7 +51,16 @@ export default async function ProductenPage() {
   return (
     <>
       <Topbar title="Centrale productdatabase" />
-      <main className="p-6">
+      <main className="p-6 space-y-4">
+        <div className="flex justify-end">
+          <Link href="/producten/nieuw">
+            <Button>
+              <Plus className="h-4 w-4" />
+              Nieuw product
+            </Button>
+          </Link>
+        </div>
+
         <Card>
           <CardContent className="p-0">
             <table className="w-full text-sm">
@@ -67,8 +77,18 @@ export default async function ProductenPage() {
                 {products?.map((p) => {
                   const price = priceByProduct.get(p.id);
                   return (
-                    <tr key={p.id} className="border-t border-border">
-                      <td className="px-5 py-3 font-medium">{p.name}</td>
+                    <tr
+                      key={p.id}
+                      className="border-t border-border hover:bg-background"
+                    >
+                      <td className="px-5 py-3 font-medium">
+                        <Link
+                          href={`/producten/${p.id}/bewerken`}
+                          className="hover:text-teal hover:underline"
+                        >
+                          {p.name}
+                        </Link>
+                      </td>
                       <td className="px-5 py-3 text-muted">
                         {p.product_group ?? "—"}
                       </td>
