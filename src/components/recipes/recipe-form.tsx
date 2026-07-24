@@ -115,10 +115,29 @@ export function RecipeForm({
   );
 
   const [productPrices, setProductPrices] = useState<
-    Map<string, { pricePerBaseUnit: number; baseUnitId: string | null }>
+    Map<
+      string,
+      {
+        pricePerBaseUnit: number;
+        baseUnitId: string | null;
+        allergens: string[];
+        traces: string[];
+        nutritionPer100: Record<string, number> | null;
+      }
+    >
   >(new Map());
   const [halfproductCosts, setHalfproductCosts] = useState<
-    Map<string, { totalCost: number; yieldQuantity: number | null; baseUnitId: string | null }>
+    Map<
+      string,
+      {
+        totalCost: number;
+        yieldQuantity: number | null;
+        baseUnitId: string | null;
+        allergensContains: string[];
+        allergensTraces: string[];
+        nutritionTotals: Record<string, number>;
+      }
+    >
   >(new Map());
 
   const [saving, setSaving] = useState(false);
@@ -204,12 +223,19 @@ export function RecipeForm({
         .eq("product_id", productId)
         .eq("company_id", referenceCompanyId)
         .maybeSingle(),
-      supabase.from("products").select("base_unit_id").eq("id", productId).single(),
+      supabase
+        .from("products")
+        .select("base_unit_id, allergens, contains_traces, nutrition_per_100")
+        .eq("id", productId)
+        .single(),
     ]);
     setProductPrices((prev) =>
       new Map(prev).set(productId, {
         pricePerBaseUnit: cost?.price_per_base_unit ?? 0,
         baseUnitId: product?.base_unit_id ?? null,
+        allergens: product?.allergens ?? [],
+        traces: product?.contains_traces ?? [],
+        nutritionPer100: product?.nutrition_per_100 ?? null,
       })
     );
   }
@@ -217,22 +243,28 @@ export function RecipeForm({
   async function loadHalfproductCost(recipeId: string) {
     if (!referenceCompanyId) return;
     const supabase = createClient();
-    const [{ data: cost }, { data: recipe }] = await Promise.all([
-      supabase.rpc("calculate_recipe_cost", {
-        p_recipe_id: recipeId,
-        p_company_id: referenceCompanyId,
-      }),
-      supabase
-        .from("recipes")
-        .select("yield_quantity, base_unit_id")
-        .eq("id", recipeId)
-        .single(),
-    ]);
+    const [{ data: cost }, { data: recipe }, { data: allergens }, { data: nutrition }] =
+      await Promise.all([
+        supabase.rpc("calculate_recipe_cost", {
+          p_recipe_id: recipeId,
+          p_company_id: referenceCompanyId,
+        }),
+        supabase
+          .from("recipes")
+          .select("yield_quantity, base_unit_id")
+          .eq("id", recipeId)
+          .single(),
+        supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
+        supabase.rpc("calculate_recipe_nutrition", { p_recipe_id: recipeId }),
+      ]);
     setHalfproductCosts((prev) =>
       new Map(prev).set(recipeId, {
         totalCost: cost ?? 0,
         yieldQuantity: recipe?.yield_quantity ?? null,
         baseUnitId: recipe?.base_unit_id ?? null,
+        allergensContains: allergens?.bevat ?? [],
+        allergensTraces: allergens?.sporen ?? [],
+        nutritionTotals: nutrition ?? {},
       })
     );
   }
@@ -279,6 +311,60 @@ export function RecipeForm({
     0
   );
   const totalCost = ingredientCost + halfproductCost;
+
+  const allergenSummary = useMemo(() => {
+    const contains = new Set<string>();
+    const traces = new Set<string>();
+    for (const row of rows) {
+      if (!row.refId) continue;
+      if (row.type === "product") {
+        const info = productPrices.get(row.refId);
+        info?.allergens.forEach((a) => contains.add(a));
+        info?.traces.forEach((a) => traces.add(a));
+      } else {
+        const info = halfproductCosts.get(row.refId);
+        info?.allergensContains.forEach((a) => contains.add(a));
+        info?.allergensTraces.forEach((a) => traces.add(a));
+      }
+    }
+    for (const a of contains) traces.delete(a);
+    return { contains: [...contains].sort(), traces: [...traces].sort() };
+  }, [rows, productPrices, halfproductCosts]);
+
+  const nutritionTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    rows.forEach((row) => {
+      if (!row.refId || !row.unitId) return;
+      const qty = parseFloat(row.quantity);
+      if (!Number.isFinite(qty)) return;
+      const chosenUnit = unitsById.get(row.unitId);
+      if (!chosenUnit) return;
+
+      if (row.type === "product") {
+        const info = productPrices.get(row.refId);
+        if (!info?.nutritionPer100 || !info.baseUnitId) return;
+        const baseUnit = unitsById.get(info.baseUnitId);
+        if (!baseUnit || chosenUnit.dimension !== baseUnit.dimension) return;
+        const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
+        const convertedQty = qty * factor;
+        for (const [key, value] of Object.entries(info.nutritionPer100)) {
+          totals[key] = (totals[key] ?? 0) + (value * convertedQty) / 100;
+        }
+      } else {
+        const info = halfproductCosts.get(row.refId);
+        if (!info || !info.yieldQuantity || !info.baseUnitId) return;
+        const baseUnit = unitsById.get(info.baseUnitId);
+        if (!baseUnit || chosenUnit.dimension !== baseUnit.dimension) return;
+        const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
+        const convertedQty = qty * factor;
+        const ratio = convertedQty / info.yieldQuantity;
+        for (const [key, value] of Object.entries(info.nutritionTotals)) {
+          totals[key] = (totals[key] ?? 0) + value * ratio;
+        }
+      }
+    });
+    return totals;
+  }, [rows, productPrices, halfproductCosts, unitsById]);
 
   const incompleteLineIndexes = rows
     .map((row, i) => ({ row, i }))
@@ -683,6 +769,74 @@ export function RecipeForm({
               eenheid en tellen nog niet mee. Publiceren als &quot;actief&quot; is
               hierdoor geblokkeerd.
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Allergenen &amp; voedingswaarden (automatisch)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="mb-1 text-sm font-medium text-foreground">Bevat</p>
+              {allergenSummary.contains.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {allergenSummary.contains.map((a) => (
+                    <span
+                      key={a}
+                      className="rounded-full bg-danger/10 px-2 py-0.5 text-xs capitalize text-danger"
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">Geen bekende allergenen</p>
+              )}
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-medium text-foreground">
+                Kan sporen bevatten van
+              </p>
+              {allergenSummary.traces.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {allergenSummary.traces.map((a) => (
+                    <span
+                      key={a}
+                      className="rounded-full bg-copper/10 px-2 py-0.5 text-xs capitalize text-copper"
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">Geen bekende sporen</p>
+              )}
+            </div>
+          </div>
+
+          {Object.keys(nutritionTotals).length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">
+                Voedingswaarden{" "}
+                {recipeKind === "gerecht" ? "per portie" : "per volledige batch"}
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                {Object.entries(nutritionTotals).map(([key, value]) => (
+                  <div key={key}>
+                    <p className="text-xs capitalize text-muted">
+                      {key.replace(/_/g, " ")}
+                    </p>
+                    <p className="tabular font-medium text-foreground">
+                      {value.toFixed(1)}
+                      {key === "energie" ? " kcal" : " g"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

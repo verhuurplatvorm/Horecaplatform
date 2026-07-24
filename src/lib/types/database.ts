@@ -93,7 +93,9 @@ export type Product = {
   ean_code: string | null;
   article_number: string | null;
   allergens: string[];
+  contains_traces: string[];
   dietary_flags: Record<string, boolean>;
+  nutrition_per_100: Record<string, number> | null;
   tax_rate: number | null;
   default_loss_percentage: number | null;
   preferred_supplier_id: string | null;
@@ -422,6 +424,14 @@ export type Database = {
       calculate_sales_product_cost: {
         Args: { p_sales_product_id: string; p_company_id: string };
         Returns: number;
+      };
+      calculate_recipe_allergens: {
+        Args: { p_recipe_id: string; p_depth?: number };
+        Returns: { bevat: string[]; sporen: string[] };
+      };
+      calculate_recipe_nutrition: {
+        Args: { p_recipe_id: string; p_depth?: number };
+        Returns: Record<string, number>;
       };
     };
   };

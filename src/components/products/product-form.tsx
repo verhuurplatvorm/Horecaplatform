@@ -30,6 +30,17 @@ const ALLERGENS = [
   "weekdieren",
 ] as const;
 
+const NUTRIENTS: { key: string; label: string; unit: string }[] = [
+  { key: "energie", label: "Energie", unit: "kcal" },
+  { key: "vet", label: "Vet", unit: "g" },
+  { key: "verzadigd_vet", label: "Waarvan verzadigd", unit: "g" },
+  { key: "koolhydraten", label: "Koolhydraten", unit: "g" },
+  { key: "suikers", label: "Waarvan suikers", unit: "g" },
+  { key: "eiwit", label: "Eiwit", unit: "g" },
+  { key: "zout", label: "Zout", unit: "g" },
+  { key: "vezels", label: "Vezels", unit: "g" },
+];
+
 const DIETARY_FLAGS: { key: string; label: string }[] = [
   { key: "vegan", label: "Vegan" },
   { key: "vegetarisch", label: "Vegetarisch" },
@@ -119,6 +130,17 @@ export function ProductForm({
   );
   const [allergens, setAllergens] = useState<Set<string>>(
     new Set(initialProduct?.allergens ?? [])
+  );
+  const [traces, setTraces] = useState<Set<string>>(
+    new Set(initialProduct?.contains_traces ?? [])
+  );
+  const [nutrition, setNutrition] = useState<Record<string, string>>(
+    Object.fromEntries(
+      Object.entries(initialProduct?.nutrition_per_100 ?? {}).map(([k, v]) => [
+        k,
+        String(v),
+      ])
+    )
   );
   const [dietaryFlags, setDietaryFlags] = useState<Record<string, boolean>>(
     initialProduct?.dietary_flags ?? {}
@@ -226,6 +248,15 @@ export function ProductForm({
     });
   }
 
+  function toggleTrace(a: string) {
+    setTraces((prev) => {
+      const next = new Set(prev);
+      if (next.has(a)) next.delete(a);
+      else next.add(a);
+      return next;
+    });
+  }
+
   function updatePackaging(index: number, patch: Partial<PackagingRow>) {
     setPackagings((prev) =>
       prev.map((row, i) => {
@@ -279,7 +310,13 @@ export function ProductForm({
       min_stock_quantity: minStock ? Number(minStock) : null,
       reorder_quantity: reorderQty ? Number(reorderQty) : null,
       allergens: Array.from(allergens),
+      contains_traces: Array.from(traces),
       dietary_flags: dietaryFlags,
+      nutrition_per_100: Object.fromEntries(
+        Object.entries(nutrition)
+          .filter(([, v]) => v.trim() !== "")
+          .map(([k, v]) => [k, Number(v)])
+      ),
     };
 
     let productId = initialProduct?.id;
@@ -539,6 +576,23 @@ export function ProductForm({
           </div>
           <div>
             <p className="mb-2 text-sm font-medium text-foreground">
+              Kan sporen bevatten van
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {ALLERGENS.map((a) => (
+                <label key={a} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={traces.has(a)}
+                    onChange={() => toggleTrace(a)}
+                  />
+                  <span className="capitalize">{a}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-foreground">
               Dieetkenmerken
             </p>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -558,6 +612,32 @@ export function ProductForm({
                 </label>
               ))}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Voedingswaarden (per 100 basiseenheden)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {NUTRIENTS.map((n) => (
+              <div key={n.key}>
+                <label className="mb-1 block text-xs font-medium text-foreground">
+                  {n.label} ({n.unit})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={nutrition[n.key] ?? ""}
+                  onChange={(e) =>
+                    setNutrition((prev) => ({ ...prev, [n.key]: e.target.value }))
+                  }
+                  className="input"
+                />
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
