@@ -82,6 +82,9 @@ export function RecipeForm({
   const [salesPrice, setSalesPrice] = useState(
     initialRecipe?.sales_price?.toString() ?? ""
   );
+  const [vatRate, setVatRate] = useState(
+    initialRecipe?.vat_rate?.toString() ?? "9"
+  );
   const [targetFoodCostPct, setTargetFoodCostPct] = useState("30");
   const [scopeChoice, setScopeChoice] = useState<"central" | "company">(
     initialRecipe
@@ -299,7 +302,10 @@ export function RecipeForm({
     return dupes;
   }, [rows]);
 
-  const salesPriceExclEstimate = salesPrice ? Number(salesPrice) : null; // recipes.sales_price is incl. btw in bestaande data
+  const salesPriceExclEstimate =
+    salesPrice && vatRate
+      ? Number(salesPrice) / (1 + Number(vatRate) / 100)
+      : null;
   const foodCostPct =
     salesPriceExclEstimate && salesPriceExclEstimate > 0
       ? (totalCost / salesPriceExclEstimate) * 100
@@ -389,6 +395,7 @@ export function RecipeForm({
       base_unit_id: recipeKind === "halfproduct" ? baseUnitId || null : null,
       yield_quantity: recipeKind === "halfproduct" ? Number(yieldQuantity) || null : null,
       sales_price: recipeKind === "gerecht" && salesPrice ? Number(salesPrice) : null,
+      vat_rate: Number(vatRate),
     };
 
     let recipeId = initialRecipe?.id;
@@ -522,6 +529,17 @@ export function RecipeForm({
                   onChange={(e) => setSalesPrice(e.target.value)}
                   className="input"
                 />
+              </Field>
+              <Field label="Btw-percentage">
+                <select
+                  value={vatRate}
+                  onChange={(e) => setVatRate(e.target.value)}
+                  className="input"
+                >
+                  <option value="0">0%</option>
+                  <option value="9">9%</option>
+                  <option value="21">21%</option>
+                </select>
               </Field>
             </>
           ) : (

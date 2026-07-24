@@ -21,6 +21,7 @@ type RecipeListItem = Pick<
   | "is_central"
   | "company_id"
   | "sales_price"
+  | "vat_rate"
   | "portion_size"
   | "portion_unit"
 >;
@@ -57,7 +58,7 @@ export default function RecepturenPage() {
       const { data, error: fetchError } = await supabase
         .from("recipes")
         .select(
-          "id, name, category, status, recipe_kind, is_central, company_id, sales_price, portion_size, portion_unit"
+          "id, name, category, status, recipe_kind, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit"
         )
         .order("name")
         .limit(100);
@@ -151,9 +152,13 @@ export default function RecepturenPage() {
               </thead>
               <tbody>
                 {filteredRecipes.map((r) => {
+                  const priceExclVat =
+                    r.sales_price && r.vat_rate !== null
+                      ? r.sales_price / (1 + r.vat_rate / 100)
+                      : r.sales_price;
                   const foodCostPct =
-                    r.costPrice !== null && r.sales_price
-                      ? (r.costPrice / r.sales_price) * 100
+                    r.costPrice !== null && priceExclVat
+                      ? (r.costPrice / priceExclVat) * 100
                       : null;
                   return (
                     <tr key={r.id} className="border-t border-border">

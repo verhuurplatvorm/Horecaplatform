@@ -143,6 +143,7 @@ export type Recipe = {
   is_central: boolean;
   is_mandatory: boolean;
   sales_price: number | null;
+  vat_rate: number;
   portion_size: number | null;
   portion_unit: string | null;
   yield_quantity: number | null;
