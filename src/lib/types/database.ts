@@ -167,6 +167,26 @@ export type CurrentProductCost = {
   valid_from: string;
 }
 
+export type SalesProduct = {
+  id: string;
+  group_id: string;
+  company_id: string;
+  name: string;
+  category: string | null;
+  sales_price_incl_vat: number;
+  vat_rate: number;
+  pos_reference: string | null;
+  is_active: boolean;
+}
+
+export type SalesProductComponent = {
+  id: string;
+  sales_product_id: string;
+  recipe_id: string;
+  quantity: number;
+  sort_order: number;
+}
+
 export type UserProfile = {
   id: string;
   group_id: string;
@@ -364,6 +384,18 @@ export type Database = {
         Update: Partial<RecipeIngredient>;
         Relationships: [];
       };
+      sales_products: {
+        Row: SalesProduct;
+        Insert: Partial<SalesProduct>;
+        Update: Partial<SalesProduct>;
+        Relationships: [];
+      };
+      sales_product_components: {
+        Row: SalesProductComponent;
+        Insert: Partial<SalesProductComponent>;
+        Update: Partial<SalesProductComponent>;
+        Relationships: [];
+      };
     };
     Views: {
       current_product_cost: {
@@ -378,6 +410,10 @@ export type Database = {
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
+        Returns: number;
+      };
+      calculate_sales_product_cost: {
+        Args: { p_sales_product_id: string; p_company_id: string };
         Returns: number;
       };
     };

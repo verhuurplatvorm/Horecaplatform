@@ -7,6 +7,7 @@ import {
   Package,
   Truck,
   BookOpen,
+  ShoppingBag,
   Building2,
   Users,
 } from "lucide-react";
@@ -17,6 +18,7 @@ const nav = [
   { href: "/producten", label: "Producten", icon: Package },
   { href: "/leveranciers", label: "Leveranciers", icon: Truck },
   { href: "/recepturen", label: "Recepturen", icon: BookOpen },
+  { href: "/verkoopproducten", label: "Verkoopproducten", icon: ShoppingBag },
   { href: "/bedrijven", label: "Bedrijven", icon: Building2 },
   { href: "/gebruikers", label: "Gebruikers & rechten", icon: Users },
 ];
