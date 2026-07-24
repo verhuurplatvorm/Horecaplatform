@@ -197,6 +197,40 @@ export type SalesProductComponent = {
   sort_order: number;
 }
 
+export type StockMovementType =
+  | "ontvangst"
+  | "verbruik"
+  | "productie"
+  | "correctie"
+  | "derving"
+  | "overboeking_uit"
+  | "overboeking_in"
+  | "telling";
+
+export type StockMovement = {
+  id: string;
+  group_id: string;
+  company_id: string;
+  location_id: string | null;
+  product_id: string | null;
+  recipe_id: string | null;
+  movement_type: StockMovementType;
+  quantity_change: number;
+  batch_number: string | null;
+  expiry_date: string | null;
+  note: string | null;
+  related_movement_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type CurrentStock = {
+  company_id: string;
+  product_id: string | null;
+  recipe_id: string | null;
+  on_hand_quantity: number;
+}
+
 export type UserProfile = {
   id: string;
   group_id: string;
@@ -406,10 +440,20 @@ export type Database = {
         Update: Partial<SalesProductComponent>;
         Relationships: [];
       };
+      stock_movements: {
+        Row: StockMovement;
+        Insert: Partial<StockMovement>;
+        Update: Partial<StockMovement>;
+        Relationships: [];
+      };
     };
     Views: {
       current_product_cost: {
         Row: CurrentProductCost;
+        Relationships: [];
+      };
+      current_stock: {
+        Row: CurrentStock;
         Relationships: [];
       };
     };
@@ -433,6 +477,15 @@ export type Database = {
       calculate_recipe_nutrition: {
         Args: { p_recipe_id: string; p_depth?: number };
         Returns: Record<string, number>;
+      };
+      register_recipe_production: {
+        Args: {
+          p_recipe_id: string;
+          p_company_id: string;
+          p_quantity: number;
+          p_note?: string;
+        };
+        Returns: string;
       };
     };
   };
