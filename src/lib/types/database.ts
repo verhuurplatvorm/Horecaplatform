@@ -23,6 +23,7 @@ export type CompanyKind =
   | "overig";
 
 export type RecipeStatus = "concept" | "goedgekeurd" | "vervallen";
+export type RecipeKind = "gerecht" | "halfproduct";
 
 export type Group = {
   id: string;
@@ -134,7 +135,10 @@ export type Recipe = {
   name: string;
   category: string | null;
   preparation: string | null;
+  plating_instructions: string | null;
+  photo_url: string | null;
   status: RecipeStatus;
+  recipe_kind: RecipeKind;
   version: number;
   is_central: boolean;
   is_mandatory: boolean;
@@ -143,6 +147,7 @@ export type Recipe = {
   portion_unit: string | null;
   yield_quantity: number | null;
   yield_unit: string | null;
+  base_unit_id: string | null;
 }
 
 export type RecipeIngredient = {
@@ -154,6 +159,7 @@ export type RecipeIngredient = {
   unit: string;
   unit_id: string | null;
   loss_percentage: number | null;
+  is_optional: boolean;
   sort_order: number;
   note: string | null;
 }
