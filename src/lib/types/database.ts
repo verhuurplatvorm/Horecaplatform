@@ -186,6 +186,7 @@ export type SalesProduct = {
   vat_rate: number;
   pos_reference: string | null;
   is_active: boolean;
+  auto_generated_from_recipe_id: string | null;
 }
 
 export type SalesProductComponent = {

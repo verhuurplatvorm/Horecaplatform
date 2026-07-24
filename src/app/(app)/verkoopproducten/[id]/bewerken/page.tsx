@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { SalesProductForm } from "@/components/sales-products/sales-product-form";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +22,13 @@ export default async function BewerkVerkoopproductPage({
   ]);
 
   if (!salesProduct) notFound();
+
+  // Automatisch beheerde verkoopproducten (vanuit een gerecht) worden
+  // alleen via het gerecht zelf bewerkt, zodat er nooit twee plekken zijn
+  // waar de prijs uit elkaar kan lopen.
+  if (salesProduct.auto_generated_from_recipe_id) {
+    redirect(`/recepturen/${salesProduct.auto_generated_from_recipe_id}/bewerken`);
+  }
 
   return (
     <>

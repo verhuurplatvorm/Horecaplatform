@@ -617,6 +617,20 @@ export function RecipeForm({
                   onChange={(e) => setSalesPrice(e.target.value)}
                   className="input"
                 />
+                {scopeChoice === "company" && salesPrice && (
+                  <p className="mt-1 text-xs text-muted">
+                    Hiermee wordt automatisch een verkoopproduct voor dit
+                    bedrijf bijgehouden.
+                  </p>
+                )}
+                {scopeChoice === "central" && salesPrice && (
+                  <p className="mt-1 text-xs text-copper">
+                    Bij &quot;Centrale standaard&quot; wordt geen automatisch
+                    verkoopproduct aangemaakt — kies een specifiek bedrijf
+                    bij Bereik, of maak er handmatig een aan bij
+                    Verkoopproducten.
+                  </p>
+                )}
               </Field>
               <Field label="Btw-percentage">
                 <select
