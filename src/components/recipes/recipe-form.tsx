@@ -639,21 +639,8 @@ export function RecipeForm({
 
       <Card>
         <CardContent className="space-y-3 py-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Stat label="Kostprijs ingrediënten" value={`€ ${ingredientCost.toFixed(4)}`} />
-            <Stat label="Kostprijs halfproducten" value={`€ ${halfproductCost.toFixed(4)}`} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Stat label="Totale kostprijs" value={`€ ${totalCost.toFixed(4)}`} emphasis />
-            <Stat
-              label="Foodcost%"
-              value={foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
-              tone={foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Stat
-              label="Brutomarge"
-              value={marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
-            />
             <div>
               <p className="text-sm text-muted">Gewenst foodcost%</p>
               <input
@@ -665,10 +652,6 @@ export function RecipeForm({
               />
             </div>
             <Stat
-              label="Adviesverkoopprijs (excl. btw)"
-              value={advisedPrice !== null ? `€ ${advisedPrice.toFixed(2)}` : "—"}
-            />
-            <Stat
               label="Adviesverkoopprijs (incl. btw)"
               value={
                 advisedPriceInclVat !== null
@@ -676,6 +659,21 @@ export function RecipeForm({
                   : "—"
               }
               emphasis
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Stat
+              label="Verkoopprijs (incl. btw)"
+              value={salesPrice ? `€ ${Number(salesPrice).toFixed(2)}` : "—"}
+            />
+            <Stat
+              label="Foodcost%"
+              value={foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
+              tone={foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
+            />
+            <Stat
+              label="Brutomarge (excl. btw)"
+              value={marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
             />
           </div>
           {incompleteLineIndexes.length > 0 && (
