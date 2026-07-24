@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -90,7 +93,16 @@ export default function RecepturenPage() {
   return (
     <>
       <Topbar title="Recepturen" />
-      <main className="p-6">
+      <main className="p-6 space-y-4">
+        <div className="flex justify-end">
+          <Link href="/recepturen/nieuw">
+            <Button>
+              <Plus className="h-4 w-4" />
+              Nieuwe receptuur
+            </Button>
+          </Link>
+        </div>
+
         <Card>
           <CardContent className="p-0">
             <table className="w-full text-sm">
@@ -113,7 +125,14 @@ export default function RecepturenPage() {
                       : null;
                   return (
                     <tr key={r.id} className="border-t border-border">
-                      <td className="px-5 py-3 font-medium">{r.name}</td>
+                      <td className="px-5 py-3 font-medium">
+                        <Link
+                          href={`/recepturen/${r.id}/bewerken`}
+                          className="hover:text-teal hover:underline"
+                        >
+                          {r.name}
+                        </Link>
+                      </td>
                       <td className="px-5 py-3 text-muted">{r.category ?? "—"}</td>
                       <td className="px-5 py-3 text-muted">
                         {r.is_central ? "Centrale standaard" : "Lokale variant"}

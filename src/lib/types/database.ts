@@ -133,6 +133,7 @@ export type Recipe = {
   parent_recipe_id: string | null;
   name: string;
   category: string | null;
+  preparation: string | null;
   status: RecipeStatus;
   version: number;
   is_central: boolean;
@@ -140,6 +141,30 @@ export type Recipe = {
   sales_price: number | null;
   portion_size: number | null;
   portion_unit: string | null;
+  yield_quantity: number | null;
+  yield_unit: string | null;
+}
+
+export type RecipeIngredient = {
+  id: string;
+  recipe_id: string;
+  product_id: string | null;
+  sub_recipe_id: string | null;
+  quantity: number;
+  unit: string;
+  unit_id: string | null;
+  loss_percentage: number | null;
+  sort_order: number;
+  note: string | null;
+}
+
+export type CurrentProductCost = {
+  product_id: string;
+  company_id: string;
+  supplier_id: string;
+  price_per_base_unit: number;
+  is_contract_price: boolean;
+  valid_from: string;
 }
 
 export type UserProfile = {
@@ -333,15 +358,26 @@ export type Database = {
         Update: Partial<ProductPackaging>;
         Relationships: [];
       };
+      recipe_ingredients: {
+        Row: RecipeIngredient;
+        Insert: Partial<RecipeIngredient>;
+        Update: Partial<RecipeIngredient>;
+        Relationships: [];
+      };
     };
-    Views: Record<string, never>;
+    Views: {
+      current_product_cost: {
+        Row: CurrentProductCost;
+        Relationships: [];
+      };
+    };
     Functions: {
       apply_price_import_row: {
         Args: { p_row_id: string };
         Returns: void;
       };
       calculate_recipe_cost: {
-        Args: { p_recipe_id: string; p_company_id: string };
+        Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
         Returns: number;
       };
     };
