@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Plus, Search } from "lucide-react";
+import { CheckCircle2, CircleAlert, Plus, Search, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -91,6 +91,15 @@ export default function ImportReviewPage({
     reload();
   }
 
+  async function handlePackagingChange(rowId: string, packagingUnitCount: number) {
+    await fetch(`/api/price-imports/${batchId}/rows/${rowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packagingUnitCount }),
+    });
+    reload();
+  }
+
   async function handleApply() {
     setApplying(true);
     setApplyResult(null);
@@ -127,7 +136,13 @@ export default function ImportReviewPage({
 
   const unmatchedCount = rows.filter((r) => !r.matched_product_id).length;
   const applyableCount = rows.filter(
-    (r) => r.matched_product_id && r.status !== "toegepast"
+    (r) =>
+      r.matched_product_id &&
+      r.packaging_unit_count &&
+      r.status !== "toegepast"
+  ).length;
+  const missingPackagingCount = rows.filter(
+    (r) => r.matched_product_id && !r.packaging_unit_count
   ).length;
 
   return (
@@ -162,6 +177,14 @@ export default function ImportReviewPage({
               {applyResult}
             </CardContent>
           )}
+          {missingPackagingCount > 0 && (
+            <CardContent className="flex items-center gap-1 pt-0 text-sm text-copper">
+              <TriangleAlert className="h-4 w-4" />
+              {missingPackagingCount} regel(s) hebben een gekoppeld product maar
+              missen een verpakkingshoeveelheid — vul deze in voordat je ze
+              doorvoert, anders wordt de prijs verkeerd geïnterpreteerd.
+            </CardContent>
+          )}
         </Card>
 
         <Card>
@@ -173,6 +196,7 @@ export default function ImportReviewPage({
                   <th className="px-5 py-3 font-medium">Bron: omschrijving</th>
                   <th className="px-5 py-3 font-medium">EAN / artikelnr.</th>
                   <th className="px-5 py-3 font-medium">Prijs</th>
+                  <th className="px-5 py-3 font-medium">Verpakking</th>
                   <th className="px-5 py-3 font-medium">Gekoppeld product</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                 </tr>
@@ -189,6 +213,9 @@ export default function ImportReviewPage({
                     }
                     onManualMatch={(productId) =>
                       handleManualMatch(row.id, productId)
+                    }
+                    onPackagingChange={(count) =>
+                      handlePackagingChange(row.id, count)
                     }
                     onStartCreate={() => setCreatingForRow(row)}
                   />
@@ -227,14 +254,19 @@ function RowLine({
   row,
   product,
   onManualMatch,
+  onPackagingChange,
   onStartCreate,
 }: {
   row: PriceImportRow;
   product?: Product;
   onManualMatch: (productId: string) => void;
+  onPackagingChange: (count: number) => void;
   onStartCreate: () => void;
 }) {
   const [searching, setSearching] = useState(false);
+  const [packagingInput, setPackagingInput] = useState(
+    row.packaging_unit_count?.toString() ?? ""
+  );
 
   return (
     <tr className="border-t border-border">
@@ -245,6 +277,33 @@ function RowLine({
       </td>
       <td className="px-5 py-3 tabular">
         {row.purchase_price !== null ? `€ ${row.purchase_price.toFixed(2)}` : "—"}
+      </td>
+      <td className="px-5 py-3">
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            step="any"
+            value={packagingInput}
+            onChange={(e) => setPackagingInput(e.target.value)}
+            onBlur={() => {
+              const n = Number(packagingInput);
+              if (Number.isFinite(n) && n > 0 && n !== row.packaging_unit_count) {
+                onPackagingChange(n);
+              }
+            }}
+            placeholder="in basiseenheid"
+            className="h-8 w-28 rounded-md border border-border bg-surface px-2 text-xs"
+          />
+        </div>
+        {row.packaging_description && (
+          <p className="mt-0.5 text-xs text-muted">{row.packaging_description}</p>
+        )}
+        {!row.packaging_unit_count && (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-copper">
+            <TriangleAlert className="h-3 w-3" />
+            Verplicht vóór toepassen
+          </p>
+        )}
       </td>
       <td className="px-5 py-3">
         {row.matched_product_id ? (
