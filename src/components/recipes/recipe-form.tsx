@@ -316,6 +316,8 @@ export function RecipeForm({
     targetFoodCostPct && Number(targetFoodCostPct) > 0
       ? totalCost / (Number(targetFoodCostPct) / 100)
       : null;
+  const advisedPriceInclVat =
+    advisedPrice !== null ? advisedPrice * (1 + Number(vatRate) / 100) : null;
 
   function updateRow(index: number, patch: Partial<IngredientRow>) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -663,8 +665,17 @@ export function RecipeForm({
               />
             </div>
             <Stat
-              label="Adviesverkoopprijs"
+              label="Adviesverkoopprijs (excl. btw)"
               value={advisedPrice !== null ? `€ ${advisedPrice.toFixed(2)}` : "—"}
+            />
+            <Stat
+              label="Adviesverkoopprijs (incl. btw)"
+              value={
+                advisedPriceInclVat !== null
+                  ? `€ ${advisedPriceInclVat.toFixed(2)}`
+                  : "—"
+              }
+              emphasis
             />
           </div>
           {incompleteLineIndexes.length > 0 && (
