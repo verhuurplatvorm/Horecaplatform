@@ -1,10 +1,12 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Search } from "lucide-react";
+import { CheckCircle2, CircleAlert, Plus, Search } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { ProductForm } from "@/components/products/product-form";
 import { createClient } from "@/lib/supabase/client";
 import type {
   PriceImportBatch,
@@ -24,6 +26,9 @@ export default function ImportReviewPage({
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
+  const [creatingForRow, setCreatingForRow] = useState<PriceImportRow | null>(
+    null
+  );
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -185,12 +190,34 @@ export default function ImportReviewPage({
                     onManualMatch={(productId) =>
                       handleManualMatch(row.id, productId)
                     }
+                    onStartCreate={() => setCreatingForRow(row)}
                   />
                 ))}
               </tbody>
             </table>
           </CardContent>
         </Card>
+
+        {creatingForRow && (
+          <Modal
+            title="Nieuw product aanmaken"
+            onClose={() => setCreatingForRow(null)}
+          >
+            <ProductForm
+              mode="dialog"
+              prefillName={creatingForRow.description ?? ""}
+              prefillEanCode={creatingForRow.ean_code ?? ""}
+              prefillArticleNumber={creatingForRow.article_number ?? ""}
+              prefillPackagingName={creatingForRow.packaging_description ?? ""}
+              onSaved={(newProduct) => {
+                const rowId = creatingForRow.id;
+                setCreatingForRow(null);
+                handleManualMatch(rowId, newProduct.id);
+              }}
+              onCancel={() => setCreatingForRow(null)}
+            />
+          </Modal>
+        )}
       </main>
     </>
   );
@@ -200,10 +227,12 @@ function RowLine({
   row,
   product,
   onManualMatch,
+  onStartCreate,
 }: {
   row: PriceImportRow;
   product?: Product;
   onManualMatch: (productId: string) => void;
+  onStartCreate: () => void;
 }) {
   const [searching, setSearching] = useState(false);
 
@@ -225,13 +254,22 @@ function RowLine({
         ) : searching ? (
           <ProductPicker onPick={onManualMatch} />
         ) : (
-          <button
-            onClick={() => setSearching(true)}
-            className="flex items-center gap-1 text-xs text-teal hover:underline"
-          >
-            <Search className="h-3.5 w-3.5" />
-            Koppel handmatig
-          </button>
+          <div className="flex flex-col items-start gap-1">
+            <button
+              onClick={onStartCreate}
+              className="flex items-center gap-1 text-xs text-teal hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Nieuw product aanmaken
+            </button>
+            <button
+              onClick={() => setSearching(true)}
+              className="flex items-center gap-1 text-xs text-muted hover:underline"
+            >
+              <Search className="h-3.5 w-3.5" />
+              Bestaand product koppelen
+            </button>
+          </div>
         )}
       </td>
       <td className="px-5 py-3">

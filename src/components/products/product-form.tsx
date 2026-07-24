@@ -49,9 +49,17 @@ export interface ProductFormProps {
   /** Bij bewerken: het bestaande product. Leeg = nieuw product. */
   initialProduct?: Product;
   initialPackagings?: ProductPackaging[];
+  /** Voorinvulling bij een nieuw product (bv. vanuit een niet-gematchte
+   * prijsimportregel — spec: producten worden primair via de prijslijst
+   * van leveranciers aangemaakt, niet via handmatige invoer als eerste
+   * stap). Wordt genegeerd zodra initialProduct is gezet. */
+  prefillName?: string;
+  prefillEanCode?: string;
+  prefillArticleNumber?: string;
+  prefillPackagingName?: string;
   /** 'page' toont een terugknop en navigeert na opslaan; 'dialog' geeft
    * het opgeslagen product terug aan de aanroeper (voor snelinvoer vanuit
-   * een receptregel in een latere fase). */
+   * een receptregel of, zoals hier, vanuit de prijsimport). */
   mode?: "page" | "dialog";
   onSaved?: (product: Product) => void;
   onCancel?: () => void;
@@ -60,6 +68,10 @@ export interface ProductFormProps {
 export function ProductForm({
   initialProduct,
   initialPackagings = [],
+  prefillName,
+  prefillEanCode,
+  prefillArticleNumber,
+  prefillPackagingName,
   mode = "page",
   onSaved,
   onCancel,
@@ -70,7 +82,7 @@ export function ProductForm({
   const [units, setUnits] = useState<Unit[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  const [name, setName] = useState(initialProduct?.name ?? "");
+  const [name, setName] = useState(initialProduct?.name ?? prefillName ?? "");
   const [brand, setBrand] = useState(initialProduct?.brand ?? "");
   const [description, setDescription] = useState(
     initialProduct?.description ?? ""
@@ -84,9 +96,11 @@ export function ProductForm({
   const [baseUnitId, setBaseUnitId] = useState(
     initialProduct?.base_unit_id ?? ""
   );
-  const [eanCode, setEanCode] = useState(initialProduct?.ean_code ?? "");
+  const [eanCode, setEanCode] = useState(
+    initialProduct?.ean_code ?? prefillEanCode ?? ""
+  );
   const [articleNumber, setArticleNumber] = useState(
-    initialProduct?.article_number ?? ""
+    initialProduct?.article_number ?? prefillArticleNumber ?? ""
   );
   const [taxRate, setTaxRate] = useState(
     initialProduct?.tax_rate?.toString() ?? ""
@@ -117,7 +131,13 @@ export function ProductForm({
           quantity_in_base_unit: String(p.quantity_in_base_unit),
           is_default: p.is_default,
         }))
-      : [{ name: "", quantity_in_base_unit: "", is_default: true }]
+      : [
+          {
+            name: prefillPackagingName ?? "",
+            quantity_in_base_unit: "",
+            is_default: true,
+          },
+        ]
   );
 
   const [duplicates, setDuplicates] = useState<
