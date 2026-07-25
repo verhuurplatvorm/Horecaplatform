@@ -42,6 +42,8 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
   const [companyId, setCompanyId] = useState(initialSupplier?.company_id ?? "");
   const [isActive, setIsActive] = useState(initialSupplier?.is_active ?? true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function toggleDay(day: string) {
@@ -108,6 +110,31 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
       }
     }
 
+    router.push("/leveranciers");
+  }
+
+  async function handleDelete() {
+    if (!initialSupplier) return;
+    if (
+      !window.confirm(
+        `"${initialSupplier.name}" definitief verwijderen? Dit verwijdert ook alle prijshistorie van deze leverancier. Overweeg in plaats daarvan "Actief" uit te zetten als je de geschiedenis wilt behouden.`
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    setDeleting(true);
+    const supabase = createClient();
+    const { error: deleteErr } = await supabase
+      .from("suppliers")
+      .delete()
+      .eq("id", initialSupplier.id);
+    setDeleting(false);
+
+    if (deleteErr) {
+      setDeleteError("Verwijderen mislukt: " + deleteErr.message);
+      return;
+    }
     router.push("/leveranciers");
   }
 
@@ -237,6 +264,7 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+      {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
@@ -245,6 +273,17 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
         <Button type="button" variant="secondary" onClick={() => router.push("/leveranciers")}>
           Annuleren
         </Button>
+        {isEdit && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="ml-auto"
+          >
+            {deleting ? "Verwijderen…" : "Verwijderen"}
+          </Button>
+        )}
       </div>
 
       <style jsx>{`

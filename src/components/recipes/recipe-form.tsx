@@ -142,6 +142,8 @@ export function RecipeForm({
   >(new Map());
 
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -551,6 +553,48 @@ export function RecipeForm({
     router.push("/recepturen");
   }
 
+  async function handleDelete() {
+    if (!initialRecipe) return;
+    const label = initialRecipe.recipe_kind === "gerecht" ? "gerecht" : "halfproduct";
+    if (
+      !window.confirm(
+        `Dit ${label} "${initialRecipe.name}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    setDeleting(true);
+    const supabase = createClient();
+
+    // Een automatisch verkoopproduct (spec: gerecht + prijs + bedrijf)
+    // houdt via sales_product_components een koppeling naar dit gerecht
+    // vast, en die koppeling is bewust ON DELETE RESTRICT (voorkomt dat
+    // een handmatig verkoopproduct stilzwijgend een receptregel verliest).
+    // Voor het automatische geval ruimen we dat verkoopproduct zelf eerst
+    // op — de trigger heeft het toch alleen voor dít gerecht aangemaakt.
+    await supabase
+      .from("sales_products")
+      .delete()
+      .eq("auto_generated_from_recipe_id", initialRecipe.id);
+
+    const { error: deleteErr } = await supabase
+      .from("recipes")
+      .delete()
+      .eq("id", initialRecipe.id);
+    setDeleting(false);
+
+    if (deleteErr) {
+      setDeleteError(
+        deleteErr.code === "23503"
+          ? `Dit ${label} wordt nog gebruikt in een handmatig verkoopproduct of een ander recept en kan daarom niet verwijderd worden. Ontkoppel het daar eerst, of zet het op "gearchiveerd".`
+          : "Verwijderen mislukt: " + deleteErr.message
+      );
+      return;
+    }
+    router.push("/recepturen");
+  }
+
   return (
     <form onSubmit={(e) => handleSubmit(e)} className="space-y-4">
       <Card>
@@ -863,6 +907,7 @@ export function RecipeForm({
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+      {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving} onClick={(e) => handleSubmit(e, "concept")}>
@@ -878,6 +923,17 @@ export function RecipeForm({
         <Button type="button" variant="secondary" onClick={() => router.push("/recepturen")}>
           Annuleren
         </Button>
+        {isEdit && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="ml-auto"
+          >
+            {deleting ? "Verwijderen…" : "Verwijderen"}
+          </Button>
+        )}
       </div>
 
       <style jsx>{`

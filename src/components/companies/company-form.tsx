@@ -216,14 +216,24 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
               </Field>
             </div>
           )}
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-            />
-            Actief
-          </label>
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+              />
+              Actief
+            </label>
+            <p className="mt-1 text-xs text-muted">
+              Er is bewust geen &quot;verwijderen&quot;-knop voor bedrijven: dat
+              zou in één keer alle recepten, voorraad, verkoopdata en
+              gebruikersrechten van dit bedrijf meetrekken. Zet een bedrijf op
+              &quot;inactief&quot; om het uit de bedrijfsselector te halen — alle
+              data blijft dan bewaard en het bedrijf kan later weer
+              geactiveerd worden.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

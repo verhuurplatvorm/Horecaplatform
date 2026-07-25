@@ -57,6 +57,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("companies")
         .select("*")
+        .eq("is_active", true)
         .order("name");
 
       if (!cancelled) {

@@ -71,6 +71,8 @@ export function SalesProductForm({
     new Map()
   );
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Bij bewerken: namen/portiegroottes van de bestaande gekoppelde
@@ -240,6 +242,31 @@ export function SalesProductForm({
     router.push("/verkoopproducten");
   }
 
+  async function handleDelete() {
+    if (!initialSalesProduct) return;
+    if (
+      !window.confirm(
+        `"${initialSalesProduct.name}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    setDeleting(true);
+    const supabase = createClient();
+    const { error: deleteErr } = await supabase
+      .from("sales_products")
+      .delete()
+      .eq("id", initialSalesProduct.id);
+    setDeleting(false);
+
+    if (deleteErr) {
+      setDeleteError("Verwijderen mislukt: " + deleteErr.message);
+      return;
+    }
+    router.push("/verkoopproducten");
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <Card>
@@ -399,6 +426,7 @@ export function SalesProductForm({
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+      {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
@@ -411,6 +439,17 @@ export function SalesProductForm({
         >
           Annuleren
         </Button>
+        {isEdit && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="ml-auto"
+          >
+            {deleting ? "Verwijderen…" : "Verwijderen"}
+          </Button>
+        )}
       </div>
 
       <style jsx>{`

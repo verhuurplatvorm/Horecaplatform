@@ -167,6 +167,8 @@ export function ProductForm({
     { id: string; name: string; reason: string }[]
   >([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -390,6 +392,35 @@ export function ProductForm({
     } else {
       router.push("/producten");
     }
+  }
+
+  async function handleDelete() {
+    if (!initialProduct) return;
+    if (
+      !window.confirm(
+        `"${initialProduct.name}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    setDeleting(true);
+    const supabase = createClient();
+    const { error: deleteErr } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", initialProduct.id);
+    setDeleting(false);
+
+    if (deleteErr) {
+      setDeleteError(
+        deleteErr.code === "23503"
+          ? "Dit product wordt gebruikt in een receptuur of prijshistorie en kan daarom niet verwijderd worden. Zet het op \"inactief\" in plaats daarvan."
+          : "Verwijderen mislukt: " + deleteErr.message
+      );
+      return;
+    }
+    router.push("/producten");
   }
 
   return (
@@ -709,6 +740,7 @@ export function ProductForm({
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+      {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
@@ -721,6 +753,17 @@ export function ProductForm({
         >
           Annuleren
         </Button>
+        {isEdit && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="ml-auto"
+          >
+            {deleting ? "Verwijderen…" : "Verwijderen"}
+          </Button>
+        )}
       </div>
 
       <style jsx>{`
