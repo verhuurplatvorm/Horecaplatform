@@ -1,4 +1,7 @@
+import Link from "next/link";
+import { Plus } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,7 +15,16 @@ export default async function BedrijvenPage() {
   return (
     <>
       <Topbar title="Bedrijven" />
-      <main className="p-6">
+      <main className="p-6 space-y-4">
+        <div className="flex justify-end">
+          <Link href="/bedrijven/nieuw">
+            <Button>
+              <Plus className="h-4 w-4" />
+              Nieuw bedrijf
+            </Button>
+          </Link>
+        </div>
+
         <Card>
           <CardContent className="p-0">
             <table className="w-full text-sm">
@@ -26,8 +38,15 @@ export default async function BedrijvenPage() {
               </thead>
               <tbody>
                 {companies?.map((c) => (
-                  <tr key={c.id} className="border-t border-border">
-                    <td className="px-5 py-3 font-medium">{c.name}</td>
+                  <tr key={c.id} className="border-t border-border hover:bg-background">
+                    <td className="px-5 py-3 font-medium">
+                      <Link
+                        href={`/bedrijven/${c.id}/bewerken`}
+                        className="hover:text-teal hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                    </td>
                     <td className="px-5 py-3 text-muted capitalize">
                       {c.kind.replace(/_/g, " ")}
                     </td>
@@ -61,7 +80,7 @@ export default async function BedrijvenPage() {
           </CardContent>
         </Card>
         <p className="mt-3 text-xs text-muted">
-          Nieuwe bedrijven, juridische entiteiten en vestigingen aanmaken is
+          Nieuwe bedrijven en juridische entiteiten aanmaken of bewerken is
           voorbehouden aan groepsbeheerders (RLS-policy{" "}
           <code>companies_write</code>).
         </p>

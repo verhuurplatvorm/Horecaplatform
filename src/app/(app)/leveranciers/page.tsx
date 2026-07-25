@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Upload } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +17,13 @@ export default async function LeveranciersPage() {
     <>
       <Topbar title="Leveranciers" />
       <main className="p-6 space-y-4">
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Link href="/leveranciers/nieuw">
+            <Button variant="secondary">
+              <Plus className="h-4 w-4" />
+              Nieuwe leverancier
+            </Button>
+          </Link>
           <Link href="/leveranciers/prijzen/importeren">
             <Button>
               <Upload className="h-4 w-4" />
@@ -41,7 +47,14 @@ export default async function LeveranciersPage() {
               <tbody>
                 {suppliers?.map((s) => (
                   <tr key={s.id} className="border-t border-border">
-                    <td className="px-5 py-3 font-medium">{s.name}</td>
+                    <td className="px-5 py-3 font-medium">
+                      <Link
+                        href={`/leveranciers/${s.id}/bewerken`}
+                        className="hover:text-teal hover:underline"
+                      >
+                        {s.name}
+                      </Link>
+                    </td>
                     <td className="px-5 py-3 text-muted">{s.email ?? "—"}</td>
                     <td className="px-5 py-3 text-muted">
                       {s.company_id ? "Lokaal" : "Groepsbreed"}

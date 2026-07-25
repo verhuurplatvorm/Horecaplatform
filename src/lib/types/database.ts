@@ -32,6 +32,16 @@ export type Group = {
   updated_at: string;
 }
 
+export type LegalEntity = {
+  id: string;
+  group_id: string;
+  name: string;
+  legal_type: string | null;
+  kvk_number: string | null;
+  vat_number: string | null;
+  is_active: boolean;
+}
+
 export type Company = {
   id: string;
   group_id: string;
@@ -109,8 +119,13 @@ export type Supplier = {
   group_id: string;
   company_id: string | null;
   name: string;
+  contact_name: string | null;
   email: string | null;
   phone: string | null;
+  address: { street?: string; zip?: string; city?: string } | null;
+  payment_terms_days: number | null;
+  delivery_days: string[] | null;
+  minimum_order_amount: number | null;
   reliability_score: number | null;
   is_active: boolean;
 }
@@ -336,6 +351,12 @@ export type Database = {
         Row: Group;
         Insert: Partial<Group>;
         Update: Partial<Group>;
+        Relationships: [];
+      };
+      legal_entities: {
+        Row: LegalEntity;
+        Insert: Partial<LegalEntity>;
+        Update: Partial<LegalEntity>;
         Relationships: [];
       };
       companies: {

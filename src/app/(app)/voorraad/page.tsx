@@ -141,6 +141,9 @@ export default function VoorraadPage() {
                 )}
               </p>
               <div className="flex gap-2">
+                <Link href="/voorraad/besteladvies">
+                  <Button variant="secondary">Besteladvies</Button>
+                </Link>
                 <Link href="/voorraad/mutatie/nieuw">
                   <Button variant="secondary">
                     <Plus className="h-4 w-4" />

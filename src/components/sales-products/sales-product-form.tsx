@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
+import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import type { SalesProduct, SalesProductComponent } from "@/lib/types/database";
 
 interface RecipeLite {
@@ -199,9 +200,15 @@ export function SalesProductForm({
         .delete()
         .eq("sales_product_id", salesProductId);
     } else {
+      const groupId = await getCurrentGroupId(supabase);
+      if (!groupId) {
+        setError("Kan groep van gebruiker niet bepalen. Log opnieuw in.");
+        setSaving(false);
+        return;
+      }
       const { data: created, error: insertError } = await supabase
         .from("sales_products")
-        .insert(payload)
+        .insert({ ...payload, group_id: groupId })
         .select("id")
         .single();
       if (insertError || !created) {

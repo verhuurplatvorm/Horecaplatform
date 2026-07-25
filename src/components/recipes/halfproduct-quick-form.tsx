@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import type { Recipe, Unit } from "@/lib/types/database";
 
 export function HalfproductQuickForm({
@@ -51,9 +52,16 @@ export function HalfproductQuickForm({
 
     setSaving(true);
     const supabase = createClient();
+    const groupId = await getCurrentGroupId(supabase);
+    if (!groupId) {
+      setError("Kan groep van gebruiker niet bepalen. Log opnieuw in.");
+      setSaving(false);
+      return;
+    }
     const { data: created, error: insertError } = await supabase
       .from("recipes")
       .insert({
+        group_id: groupId,
         name: name.trim(),
         category: category.trim() || null,
         recipe_kind: "halfproduct" as const,

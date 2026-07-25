@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
+import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
 import type {
   Recipe,
@@ -500,9 +501,15 @@ export function RecipeForm({
       }
       await supabase.from("recipe_ingredients").delete().eq("recipe_id", recipeId);
     } else {
+      const groupId = await getCurrentGroupId(supabase);
+      if (!groupId) {
+        setError("Kan groep van gebruiker niet bepalen. Log opnieuw in.");
+        setSaving(false);
+        return;
+      }
       const { data: created, error: insertError } = await supabase
         .from("recipes")
-        .insert(payload)
+        .insert({ ...payload, group_id: groupId })
         .select("id")
         .single();
       if (insertError || !created) {
