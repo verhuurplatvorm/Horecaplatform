@@ -140,6 +140,7 @@ export type SupplierProduct = {
   purchase_price: number;
   price_per_base_unit: number | null;
   is_contract_price: boolean;
+  change_reason: string | null;
   valid_from: string;
   valid_to: string | null;
 }
@@ -280,6 +281,20 @@ export type ProductionLabel = {
   reprint_of: string | null;
   reprint_reason: string | null;
   created_at: string;
+}
+
+export type PriceChangeHistory = {
+  id: string;
+  product_id: string;
+  supplier_id: string;
+  company_id: string | null;
+  new_purchase_price: number;
+  new_price_per_base_unit: number | null;
+  valid_from: string;
+  change_reason: string | null;
+  is_contract_price: boolean;
+  old_purchase_price: number | null;
+  old_price_per_base_unit: number | null;
 }
 
 export type UserProfile = {
@@ -531,6 +546,10 @@ export type Database = {
         Row: CurrentStock;
         Relationships: [];
       };
+      price_change_history: {
+        Row: PriceChangeHistory;
+        Relationships: [];
+      };
     };
     Functions: {
       apply_price_import_row: {
@@ -572,6 +591,34 @@ export type Database = {
           quantity: number;
           unit_name: string | null;
           cost_contribution: number | null;
+        }[];
+      };
+      calculate_recipe_cost_override: {
+        Args: {
+          p_recipe_id: string;
+          p_company_id: string;
+          p_override_product_id: string;
+          p_override_price_per_base_unit: number;
+          p_depth?: number;
+        };
+        Returns: number;
+      };
+      get_price_change_impact: {
+        Args: {
+          p_product_id: string;
+          p_company_id: string;
+          p_new_price_per_base_unit: number;
+        };
+        Returns: {
+          recipe_id: string;
+          recipe_name: string;
+          recipe_kind: RecipeKind;
+          old_cost: number;
+          new_cost: number;
+          delta: number;
+          sales_price: number | null;
+          old_foodcost_pct: number | null;
+          new_foodcost_pct: number | null;
         }[];
       };
     };
