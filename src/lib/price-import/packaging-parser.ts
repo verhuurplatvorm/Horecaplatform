@@ -12,6 +12,9 @@ export interface ParsedArticleLine {
   name: string;
   packagingText: string | null;
   articleCode: string | null;
+  /** Alle gevonden codes, voor regels met meerdere kruisverwijzingen
+   * (bv. "#3057# #22736# #66423#"). articleCode is de eerste. */
+  allArticleCodes: string[];
 }
 
 /**
@@ -21,34 +24,55 @@ export interface ParsedArticleLine {
  *   "CREME FRAICHE 30% 1x1ltr #25072#"
  *   → naam: "Creme fraiche 30%", verpakking: "1x1ltr", code: "25072"
  *
- * Haalt achtereenvolgens een artikelcode tussen #-tekens, en een
- * verpakkingsnotatie (herkend door parsePackagingText) uit de tekst, en
- * behandelt de rest als productnaam.
+ * Haalt achtereenvolgens alle artikelcodes tussen #-tekens, en een
+ * verpakkingsnotatie uit de tekst, en behandelt de rest als productnaam.
  */
 export function parseCombinedArticleLine(text: string): ParsedArticleLine {
-  let remainder = text.trim();
-  let articleCode: string | null = null;
+  const original = text.trim();
+  let remainder = original;
 
-  const codeMatch = remainder.match(/#\s*([a-z0-9.\-]+)\s*#/i);
-  if (codeMatch) {
-    articleCode = codeMatch[1];
-    remainder = (remainder.slice(0, codeMatch.index) + remainder.slice(codeMatch.index! + codeMatch[0].length)).trim();
-  }
+  // Elke "#code" is een aparte code, ook als niet iedere code een eigen
+  // sluit-# heeft (leveranciers zijn hierin niet consistent, bv.
+  // "#31562 #645 #44597#" of "#71587 #30641"). We matchen daarom alleen
+  // op de openings-#, en ruimen eventuele losse resterende #-tekens
+  // (zoals de allerlaatste sluit-#) achteraf apart op.
+  const codes: string[] = [];
+  remainder = remainder.replace(/#([a-z0-9.\-]+)/gi, (_match, code) => {
+    codes.push(code);
+    return " ";
+  });
+  remainder = remainder.replace(/#/g, " ");
+  const articleCode = codes[0] ?? null;
+
+  const unitAlternation =
+    "l|liter|ltr|ml|milliliter|cl|centiliter|kg|kilogram|kilo|g|gram|gr|stuk|stuks|st|fles|flessen";
 
   let packagingText: string | null = null;
-  const packagingMatch = remainder.match(
-    /\d+[.,]?\d*\s*[x×]\s*\d+[.,]?\d*\s*(?:l|liter|ltr|ml|milliliter|cl|centiliter|kg|kilogram|kilo|g|gram|gr|stuk|stuks|st|fles|flessen)\b/i
+  const multiMatch = remainder.match(
+    new RegExp(`\\d+[.,]?\\d*\\s*[x×]\\s*\\d+[.,]?\\d*\\s*(?:${unitAlternation})\\b`, "i")
   );
-  if (packagingMatch) {
-    packagingText = packagingMatch[0].trim();
-    remainder =
-      (remainder.slice(0, packagingMatch.index) +
-        remainder.slice(packagingMatch.index! + packagingMatch[0].length)).trim();
+  const containerMatch = !multiMatch
+    ? remainder.match(
+        new RegExp(
+          `(?:doos|zak|krat|blik|pak|box|bag)\\s*(?:van\\s*)?\\d+[.,]?\\d*\\s*(?:${unitAlternation})\\b`,
+          "i"
+        )
+      )
+    : null;
+  const singleMatch =
+    !multiMatch && !containerMatch
+      ? remainder.match(new RegExp(`\\d+[.,]?\\d*\\s*(?:${unitAlternation})\\b`, "i"))
+      : null;
+
+  const match = multiMatch ?? containerMatch ?? singleMatch;
+  if (match) {
+    packagingText = match[0].trim();
+    remainder = remainder.slice(0, match.index) + remainder.slice(match.index! + match[0].length);
   }
 
   const name = remainder.replace(/\s{2,}/g, " ").replace(/[-,]+$/, "").trim();
 
-  return { name: name || text.trim(), packagingText, articleCode };
+  return { name: name || original, packagingText, articleCode, allArticleCodes: codes };
 }
 
 export interface ParsedPackaging {

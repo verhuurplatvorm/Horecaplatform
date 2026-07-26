@@ -53,6 +53,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   ],
   description: [
     "omschrijving",
+    "beschrijving",
     "naam",
     "artikel",
     "artikelnaam",
@@ -103,6 +104,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
     "brutoprijs",
     "prijs_per_eenheid",
     "prijsper_eenheid",
+    "prijs_per_stuk",
     "eenheidsprijs",
     "verkoopprijs",
     "price",
@@ -216,20 +218,33 @@ export function normalizeRow(
   // haal naam, verpakking en artikelcode eruit. Vult alleen aan wat nog
   // niet expliciet via een andere kolom is gekoppeld.
   const combinedLine = toText(byCanonical.combinedLine);
+  let combinedPackagingText: string | null = null;
   if (combinedLine) {
     const parsedLine = parseCombinedArticleLine(combinedLine);
     if (!description) description = parsedLine.name;
     if (!articleNumber && parsedLine.articleCode) articleNumber = parsedLine.articleCode;
-    if (!effectivePackagingDescription && parsedLine.packagingText) {
-      effectivePackagingDescription = parsedLine.packagingText;
-    }
+    combinedPackagingText = parsedLine.packagingText;
   }
 
-  // Geen aparte hoeveelheid-kolom, maar wel een verpakkingstekst zoals
-  // "6 x 1 liter" of "doos 20 stuks"? Probeer die te ontleden (spec §5).
-  if (packagingUnitCount === null && effectivePackagingDescription) {
-    const parsed = parsePackagingText(effectivePackagingDescription);
-    if (parsed) packagingUnitCount = parsed.totalQuantity;
+  // Bepaal de hoeveelheid uit welke bron dan ook daadwerkelijk een getal
+  // oplevert — een "Eenheid"-kolom als "DOOS" of "BAK" heeft geen
+  // hoeveelheid en mag de herkenning uit de artikelregel niet blokkeren.
+  if (packagingUnitCount === null) {
+    const fromExplicit = packagingDescription
+      ? parsePackagingText(packagingDescription)
+      : null;
+    if (fromExplicit) {
+      packagingUnitCount = fromExplicit.totalQuantity;
+      effectivePackagingDescription = packagingDescription;
+    } else if (combinedPackagingText) {
+      const fromCombined = parsePackagingText(combinedPackagingText);
+      if (fromCombined) {
+        packagingUnitCount = fromCombined.totalQuantity;
+        effectivePackagingDescription = packagingDescription
+          ? `${packagingDescription} · ${combinedPackagingText}`
+          : combinedPackagingText;
+      }
+    }
   }
 
   return {
