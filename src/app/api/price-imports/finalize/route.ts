@@ -43,13 +43,16 @@ export async function POST(request: Request) {
 
   const canonicalFieldsFound = new Set(Object.values(mapping));
   const hasIdentifier =
-    canonicalFieldsFound.has("ean") || canonicalFieldsFound.has("articleNumber");
+    canonicalFieldsFound.has("ean") ||
+    canonicalFieldsFound.has("articleNumber") ||
+    canonicalFieldsFound.has("combinedLine") ||
+    canonicalFieldsFound.has("description");
   const hasPrice = canonicalFieldsFound.has("purchasePrice");
   if (!hasIdentifier || !hasPrice) {
     return NextResponse.json(
       {
         error:
-          "Koppel minimaal een kolom aan EAN-code of Artikelnummer, en een kolom aan Prijs.",
+          "Koppel minimaal een kolom aan een artikel (EAN-code, artikelnummer, artikelnaam of artikelregel), en een kolom aan Prijs.",
       },
       { status: 400 }
     );

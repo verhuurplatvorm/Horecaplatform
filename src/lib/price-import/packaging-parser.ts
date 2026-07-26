@@ -8,6 +8,49 @@
  * *hoe* het systeem tot de hoeveelheid kwam.
  */
 
+export interface ParsedArticleLine {
+  name: string;
+  packagingText: string | null;
+  articleCode: string | null;
+}
+
+/**
+ * Ontleedt één samengestelde artikelregel zoals leveranciers die vaak in
+ * één kolom zetten, bijvoorbeeld:
+ *
+ *   "CREME FRAICHE 30% 1x1ltr #25072#"
+ *   → naam: "Creme fraiche 30%", verpakking: "1x1ltr", code: "25072"
+ *
+ * Haalt achtereenvolgens een artikelcode tussen #-tekens, en een
+ * verpakkingsnotatie (herkend door parsePackagingText) uit de tekst, en
+ * behandelt de rest als productnaam.
+ */
+export function parseCombinedArticleLine(text: string): ParsedArticleLine {
+  let remainder = text.trim();
+  let articleCode: string | null = null;
+
+  const codeMatch = remainder.match(/#\s*([a-z0-9.\-]+)\s*#/i);
+  if (codeMatch) {
+    articleCode = codeMatch[1];
+    remainder = (remainder.slice(0, codeMatch.index) + remainder.slice(codeMatch.index! + codeMatch[0].length)).trim();
+  }
+
+  let packagingText: string | null = null;
+  const packagingMatch = remainder.match(
+    /\d+[.,]?\d*\s*[x×]\s*\d+[.,]?\d*\s*(?:l|liter|ltr|ml|milliliter|cl|centiliter|kg|kilogram|kilo|g|gram|gr|stuk|stuks|st|fles|flessen)\b/i
+  );
+  if (packagingMatch) {
+    packagingText = packagingMatch[0].trim();
+    remainder =
+      (remainder.slice(0, packagingMatch.index) +
+        remainder.slice(packagingMatch.index! + packagingMatch[0].length)).trim();
+  }
+
+  const name = remainder.replace(/\s{2,}/g, " ").replace(/[-,]+$/, "").trim();
+
+  return { name: name || text.trim(), packagingText, articleCode };
+}
+
 export interface ParsedPackaging {
   totalQuantity: number;
   unit: string;

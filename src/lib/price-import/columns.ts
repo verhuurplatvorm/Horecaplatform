@@ -4,7 +4,7 @@
  * bekende varianten (NL/EN) in plaats van exacte namen te eisen.
  */
 
-import { parsePackagingText } from "./packaging-parser";
+import { parsePackagingText, parseCombinedArticleLine } from "./packaging-parser";
 
 export interface ParsedPriceRow {
   rowNumber: number;
@@ -23,6 +23,10 @@ export const CANONICAL_FIELDS: { value: string; label: string }[] = [
   { value: "ean", label: "EAN-code" },
   { value: "articleNumber", label: "Artikelnummer" },
   { value: "description", label: "Artikelnaam" },
+  {
+    value: "combinedLine",
+    label: "Artikelregel (naam + verpakking + code samen)",
+  },
   { value: "packagingDescription", label: "Verpakking" },
   { value: "packagingUnitCount", label: "Aantal / inhoud" },
   { value: "purchasePrice", label: "Prijs" },
@@ -204,11 +208,27 @@ export function normalizeRow(
 
   const packagingDescription = toText(byCanonical.packagingDescription);
   let packagingUnitCount = toNumber(byCanonical.packagingUnitCount);
+  let description = toText(byCanonical.description);
+  let articleNumber = toText(byCanonical.articleNumber);
+  let effectivePackagingDescription = packagingDescription;
+
+  // Eén kolom met alles erin, bv. "CREME FRAICHE 30% 1x1ltr #25072#" —
+  // haal naam, verpakking en artikelcode eruit. Vult alleen aan wat nog
+  // niet expliciet via een andere kolom is gekoppeld.
+  const combinedLine = toText(byCanonical.combinedLine);
+  if (combinedLine) {
+    const parsedLine = parseCombinedArticleLine(combinedLine);
+    if (!description) description = parsedLine.name;
+    if (!articleNumber && parsedLine.articleCode) articleNumber = parsedLine.articleCode;
+    if (!effectivePackagingDescription && parsedLine.packagingText) {
+      effectivePackagingDescription = parsedLine.packagingText;
+    }
+  }
 
   // Geen aparte hoeveelheid-kolom, maar wel een verpakkingstekst zoals
   // "6 x 1 liter" of "doos 20 stuks"? Probeer die te ontleden (spec §5).
-  if (packagingUnitCount === null && packagingDescription) {
-    const parsed = parsePackagingText(packagingDescription);
+  if (packagingUnitCount === null && effectivePackagingDescription) {
+    const parsed = parsePackagingText(effectivePackagingDescription);
     if (parsed) packagingUnitCount = parsed.totalQuantity;
   }
 
@@ -216,9 +236,9 @@ export function normalizeRow(
     rowNumber,
     raw,
     eanCode: toText(byCanonical.ean),
-    articleNumber: toText(byCanonical.articleNumber),
-    description: toText(byCanonical.description),
-    packagingDescription,
+    articleNumber,
+    description,
+    packagingDescription: effectivePackagingDescription,
     packagingUnitCount,
     purchasePrice: toNumber(byCanonical.purchasePrice),
   };

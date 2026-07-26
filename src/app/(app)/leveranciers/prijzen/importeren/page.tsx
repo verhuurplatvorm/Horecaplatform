@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { CANONICAL_FIELDS } from "@/lib/price-import/columns";
+import { parseCombinedArticleLine, parsePackagingText } from "@/lib/price-import/packaging-parser";
 import type { Company, Supplier } from "@/lib/types/database";
 
 interface PreviewData {
@@ -119,7 +120,11 @@ export default function ImporterenPage() {
     !submitting;
 
   const mappedCanonical = new Set(Object.values(mapping));
-  const hasIdentifier = mappedCanonical.has("ean") || mappedCanonical.has("articleNumber");
+  const hasIdentifier =
+    mappedCanonical.has("ean") ||
+    mappedCanonical.has("articleNumber") ||
+    mappedCanonical.has("combinedLine") ||
+    mappedCanonical.has("description");
   const hasPrice = mappedCanonical.has("purchasePrice");
   const canFinalize = hasIdentifier && hasPrice && !submitting;
 
@@ -189,11 +194,14 @@ export default function ImporterenPage() {
             </CardContent>
           </Card>
 
+          <RecognitionPreview preview={preview} mapping={mapping} />
+
           {!canFinalize && (
             <p className="flex items-center gap-1 text-sm text-copper">
               <TriangleAlert className="h-4 w-4" />
-              Koppel minimaal een kolom aan EAN-code of Artikelnummer, en een
-              kolom aan Prijs, om door te gaan.
+              Koppel minimaal één kolom aan een artikel (EAN-code,
+              artikelnummer, artikelnaam, of &quot;Artikelregel&quot; als
+              alles in één kolom staat), en één kolom aan Prijs.
             </p>
           )}
           {error && <p className="text-sm text-danger">{error}</p>}
@@ -346,5 +354,61 @@ export default function ImporterenPage() {
         </Card>
       </main>
     </>
+  );
+}
+
+function RecognitionPreview({
+  preview,
+  mapping,
+}: {
+  preview: { headers: string[]; rows: { rowNumber: number; raw: Record<string, unknown> }[] };
+  mapping: Record<string, string>;
+}) {
+  const combinedHeader = preview.headers.find((h) => mapping[h] === "combinedLine");
+  const packagingHeader = preview.headers.find((h) => mapping[h] === "packagingDescription");
+
+  if (!combinedHeader && !packagingHeader) return null;
+
+  const sample = preview.rows.slice(0, 3);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Herkenning controleren</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {sample.map((r) => {
+          const text = String(
+            (combinedHeader ? r.raw[combinedHeader] : r.raw[packagingHeader!]) ?? ""
+          );
+          if (!text) return null;
+          const result = combinedHeader
+            ? parseCombinedArticleLine(text)
+            : { name: null, packagingText: parsePackagingText(text)?.explanation ?? null, articleCode: null };
+          return (
+            <div key={r.rowNumber} className="rounded-md border border-border bg-background p-2 text-xs">
+              <p className="text-muted">&quot;{text}&quot;</p>
+              <p className="mt-1">
+                {result.name && (
+                  <>
+                    <span className="font-medium">Naam:</span> {result.name}{" "}
+                  </>
+                )}
+                {result.packagingText && (
+                  <>
+                    <span className="font-medium">Verpakking:</span> {result.packagingText}{" "}
+                  </>
+                )}
+                {"articleCode" in result && result.articleCode && (
+                  <>
+                    <span className="font-medium">Code:</span> {result.articleCode}
+                  </>
+                )}
+              </p>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
