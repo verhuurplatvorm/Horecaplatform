@@ -1,30 +1,35 @@
 import { Workbook, type CellValue } from "exceljs";
 import Papa from "papaparse";
-import { buildHeaderMap, normalizeRow, type ParsedPriceRow } from "./columns";
+import { buildHeaderMap, buildHeaderMapFromMapping, normalizeRow, type ParsedPriceRow } from "./columns";
+
+export interface RawTable {
+  headers: string[];
+  /** Ruwe rijen op originele kolomnaam, met het 1-gebaseerde rijnummer
+   * (rij 1 = header) zodat foutmeldingen aansluiten op wat de gebruiker
+   * in het bestand ziet. */
+  rows: { rowNumber: number; raw: Record<string, unknown> }[];
+}
 
 /**
- * Leest een geüploade prijslijst (CSV of Excel) en zet 'm om naar
- * genormaliseerde rijen. Server-only (ExcelJS/Papaparse draaien hier op
- * de Node-runtime, niet in de browser).
+ * Leest een bestand of geplakte tabel in tot ruwe kolommen + rijen, zonder
+ * al te proberen kolommen te herkennen. Server-only.
  */
-export async function parsePriceListFile(
-  file: File
-): Promise<ParsedPriceRow[]> {
+export async function parseRawTable(file: File): Promise<RawTable> {
   const name = file.name.toLowerCase();
   const buffer = Buffer.from(await file.arrayBuffer());
 
   if (name.endsWith(".csv")) {
-    return parseCsv(buffer.toString("utf-8"));
+    return parseCsvRaw(buffer.toString("utf-8"));
   }
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-    return parseExcel(buffer);
+    return parseExcelRaw(buffer);
   }
   throw new Error(
     "Onbekend bestandstype. Upload een .csv, .xlsx of .xls bestand."
   );
 }
 
-function parseCsv(text: string): ParsedPriceRow[] {
+function parseCsvRaw(text: string): RawTable {
   const result = Papa.parse<Record<string, unknown>>(text, {
     header: true,
     skipEmptyLines: true,
@@ -33,27 +38,32 @@ function parseCsv(text: string): ParsedPriceRow[] {
 
   if (result.errors.length > 0 && result.data.length === 0) {
     throw new Error(
-      `Kan CSV niet lezen: ${result.errors[0]?.message ?? "onbekende fout"}`
+      `Kan bestand niet lezen: ${result.errors[0]?.message ?? "onbekende fout"}`
     );
   }
 
-  const headers = result.meta.fields ?? [];
-  const headerMap = buildHeaderMap(headers);
-  assertHasUsableColumns(headerMap);
+  const headers = (result.meta.fields ?? []).filter(Boolean);
+  if (headers.length === 0) {
+    throw new Error(
+      "Geen kolomkoppen gevonden. Zorg dat de eerste rij de kolomnamen bevat."
+    );
+  }
 
-  return result.data.map((raw, i) => normalizeRow(i + 2, raw, headerMap));
-  // +2: rij 1 is de header, data begint dus op rij 2 voor de gebruiker
+  return {
+    headers,
+    rows: result.data.map((raw, i) => ({ rowNumber: i + 2, raw })),
+  };
 }
 
-async function parseExcel(buffer: Buffer): Promise<ParsedPriceRow[]> {
+async function parseExcelRaw(buffer: Buffer): Promise<RawTable> {
   const workbook = new Workbook();
   const arrayBuffer = buffer.buffer.slice(
     buffer.byteOffset,
     buffer.byteOffset + buffer.byteLength
   ) as ArrayBuffer;
-  // exceljs declares its own ambient `Buffer extends ArrayBuffer` shim that
-  // collides with @types/node's generic Buffer<ArrayBufferLike>; passing a
-  // plain ArrayBuffer sidesteps the mismatch entirely.
+  // exceljs declares its own ambient `Buffer extends ArrayBuffer` shim die
+  // botst met @types/node's generic Buffer<ArrayBufferLike>; een gewone
+  // ArrayBuffer omzeilt die mismatch volledig.
   await workbook.xlsx.load(arrayBuffer as unknown as never);
   const sheet = workbook.worksheets[0];
   if (!sheet) throw new Error("Het Excel-bestand bevat geen werkblad.");
@@ -64,22 +74,26 @@ async function parseExcel(buffer: Buffer): Promise<ParsedPriceRow[]> {
     headers[colNumber] = String(cell.value ?? "").trim();
   });
 
-  const headerMap = buildHeaderMap(headers.filter(Boolean));
-  assertHasUsableColumns(headerMap);
+  const cleanHeaders = headers.filter(Boolean);
+  if (cleanHeaders.length === 0) {
+    throw new Error(
+      "Geen kolomkoppen gevonden. Zorg dat de eerste rij de kolomnamen bevat."
+    );
+  }
 
-  const rows: ParsedPriceRow[] = [];
+  const rows: { rowNumber: number; raw: Record<string, unknown> }[] = [];
   sheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return; // header
+    if (rowNumber === 1) return;
     const raw: Record<string, unknown> = {};
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
       const header = headers[colNumber];
       if (header) raw[header] = cellValue(cell.value);
     });
-    if (Object.keys(raw).length === 0) return; // lege rij overslaan
-    rows.push(normalizeRow(rowNumber, raw, headerMap));
+    if (Object.keys(raw).length === 0) return;
+    rows.push({ rowNumber, raw });
   });
 
-  return rows;
+  return { headers: cleanHeaders, rows };
 }
 
 function cellValue(value: CellValue): unknown {
@@ -92,15 +106,21 @@ function cellValue(value: CellValue): unknown {
   return value;
 }
 
-function assertHasUsableColumns(headerMap: Map<string, string>) {
-  const canonicalFields = new Set(headerMap.values());
-  const hasIdentifier =
-    canonicalFields.has("ean") || canonicalFields.has("articleNumber");
-  const hasPrice = canonicalFields.has("purchasePrice");
+/** Suggereert een kolomkoppeling op basis van de bekende aliassen —
+ * gebruikt als startpunt in het koppelscherm, nooit blind toegepast. */
+export function suggestMapping(headers: string[]): Record<string, string> {
+  const headerMap = buildHeaderMap(headers);
+  const mapping: Record<string, string> = {};
+  for (const h of headers) mapping[h] = headerMap.get(h) ?? "ignore";
+  return mapping;
+}
 
-  if (!hasIdentifier || !hasPrice) {
-    throw new Error(
-      "Kan de kolommen niet herkennen. Zorg voor minimaal een kolom met EAN-code of artikelnummer, en een kolom met de prijs."
-    );
-  }
+/** Past een door de gebruiker bevestigde kolomkoppeling toe op een ruwe
+ * tabel en levert genormaliseerde rijen op, klaar voor matching. */
+export function applyMapping(
+  table: RawTable,
+  mapping: Record<string, string>
+): ParsedPriceRow[] {
+  const headerMap = buildHeaderMapFromMapping(mapping);
+  return table.rows.map((r) => normalizeRow(r.rowNumber, r.raw, headerMap));
 }
