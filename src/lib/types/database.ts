@@ -621,6 +621,15 @@ export type Database = {
           new_foodcost_pct: number | null;
         }[];
       };
+      calculate_recipe_cost_asof: {
+        Args: {
+          p_recipe_id: string;
+          p_company_id: string;
+          p_asof_date: string;
+          p_depth?: number;
+        };
+        Returns: number;
+      };
     };
   };
 }

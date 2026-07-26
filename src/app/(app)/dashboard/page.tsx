@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Package, Truck, BookOpen } from "lucide-react";
+import { Building2, Package, Truck, BookOpen, TrendingUp } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { KpiTile } from "@/components/kpi-tile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -139,7 +139,13 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
+          <ShortcutCard
+            icon={TrendingUp}
+            title="Prijzendashboard"
+            description="Stijgers, dalers en de impact op halfproducten en gerechten."
+            href="/dashboard/prijzen"
+          />
           <ShortcutCard
             icon={Package}
             title="Centrale productdatabase"
