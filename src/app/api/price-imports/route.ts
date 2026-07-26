@@ -121,6 +121,8 @@ export async function POST(request: Request) {
     purchase_price: row.purchasePrice,
     matched_product_id: row.matchedProductId,
     match_method: row.matchMethod,
+    match_confidence: row.confidence,
+    suggested_product_ids: row.suggestions.map((s) => s.id),
     status: (row.matchedProductId ? "gematcht" : "niet_gematcht") as
       | "gematcht"
       | "niet_gematcht",

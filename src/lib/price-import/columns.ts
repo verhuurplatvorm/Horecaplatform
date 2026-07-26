@@ -4,6 +4,8 @@
  * bekende varianten (NL/EN) in plaats van exacte namen te eisen.
  */
 
+import { parsePackagingText } from "./packaging-parser";
+
 export interface ParsedPriceRow {
   rowNumber: number;
   raw: Record<string, unknown>;
@@ -111,14 +113,24 @@ export function normalizeRow(
     byCanonical[canonical] = raw[original];
   }
 
+  const packagingDescription = toText(byCanonical.packagingDescription);
+  let packagingUnitCount = toNumber(byCanonical.packagingUnitCount);
+
+  // Geen aparte hoeveelheid-kolom, maar wel een verpakkingstekst zoals
+  // "6 x 1 liter" of "doos 20 stuks"? Probeer die te ontleden (spec §5).
+  if (packagingUnitCount === null && packagingDescription) {
+    const parsed = parsePackagingText(packagingDescription);
+    if (parsed) packagingUnitCount = parsed.totalQuantity;
+  }
+
   return {
     rowNumber,
     raw,
     eanCode: toText(byCanonical.ean),
     articleNumber: toText(byCanonical.articleNumber),
     description: toText(byCanonical.description),
-    packagingDescription: toText(byCanonical.packagingDescription),
-    packagingUnitCount: toNumber(byCanonical.packagingUnitCount),
+    packagingDescription,
+    packagingUnitCount,
     purchasePrice: toNumber(byCanonical.purchasePrice),
   };
 }

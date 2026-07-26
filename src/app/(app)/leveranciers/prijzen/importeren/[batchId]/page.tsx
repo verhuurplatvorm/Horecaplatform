@@ -23,9 +23,14 @@ export default function ImportReviewPage({
   const [batch, setBatch] = useState<PriceImportBatch | null>(null);
   const [rows, setRows] = useState<PriceImportRow[]>([]);
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
+  const [existing, setExisting] = useState<
+    Map<string, { price: number; packagingCount: number }>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
+  const [onlyChanges, setOnlyChanges] = useState(true);
   const [creatingForRow, setCreatingForRow] = useState<PriceImportRow | null>(
     null
   );
@@ -50,13 +55,20 @@ export default function ImportReviewPage({
       ]);
       if (cancelled) return;
 
-      setBatch((batchData as PriceImportBatch) ?? null);
+      const batchRow = (batchData as PriceImportBatch) ?? null;
+      setBatch(batchRow);
       const rowList = (rowsData as PriceImportRow[]) ?? [];
       setRows(rowList);
 
       const productIds = [
-        ...new Set(rowList.map((r) => r.matched_product_id).filter(Boolean)),
+        ...new Set(
+          [
+            ...rowList.map((r) => r.matched_product_id),
+            ...rowList.flatMap((r) => r.suggested_product_ids),
+          ].filter(Boolean)
+        ),
       ] as string[];
+
       if (productIds.length > 0) {
         const { data: productData } = await supabase
           .from("products")
@@ -66,8 +78,32 @@ export default function ImportReviewPage({
         setProducts(
           new Map(((productData as Product[]) ?? []).map((p) => [p.id, p]))
         );
+
+        if (batchRow) {
+          let existingQuery = supabase
+            .from("supplier_products")
+            .select("product_id, purchase_price, packaging_unit_count")
+            .eq("supplier_id", batchRow.supplier_id)
+            .is("valid_to", null)
+            .in("product_id", productIds);
+          existingQuery = batchRow.company_id
+            ? existingQuery.eq("company_id", batchRow.company_id)
+            : existingQuery.is("company_id", null);
+          const { data: existingData } = await existingQuery;
+          if (!cancelled) {
+            setExisting(
+              new Map(
+                (existingData ?? []).map((e) => [
+                  e.product_id,
+                  { price: e.purchase_price, packagingCount: e.packaging_unit_count },
+                ])
+              )
+            );
+          }
+        }
       } else {
         setProducts(new Map());
+        setExisting(new Map());
       }
       setLoading(false);
     }
@@ -116,6 +152,22 @@ export default function ImportReviewPage({
     reload();
   }
 
+  async function handleRollback() {
+    if (
+      !window.confirm(
+        "Deze import ongedaan maken? De nieuw doorgevoerde prijzen worden verwijderd en de vorige prijzen worden hersteld."
+      )
+    ) {
+      return;
+    }
+    setRollingBack(true);
+    const supabase = createClient();
+    await supabase.rpc("rollback_price_import_batch", { p_batch_id: batchId });
+    setRollingBack(false);
+    setApplyResult(null);
+    reload();
+  }
+
   if (loading) {
     return (
       <>
@@ -145,6 +197,15 @@ export default function ImportReviewPage({
     (r) => r.matched_product_id && !r.packaging_unit_count
   ).length;
 
+  const displayRows = onlyChanges
+    ? rows.filter((r) => {
+        if (!r.matched_product_id) return true; // niet-gematcht altijd tonen
+        const prev = existing.get(r.matched_product_id);
+        if (!prev) return true; // nieuw artikel voor deze leverancier
+        return prev.price !== r.purchase_price;
+      })
+    : rows;
+
   return (
     <>
       <Topbar title="Prijslijst controleren" />
@@ -163,14 +224,25 @@ export default function ImportReviewPage({
                 {batch.status.replace(/_/g, " ")}
               </span>
             </p>
-            <Button
-              onClick={handleApply}
-              disabled={applying || applyableCount === 0}
-            >
-              {applying
-                ? "Bezig…"
-                : `${applyableCount} prijzen doorvoeren`}
-            </Button>
+            <div className="flex gap-2">
+              {batch.status === "toegepast" && (
+                <Button
+                  variant="secondary"
+                  onClick={handleRollback}
+                  disabled={rollingBack}
+                >
+                  {rollingBack ? "Bezig…" : "Import ongedaan maken"}
+                </Button>
+              )}
+              <Button
+                onClick={handleApply}
+                disabled={applying || applyableCount === 0}
+              >
+                {applying
+                  ? "Bezig…"
+                  : `${applyableCount} prijzen doorvoeren`}
+              </Button>
+            </div>
           </CardContent>
           {applyResult && (
             <CardContent className="pt-0 text-sm text-success">
@@ -185,6 +257,16 @@ export default function ImportReviewPage({
               doorvoert, anders wordt de prijs verkeerd geïnterpreteerd.
             </CardContent>
           )}
+          <CardContent className="pt-0">
+            <label className="flex items-center gap-1.5 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={onlyChanges}
+                onChange={(e) => setOnlyChanges(e.target.checked)}
+              />
+              Toon alleen wijzigingen ({displayRows.length} van {rows.length})
+            </label>
+          </CardContent>
         </Card>
 
         <Card>
@@ -202,13 +284,21 @@ export default function ImportReviewPage({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {displayRows.map((row) => (
                   <RowLine
                     key={row.id}
                     row={row}
                     product={
                       row.matched_product_id
                         ? products.get(row.matched_product_id)
+                        : undefined
+                    }
+                    suggestedProducts={row.suggested_product_ids
+                      .map((id) => products.get(id))
+                      .filter(Boolean) as Product[]}
+                    existingPrice={
+                      row.matched_product_id
+                        ? existing.get(row.matched_product_id)
                         : undefined
                     }
                     onManualMatch={(productId) =>
@@ -253,12 +343,16 @@ export default function ImportReviewPage({
 function RowLine({
   row,
   product,
+  suggestedProducts,
+  existingPrice,
   onManualMatch,
   onPackagingChange,
   onStartCreate,
 }: {
   row: PriceImportRow;
   product?: Product;
+  suggestedProducts: Product[];
+  existingPrice?: { price: number; packagingCount: number };
   onManualMatch: (productId: string) => void;
   onPackagingChange: (count: number) => void;
   onStartCreate: () => void;
@@ -267,6 +361,15 @@ function RowLine({
   const [packagingInput, setPackagingInput] = useState(
     row.packaging_unit_count?.toString() ?? ""
   );
+
+  const priceDiff =
+    existingPrice && row.purchase_price !== null
+      ? row.purchase_price - existingPrice.price
+      : null;
+  const packagingChanged =
+    existingPrice &&
+    row.packaging_unit_count !== null &&
+    existingPrice.packagingCount !== row.packaging_unit_count;
 
   return (
     <tr className="border-t border-border">
@@ -277,6 +380,14 @@ function RowLine({
       </td>
       <td className="px-5 py-3 tabular">
         {row.purchase_price !== null ? `€ ${row.purchase_price.toFixed(2)}` : "—"}
+        {priceDiff !== null && priceDiff !== 0 && (
+          <p
+            className={`text-xs ${priceDiff > 0 ? "text-danger" : "text-success"}`}
+          >
+            {priceDiff > 0 ? "+" : ""}
+            {priceDiff.toFixed(2)} t.o.v. € {existingPrice!.price.toFixed(2)}
+          </p>
+        )}
       </td>
       <td className="px-5 py-3">
         <div className="flex items-center gap-1">
@@ -304,6 +415,13 @@ function RowLine({
             Verplicht vóór toepassen
           </p>
         )}
+        {packagingChanged && (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-copper">
+            <TriangleAlert className="h-3 w-3" />
+            Verpakking gewijzigd (was {existingPrice!.packagingCount}) — controleer
+            de prijs per basiseenheid.
+          </p>
+        )}
       </td>
       <td className="px-5 py-3">
         {row.matched_product_id ? (
@@ -314,6 +432,19 @@ function RowLine({
           <ProductPicker onPick={onManualMatch} />
         ) : (
           <div className="flex flex-col items-start gap-1">
+            {suggestedProducts.length > 0 && (
+              <div className="space-y-0.5">
+                {suggestedProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => onManualMatch(p.id)}
+                    className="block text-xs text-teal hover:underline"
+                  >
+                    → {p.name}?
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               onClick={onStartCreate}
               className="flex items-center gap-1 text-xs text-teal hover:underline"
@@ -340,16 +471,38 @@ function RowLine({
         ) : row.matched_product_id ? (
           <span className="flex items-center gap-1 text-xs text-success">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Gematcht{row.match_method === "handmatig" ? " (handmatig)" : ""}
+            Gekoppeld{row.match_method === "handmatig" ? " (handmatig)" : ""}
           </span>
         ) : (
-          <span className="flex items-center gap-1 text-xs text-copper">
-            <CircleAlert className="h-3.5 w-3.5" />
-            Niet gematcht
-          </span>
+          <ConfidenceBadge confidence={row.match_confidence} />
         )}
       </td>
     </tr>
+  );
+}
+
+function ConfidenceBadge({ confidence }: { confidence: string | null }) {
+  if (confidence === "mogelijk_dubbel") {
+    return (
+      <span className="flex items-center gap-1 text-xs text-copper">
+        <TriangleAlert className="h-3.5 w-3.5" />
+        Mogelijk dubbel
+      </span>
+    );
+  }
+  if (confidence === "waarschijnlijk") {
+    return (
+      <span className="flex items-center gap-1 text-xs text-copper">
+        <CircleAlert className="h-3.5 w-3.5" />
+        Waarschijnlijk gekoppeld — controleer
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted">
+      <CircleAlert className="h-3.5 w-3.5" />
+      Nieuw artikel
+    </span>
   );
 }
 

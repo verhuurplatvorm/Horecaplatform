@@ -378,6 +378,16 @@ export type PriceImportRow = {
   match_method: PriceMatchMethod | null;
   status: PriceImportRowStatus;
   error_message: string | null;
+  resulting_supplier_product_id: string | null;
+  reopened_supplier_product_id: string | null;
+  match_confidence: string | null;
+  suggested_product_ids: string[];
+}
+
+export type SupplierImportTemplate = {
+  supplier_id: string;
+  column_mapping: Record<string, string>;
+  decimal_separator: string;
 };
 
 /**
@@ -536,6 +546,12 @@ export type Database = {
         Update: Partial<ProductionLabel>;
         Relationships: [];
       };
+      supplier_import_templates: {
+        Row: SupplierImportTemplate;
+        Insert: Partial<SupplierImportTemplate>;
+        Update: Partial<SupplierImportTemplate>;
+        Relationships: [];
+      };
     };
     Views: {
       current_product_cost: {
@@ -554,6 +570,10 @@ export type Database = {
     Functions: {
       apply_price_import_row: {
         Args: { p_row_id: string };
+        Returns: void;
+      };
+      rollback_price_import_batch: {
+        Args: { p_batch_id: string };
         Returns: void;
       };
       calculate_recipe_cost: {

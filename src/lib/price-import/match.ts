@@ -1,18 +1,42 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedPriceRow } from "./columns";
 
+export type MatchConfidence =
+  | "gekoppeld" // betrouwbaar automatisch gekoppeld (EAN/artikelnummer)
+  | "waarschijnlijk" // vergelijkbare naam gevonden, gebruiker moet bevestigen
+  | "nieuw" // geen enkele match, waarschijnlijk een nieuw artikel
+  | "mogelijk_dubbel"; // lijkt al te bestaan onder een andere naam/code
+
 export interface MatchedRow extends ParsedPriceRow {
   matchedProductId: string | null;
   matchMethod: "ean" | "artikelnummer" | null;
+  confidence: MatchConfidence;
+  /** Bij 'waarschijnlijk' of 'mogelijk_dubbel': maximaal 3 kandidaten om uit te kiezen. */
+  suggestions: { id: string; name: string }[];
+}
+
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Eenvoudige gelijkenis: aandeel gedeelde woorden (geen zware Levenshtein-
+ * implementatie nodig voor "waarschijnlijk gekoppeld"-suggesties). */
+function nameSimilarity(a: string, b: string): number {
+  const wordsA = new Set(normalizeName(a).split(" ").filter(Boolean));
+  const wordsB = new Set(normalizeName(b).split(" ").filter(Boolean));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let shared = 0;
+  for (const w of wordsA) if (wordsB.has(w)) shared++;
+  return shared / Math.max(wordsA.size, wordsB.size);
 }
 
 /**
  * Matcht geparste rijen tegen de centrale productdatabase van de groep,
- * eerst op EAN-code (het meest betrouwbaar), dan op artikelnummer.
- * Rijen die niets matchen blijven `matchedProductId: null` — die worden
- * in de UI ter handmatige koppeling voorgelegd, in plaats van
- * overgeslagen (spec §10/§28: dubbele artikelen en afwijkende
- * artikelnamen moeten expliciet zichtbaar zijn, niet stil verdwijnen).
+ * eerst op EAN-code (het meest betrouwbaar), dan op artikelnummer. Rijen
+ * zonder exacte match krijgen een vertrouwensniveau (spec §7): een
+ * vergelijkbare naam wordt als suggestie getoond ("waarschijnlijk
+ * gekoppeld"), maar nooit automatisch gekoppeld — de gebruiker bevestigt
+ * altijd met één klik.
  */
 export async function matchRowsToProducts(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,7 +49,7 @@ export async function matchRowsToProducts(
     ...new Set(rows.map((r) => r.articleNumber).filter(Boolean)),
   ];
 
-  const [byEan, byArticle] = await Promise.all([
+  const [byEan, byArticle, allProducts] = await Promise.all([
     eanCodes.length > 0
       ? supabase
           .from("products")
@@ -42,6 +66,7 @@ export async function matchRowsToProducts(
       : Promise.resolve({
           data: [] as { id: string; article_number: string | null }[],
         }),
+    supabase.from("products").select("id, name").eq("group_id", groupId),
   ]);
 
   const eanMap = new Map(
@@ -54,6 +79,7 @@ export async function matchRowsToProducts(
       .filter((p) => p.article_number)
       .map((p) => [p.article_number as string, p.id])
   );
+  const productList: { id: string; name: string }[] = allProducts.data ?? [];
 
   return rows.map((row) => {
     if (row.eanCode && eanMap.has(row.eanCode)) {
@@ -61,6 +87,8 @@ export async function matchRowsToProducts(
         ...row,
         matchedProductId: eanMap.get(row.eanCode)!,
         matchMethod: "ean" as const,
+        confidence: "gekoppeld" as const,
+        suggestions: [],
       };
     }
     if (row.articleNumber && articleMap.has(row.articleNumber)) {
@@ -68,8 +96,35 @@ export async function matchRowsToProducts(
         ...row,
         matchedProductId: articleMap.get(row.articleNumber)!,
         matchMethod: "artikelnummer" as const,
+        confidence: "gekoppeld" as const,
+        suggestions: [],
       };
     }
-    return { ...row, matchedProductId: null, matchMethod: null };
+
+    // Geen exacte match: zoek op naamgelijkenis voor suggesties.
+    const name = row.description ?? "";
+    const scored = name
+      ? productList
+          .map((p) => ({ p, score: nameSimilarity(name, p.name) }))
+          .filter((s) => s.score >= 0.4)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+      : [];
+
+    const suggestions = scored.map((s) => ({ id: s.p.id, name: s.p.name }));
+    const bestScore = scored[0]?.score ?? 0;
+
+    return {
+      ...row,
+      matchedProductId: null,
+      matchMethod: null,
+      confidence:
+        bestScore >= 0.75
+          ? ("mogelijk_dubbel" as const)
+          : suggestions.length > 0
+          ? ("waarschijnlijk" as const)
+          : ("nieuw" as const),
+      suggestions,
+    };
   });
 }
