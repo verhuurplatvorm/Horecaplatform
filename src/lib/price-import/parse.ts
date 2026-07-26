@@ -65,25 +65,57 @@ async function parseExcelRaw(buffer: Buffer): Promise<RawTable> {
   // botst met @types/node's generic Buffer<ArrayBufferLike>; een gewone
   // ArrayBuffer omzeilt die mismatch volledig.
   await workbook.xlsx.load(arrayBuffer as unknown as never);
-  const sheet = workbook.worksheets[0];
-  if (!sheet) throw new Error("Het Excel-bestand bevat geen werkblad.");
 
-  const headerRow = sheet.getRow(1);
+  if (workbook.worksheets.length === 0) {
+    throw new Error("Het Excel-bestand bevat geen werkblad.");
+  }
+
+  // Sommige bestanden hebben eerst een voorblad/instructietabblad; kies
+  // het tabblad met de meeste gevulde rijen i.p.v. blind het eerste te
+  // pakken.
+  let bestSheet = workbook.worksheets[0];
+  let bestRowCount = -1;
+  for (const ws of workbook.worksheets) {
+    if (ws.rowCount > bestRowCount) {
+      bestRowCount = ws.rowCount;
+      bestSheet = ws;
+    }
+  }
+  const sheet = bestSheet;
+
+  // De kolomkoppen staan niet altijd op rij 1 (soms staat er eerst een
+  // titel of lege rij boven de tabel). Zoek in de eerste 10 rijen naar de
+  // rij met de meeste gevulde tekstcellen — dat is vrijwel altijd de
+  // echte headerrij.
+  let headerRowNumber = 1;
+  let headerCellCount = -1;
+  const scanLimit = Math.min(10, sheet.rowCount || 10);
+  for (let r = 1; r <= scanLimit; r++) {
+    const row = sheet.getRow(r);
+    let filled = 0;
+    row.eachCell({ includeEmpty: false }, () => filled++);
+    if (filled > headerCellCount) {
+      headerCellCount = filled;
+      headerRowNumber = r;
+    }
+  }
+
+  const headerRow = sheet.getRow(headerRowNumber);
   const headers: string[] = [];
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    headers[colNumber] = String(cell.value ?? "").trim();
+    headers[colNumber] = String(cellValue(cell.value) ?? "").trim();
   });
 
   const cleanHeaders = headers.filter(Boolean);
   if (cleanHeaders.length === 0) {
     throw new Error(
-      "Geen kolomkoppen gevonden. Zorg dat de eerste rij de kolomnamen bevat."
+      `Geen kolomkoppen gevonden op tabblad "${sheet.name}". Zorg dat er ergens een rij met kolomnamen staat (bv. Artikel, Prijs).`
     );
   }
 
   const rows: { rowNumber: number; raw: Record<string, unknown> }[] = [];
   sheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
+    if (rowNumber <= headerRowNumber) return;
     const raw: Record<string, unknown> = {};
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
       const header = headers[colNumber];
@@ -92,6 +124,12 @@ async function parseExcelRaw(buffer: Buffer): Promise<RawTable> {
     if (Object.keys(raw).length === 0) return;
     rows.push({ rowNumber, raw });
   });
+
+  if (rows.length === 0) {
+    throw new Error(
+      `Kolomkoppen gevonden op tabblad "${sheet.name}" (${cleanHeaders.join(", ")}), maar geen rijen daaronder met gegevens. Controleer of de tabel op het juiste tabblad staat en niet leeg is.`
+    );
+  }
 
   return { headers: cleanHeaders, rows };
 }
