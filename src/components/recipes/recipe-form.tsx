@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
@@ -42,11 +43,15 @@ interface IngredientRow {
 export interface RecipeFormProps {
   initialRecipe?: Recipe;
   initialIngredients?: RecipeIngredient[];
+  /** Dwingt het type af (gebruikt door de losse Halfproducten-module) en
+   * verbergt de Soort-keuze. */
+  lockedKind?: RecipeKind;
 }
 
 export function RecipeForm({
   initialRecipe,
   initialIngredients = [],
+  lockedKind,
 }: RecipeFormProps) {
   const router = useRouter();
   const isEdit = Boolean(initialRecipe);
@@ -57,7 +62,7 @@ export function RecipeForm({
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [recipeKind, setRecipeKind] = useState<RecipeKind>(
-    initialRecipe?.recipe_kind ?? "gerecht"
+    initialRecipe?.recipe_kind ?? lockedKind ?? "gerecht"
   );
   const [name, setName] = useState(initialRecipe?.name ?? "");
   const [category, setCategory] = useState(initialRecipe?.category ?? "");
@@ -79,6 +84,12 @@ export function RecipeForm({
   );
   const [yieldQuantity, setYieldQuantity] = useState(
     initialRecipe?.yield_quantity?.toString() ?? ""
+  );
+  const [storageMethod, setStorageMethod] = useState(
+    initialRecipe?.storage_method ?? ""
+  );
+  const [shelfLifeDays, setShelfLifeDays] = useState(
+    initialRecipe?.shelf_life_days?.toString() ?? ""
   );
   const [salesPrice, setSalesPrice] = useState(
     initialRecipe?.sales_price?.toString() ?? ""
@@ -485,6 +496,8 @@ export function RecipeForm({
       portion_size: recipeKind === "gerecht" ? 1 : null,
       base_unit_id: recipeKind === "halfproduct" ? baseUnitId || null : null,
       yield_quantity: recipeKind === "halfproduct" ? Number(yieldQuantity) || null : null,
+      storage_method: recipeKind === "halfproduct" ? storageMethod.trim() || null : null,
+      shelf_life_days: recipeKind === "halfproduct" && shelfLifeDays ? Number(shelfLifeDays) : null,
       sales_price: recipeKind === "gerecht" && salesPrice ? Number(salesPrice) : null,
       vat_rate: Number(vatRate),
     };
@@ -602,17 +615,19 @@ export function RecipeForm({
           <CardTitle>Basisgegevens</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field label="Soort" required>
-            <select
-              value={recipeKind}
-              onChange={(e) => setRecipeKind(e.target.value as RecipeKind)}
-              className="input"
-              disabled={isEdit}
-            >
-              <option value="gerecht">Gerecht (verkoopbaar, per 1 portie)</option>
-              <option value="halfproduct">Halfproduct (vooraf bereid)</option>
-            </select>
-          </Field>
+          {!lockedKind && (
+            <Field label="Soort" required>
+              <select
+                value={recipeKind}
+                onChange={(e) => setRecipeKind(e.target.value as RecipeKind)}
+                className="input"
+                disabled={isEdit}
+              >
+                <option value="gerecht">Gerecht (verkoopbaar, per 1 portie)</option>
+                <option value="halfproduct">Halfproduct (vooraf bereid)</option>
+              </select>
+            </Field>
+          )}
           <Field label="Naam" required>
             <input required value={name} onChange={(e) => setName(e.target.value)} className="input" />
           </Field>
@@ -719,6 +734,22 @@ export function RecipeForm({
                   step="any"
                   value={yieldQuantity}
                   onChange={(e) => setYieldQuantity(e.target.value)}
+                  className="input"
+                />
+              </Field>
+              <Field label="Houdbaarheid (dagen)">
+                <input
+                  type="number"
+                  value={shelfLifeDays}
+                  onChange={(e) => setShelfLifeDays(e.target.value)}
+                  className="input"
+                />
+              </Field>
+              <Field label="Bewaarmethode" span2>
+                <input
+                  value={storageMethod}
+                  onChange={(e) => setStorageMethod(e.target.value)}
+                  placeholder="bv. Gekoeld bewaren bij max. 7°C"
                   className="input"
                 />
               </Field>
@@ -906,6 +937,29 @@ export function RecipeForm({
         </CardContent>
       </Card>
 
+      {isEdit && recipeKind === "halfproduct" && initialRecipe && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Gebruikt in</CardTitle>
+            <div className="flex gap-2">
+              <Link href={`/halfproducten/${initialRecipe.id}/producties`}>
+                <Button type="button" variant="secondary" size="sm">
+                  Producties
+                </Button>
+              </Link>
+              <Link href={`/halfproducten/${initialRecipe.id}/sticker/nieuw`}>
+                <Button type="button" variant="secondary" size="sm">
+                  Sticker afdrukken
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <UsageList recipeId={initialRecipe.id} companyId={referenceCompanyId} />
+          </CardContent>
+        </Card>
+      )}
+
       {error && <p className="text-sm text-danger">{error}</p>}
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
@@ -1069,6 +1123,15 @@ function IngredientLine({
                 <SoupIcon className="h-3.5 w-3.5 text-copper" />
               )}
               {row.refName}
+              {row.type === "halfproduct" && (
+                <Link
+                  href={`/halfproducten/${row.refId}/bewerken`}
+                  target="_blank"
+                  className="text-xs text-teal hover:underline"
+                >
+                  Halfproduct openen →
+                </Link>
+              )}
             </span>
           ) : (
             <IngredientSearch companyId={companyId} onPick={onPick} />
@@ -1148,3 +1211,89 @@ function IngredientLine({
     </div>
   );
 }
+
+interface UsageRow {
+  using_recipe_id: string;
+  using_recipe_name: string;
+  using_recipe_kind: RecipeKind;
+  company_name: string | null;
+  quantity: number;
+  unit_name: string | null;
+  cost_contribution: number | null;
+}
+
+function UsageList({
+  recipeId,
+  companyId,
+}: {
+  recipeId: string;
+  companyId: string | null;
+}) {
+  const [rows, setRows] = useState<UsageRow[] | null>(null);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .rpc("get_recipe_usage", { p_recipe_id: recipeId, p_company_id: companyId })
+      .then(({ data }) => {
+        if (!cancelled) setRows((data as UsageRow[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recipeId, companyId]);
+
+  if (!companyId) {
+    return (
+      <p className="text-sm text-muted">
+        Selecteer een bedrijf via de bedrijfsselector rechtsboven om te zien
+        waar dit halfproduct gebruikt wordt.
+      </p>
+    );
+  }
+
+  if (rows === null) {
+    return <p className="text-sm text-muted">Laden…</p>;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted">
+        Dit halfproduct wordt nog nergens in gebruikt.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-border text-sm">
+      {rows.map((r) => (
+        <li key={r.using_recipe_id} className="flex items-center justify-between py-2">
+          <Link
+            href={
+              r.using_recipe_kind === "halfproduct"
+                ? `/halfproducten/${r.using_recipe_id}/bewerken`
+                : `/recepturen/${r.using_recipe_id}/bewerken`
+            }
+            className="flex items-center gap-2 text-teal hover:underline"
+          >
+            {r.using_recipe_kind === "halfproduct" ? (
+              <SoupIcon className="h-3.5 w-3.5" />
+            ) : (
+              <Package className="h-3.5 w-3.5" />
+            )}
+            {r.using_recipe_name}
+          </Link>
+          <span className="tabular text-muted">
+            {r.quantity} {r.unit_name ?? ""}
+            {r.company_name && ` · ${r.company_name}`}
+            {r.cost_contribution !== null &&
+              ` · € ${r.cost_contribution.toFixed(4)}`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+

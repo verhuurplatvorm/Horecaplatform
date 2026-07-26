@@ -166,6 +166,10 @@ export type Recipe = {
   yield_quantity: number | null;
   yield_unit: string | null;
   base_unit_id: string | null;
+  storage_method: string | null;
+  shelf_life_days: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type RecipeIngredient = {
@@ -244,6 +248,38 @@ export type CurrentStock = {
   product_id: string | null;
   recipe_id: string | null;
   on_hand_quantity: number;
+}
+
+export type RecipeFavorite = {
+  user_id: string;
+  recipe_id: string;
+}
+
+export type LabelSettings = {
+  group_id: string;
+  default_format: string;
+  font_scale: number;
+  show_logo: boolean;
+  show_qr: boolean;
+  visible_fields: string[];
+}
+
+export type ProductionLabel = {
+  id: string;
+  stock_movement_id: string;
+  produced_by_user_ids: string[];
+  produced_by_manual_names: string[];
+  production_at: string;
+  expiry_at: string | null;
+  expiry_manually_set: boolean;
+  extra_text: string | null;
+  sticker_format: string;
+  sticker_count: number;
+  printed_by: string | null;
+  printed_at: string;
+  reprint_of: string | null;
+  reprint_reason: string | null;
+  created_at: string;
 }
 
 export type UserProfile = {
@@ -467,6 +503,24 @@ export type Database = {
         Update: Partial<StockMovement>;
         Relationships: [];
       };
+      recipe_favorites: {
+        Row: RecipeFavorite;
+        Insert: Partial<RecipeFavorite>;
+        Update: Partial<RecipeFavorite>;
+        Relationships: [];
+      };
+      label_settings: {
+        Row: LabelSettings;
+        Insert: Partial<LabelSettings>;
+        Update: Partial<LabelSettings>;
+        Relationships: [];
+      };
+      production_labels: {
+        Row: ProductionLabel;
+        Insert: Partial<ProductionLabel>;
+        Update: Partial<ProductionLabel>;
+        Relationships: [];
+      };
     };
     Views: {
       current_product_cost: {
@@ -507,6 +561,18 @@ export type Database = {
           p_note?: string;
         };
         Returns: string;
+      };
+      get_recipe_usage: {
+        Args: { p_recipe_id: string; p_company_id: string };
+        Returns: {
+          using_recipe_id: string;
+          using_recipe_name: string;
+          using_recipe_kind: RecipeKind;
+          company_name: string | null;
+          quantity: number;
+          unit_name: string | null;
+          cost_contribution: number | null;
+        }[];
       };
     };
   };

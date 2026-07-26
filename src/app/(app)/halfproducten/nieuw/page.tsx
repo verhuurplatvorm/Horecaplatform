@@ -1,12 +1,12 @@
 import { Topbar } from "@/components/layout/topbar";
 import { RecipeForm } from "@/components/recipes/recipe-form";
 
-export default function NieuweReceptuurPage() {
+export default function NieuwHalfproductPage() {
   return (
     <>
-      <Topbar title="Nieuw gerecht" />
+      <Topbar title="Nieuw halfproduct" />
       <main className="max-w-4xl p-6">
-        <RecipeForm lockedKind="gerecht" />
+        <RecipeForm lockedKind="halfproduct" />
       </main>
     </>
   );

@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Package, Plus, SoupIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 import type { Recipe } from "@/lib/types/database";
 
 type RecipeListItem = Pick<
@@ -17,7 +16,6 @@ type RecipeListItem = Pick<
   | "name"
   | "category"
   | "status"
-  | "recipe_kind"
   | "is_central"
   | "company_id"
   | "sales_price"
@@ -36,9 +34,6 @@ export default function RecepturenPage() {
   const [recipes, setRecipes] = useState<RecipeWithCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [kindFilter, setKindFilter] = useState<"alle" | "gerecht" | "halfproduct">(
-    "alle"
-  );
 
   // Voor de kostprijsberekening is een concreet bedrijf nodig (recepten
   // kunnen groepsbreed of lokaal zijn, maar inkoopprijzen kunnen per
@@ -55,11 +50,15 @@ export default function RecepturenPage() {
 
     async function run() {
       const supabase = createClient();
+      // Alleen gerechten — halfproducten hebben een eigen module
+      // (spec: "Halfproducten mogen geen onderdeel zijn van de gewone
+      // receptenlijst").
       const { data, error: fetchError } = await supabase
         .from("recipes")
         .select(
-          "id, name, category, status, recipe_kind, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit"
+          "id, name, category, status, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit"
         )
+        .eq("recipe_kind", "gerecht")
         .order("name")
         .limit(100);
 
@@ -98,39 +97,15 @@ export default function RecepturenPage() {
     };
   }, [referenceCompanyId, scopeLoading]);
 
-  const filteredRecipes = useMemo(
-    () =>
-      kindFilter === "alle"
-        ? recipes
-        : recipes.filter((r) => r.recipe_kind === kindFilter),
-    [recipes, kindFilter]
-  );
-
   return (
     <>
-      <Topbar title="Recepturen" />
+      <Topbar title="Recepten (Gerechten)" />
       <main className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1 rounded-md border border-border bg-surface p-1">
-            {(["alle", "gerecht", "halfproduct"] as const).map((k) => (
-              <button
-                key={k}
-                onClick={() => setKindFilter(k)}
-                className={cn(
-                  "rounded px-3 py-1 text-xs font-medium capitalize",
-                  kindFilter === k
-                    ? "bg-teal text-white"
-                    : "text-muted hover:text-foreground"
-                )}
-              >
-                {k === "alle" ? "Alle" : k === "gerecht" ? "Gerechten" : "Halfproducten"}
-              </button>
-            ))}
-          </div>
+        <div className="flex justify-end">
           <Link href="/recepturen/nieuw">
             <Button>
               <Plus className="h-4 w-4" />
-              Nieuwe receptuur
+              Nieuw gerecht
             </Button>
           </Link>
         </div>
@@ -141,7 +116,6 @@ export default function RecepturenPage() {
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Naam</th>
-                  <th className="px-5 py-3 font-medium">Soort</th>
                   <th className="px-5 py-3 font-medium">Categorie</th>
                   <th className="px-5 py-3 font-medium">Bereik</th>
                   <th className="px-5 py-3 font-medium">Kostprijs</th>
@@ -151,7 +125,7 @@ export default function RecepturenPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRecipes.map((r) => {
+                {recipes.map((r) => {
                   const priceExclVat =
                     r.sales_price && r.vat_rate !== null
                       ? r.sales_price / (1 + r.vat_rate / 100)
@@ -169,23 +143,6 @@ export default function RecepturenPage() {
                         >
                           {r.name}
                         </Link>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span
-                          className={cn(
-                            "flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs",
-                            r.recipe_kind === "gerecht"
-                              ? "bg-teal/10 text-teal"
-                              : "bg-copper/10 text-copper"
-                          )}
-                        >
-                          {r.recipe_kind === "gerecht" ? (
-                            <Package className="h-3 w-3" />
-                          ) : (
-                            <SoupIcon className="h-3 w-3" />
-                          )}
-                          {r.recipe_kind === "gerecht" ? "Gerecht" : "Halfproduct"}
-                        </span>
                       </td>
                       <td className="px-5 py-3 text-muted">{r.category ?? "—"}</td>
                       <td className="px-5 py-3 text-muted">
@@ -220,12 +177,12 @@ export default function RecepturenPage() {
                     </tr>
                   );
                 })}
-                {filteredRecipes.length === 0 && !loading && (
+                {recipes.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-6 text-center text-muted">
                       {error
-                        ? "Kan recepturen niet laden — controleer de Supabase-koppeling."
-                        : "Nog geen recepturen vastgelegd."}
+                        ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
+                        : "Nog geen gerechten vastgelegd."}
                     </td>
                   </tr>
                 )}
@@ -239,7 +196,7 @@ export default function RecepturenPage() {
                 scope.mode === "group"
                   ? `${referenceCompanyName} (eerste bedrijf in groepsweergave)`
                   : referenceCompanyName
-              }, op basis van de actuele inkoopprijzen.`
+              }, op basis van de actuele inkoopprijzen. Halfproducten beheer je nu apart onder "Halfproducten".`
             : "Selecteer een bedrijf via de bedrijfsselector rechtsboven om actuele kostprijzen te zien."}
         </p>
       </main>

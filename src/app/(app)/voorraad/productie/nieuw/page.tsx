@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export default function NieuweProductiePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [createdMovementId, setCreatedMovementId] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -128,12 +130,15 @@ export default function NieuweProductiePage() {
 
     setSaving(true);
     const supabase = createClient();
-    const { error: rpcError } = await supabase.rpc("register_recipe_production", {
-      p_recipe_id: selected.id,
-      p_company_id: companyId,
-      p_quantity: Number(quantity),
-      p_note: note.trim() || undefined,
-    });
+    const { data: movementId, error: rpcError } = await supabase.rpc(
+      "register_recipe_production",
+      {
+        p_recipe_id: selected.id,
+        p_company_id: companyId,
+        p_quantity: Number(quantity),
+        p_note: note.trim() || undefined,
+      }
+    );
     setSaving(false);
 
     if (rpcError) {
@@ -142,7 +147,7 @@ export default function NieuweProductiePage() {
     }
 
     setSuccess(true);
-    setTimeout(() => router.push("/voorraad"), 1200);
+    setCreatedMovementId(movementId as string);
   }
 
   const baseUnitName = selected?.base_unit_id
@@ -249,13 +254,34 @@ export default function NieuweProductiePage() {
 
               {error && <p className="text-sm text-danger">{error}</p>}
               {success && (
-                <p className="text-sm text-success">
-                  Productie geregistreerd, voorraad bijgewerkt.
-                </p>
+                <div className="rounded-md border border-success/30 bg-success/5 p-3">
+                  <p className="text-sm text-success">
+                    Productie geregistreerd, voorraad bijgewerkt.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    {selected && createdMovementId && (
+                      <Link
+                        href={`/halfproducten/${selected.id}/sticker/nieuw?movementId=${createdMovementId}`}
+                      >
+                        <Button type="button" size="sm">
+                          Sticker afdrukken
+                        </Button>
+                      </Link>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => router.push("/voorraad")}
+                    >
+                      Naar voorraad
+                    </Button>
+                  </div>
+                </div>
               )}
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={saving}>
+                <Button type="submit" disabled={saving || success}>
                   {saving ? "Bezig…" : "Productie registreren"}
                 </Button>
                 <Button type="button" variant="secondary" onClick={() => router.push("/voorraad")}>

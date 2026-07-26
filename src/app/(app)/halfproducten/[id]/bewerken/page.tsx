@@ -1,10 +1,10 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { RecipeForm } from "@/components/recipes/recipe-form";
 import { createClient } from "@/lib/supabase/server";
 import type { Recipe, RecipeIngredient } from "@/lib/types/database";
 
-export default async function BewerkReceptuurPage({
+export default async function BewerkHalfproductPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -22,9 +22,6 @@ export default async function BewerkReceptuurPage({
   ]);
 
   if (!recipe) notFound();
-  if (recipe.recipe_kind === "halfproduct") {
-    redirect(`/halfproducten/${id}/bewerken`);
-  }
 
   return (
     <>
@@ -33,7 +30,7 @@ export default async function BewerkReceptuurPage({
         <RecipeForm
           initialRecipe={recipe as Recipe}
           initialIngredients={(ingredients as RecipeIngredient[]) ?? []}
-          lockedKind="gerecht"
+          lockedKind="halfproduct"
         />
       </main>
     </>

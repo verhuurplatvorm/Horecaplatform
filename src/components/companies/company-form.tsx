@@ -32,6 +32,9 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
   const isEdit = Boolean(initialCompany);
 
   const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([]);
+  const [isEmptyCompany, setIsEmptyCompany] = useState<boolean | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [name, setName] = useState(initialCompany?.name ?? "");
   const [tradeName, setTradeName] = useState(initialCompany?.trade_name ?? "");
   const [kind, setKind] = useState<CompanyKind>(initialCompany?.kind ?? "restaurant");
@@ -54,6 +57,63 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
       .order("name")
       .then(({ data }) => setLegalEntities((data as LegalEntity[]) ?? []));
   }, []);
+
+  // Alleen een leeg bedrijf (geen recepten, verkoopproducten,
+  // leveranciers, voorraadmutaties of gebruikerstoegang) mag hard
+  // verwijderd worden — anders blijft "inactief zetten" de enige optie.
+  useEffect(() => {
+    if (!initialCompany) return;
+    let cancelled = false;
+
+    async function checkEmpty() {
+      const supabase = createClient();
+      const companyId = initialCompany!.id;
+      const counts = await Promise.all([
+        supabase.from("locations").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("recipes").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("sales_products").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("suppliers").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("stock_movements").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("user_company_access").select("company_id", { count: "exact", head: true }).eq("company_id", companyId),
+      ]);
+      if (cancelled) return;
+      setIsEmptyCompany(counts.every((r) => (r.count ?? 0) === 0));
+    }
+
+    checkEmpty();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCompany]);
+
+  async function handleDelete() {
+    if (!initialCompany) return;
+    if (
+      !window.confirm(
+        `"${initialCompany.name}" definitief verwijderen? Dit bedrijf is leeg (geen recepten, verkoopdata of voorraad), dus dit kan veilig — maar is niet ongedaan te maken.`
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    setDeleting(true);
+    const supabase = createClient();
+    const { error: deleteErr } = await supabase
+      .from("companies")
+      .delete()
+      .eq("id", initialCompany.id);
+    setDeleting(false);
+
+    if (deleteErr) {
+      setDeleteError(
+        "Verwijderen mislukt: " +
+          deleteErr.message +
+          " Waarschijnlijk is er toch nog data aan dit bedrijf gekoppeld — zet het op \"inactief\" in plaats daarvan."
+      );
+      return;
+    }
+    router.push("/bedrijven");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -226,18 +286,19 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
               Actief
             </label>
             <p className="mt-1 text-xs text-muted">
-              Er is bewust geen &quot;verwijderen&quot;-knop voor bedrijven: dat
-              zou in één keer alle recepten, voorraad, verkoopdata en
-              gebruikersrechten van dit bedrijf meetrekken. Zet een bedrijf op
-              &quot;inactief&quot; om het uit de bedrijfsselector te halen — alle
-              data blijft dan bewaard en het bedrijf kan later weer
-              geactiveerd worden.
+              Zodra er recepten, voorraad of verkoopdata aan een bedrijf
+              hangen, kan het niet meer verwijderd worden — alleen dan is
+              &quot;inactief&quot; zetten mogelijk (alle data blijft bewaard,
+              het bedrijf verdwijnt alleen uit de bedrijfsselector en kan
+              later weer geactiveerd worden). Een écht leeg bedrijf mag wel
+              hard verwijderd worden, zie de knop hieronder.
             </p>
           </div>
         </CardContent>
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+      {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
@@ -246,6 +307,17 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
         <Button type="button" variant="secondary" onClick={() => router.push("/bedrijven")}>
           Annuleren
         </Button>
+        {isEdit && isEmptyCompany && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="ml-auto"
+          >
+            {deleting ? "Verwijderen…" : "Verwijderen (leeg bedrijf)"}
+          </Button>
+        )}
       </div>
 
       <style jsx>{`
