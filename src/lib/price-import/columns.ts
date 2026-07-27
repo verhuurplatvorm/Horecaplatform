@@ -12,6 +12,7 @@ export interface ParsedPriceRow {
   eanCode: string | null;
   articleNumber: string | null;
   description: string | null;
+  brand: string | null;
   packagingDescription: string | null;
   packagingUnitCount: number | null;
   purchasePrice: number | null;
@@ -23,6 +24,7 @@ export const CANONICAL_FIELDS: { value: string; label: string }[] = [
   { value: "ean", label: "EAN-code" },
   { value: "articleNumber", label: "Artikelnummer" },
   { value: "description", label: "Artikelnaam" },
+  { value: "brand", label: "Merk" },
   {
     value: "combinedLine",
     label: "Artikelregel (naam + verpakking + code samen)",
@@ -68,6 +70,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
     "itemdescription",
     "item_description",
   ],
+  brand: ["merk", "brand", "fabricaat", "fabrikant"],
   packagingDescription: [
     "verpakking",
     "verpakkingseenheid",
@@ -259,6 +262,7 @@ export function normalizeRow(
     eanCode: toText(byCanonical.ean),
     articleNumber,
     description,
+    brand: toText(byCanonical.brand),
     packagingDescription: effectivePackagingDescription,
     packagingUnitCount,
     purchasePrice: toNumber(byCanonical.purchasePrice),

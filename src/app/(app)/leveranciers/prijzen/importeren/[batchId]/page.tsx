@@ -227,6 +227,7 @@ export default function ImportReviewPage({
             name: row.description as string,
             article_number: row.article_number,
             ean_code: row.ean_code,
+            brand: row.brand,
             base_unit_id: baseUnitId,
             kind: "inkoopartikel" as const,
           })
@@ -412,6 +413,7 @@ export default function ImportReviewPage({
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Regel</th>
                   <th className="px-5 py-3 font-medium">Bron: omschrijving</th>
+                  <th className="px-5 py-3 font-medium">Merk</th>
                   <th className="px-5 py-3 font-medium">EAN / artikelnr.</th>
                   <th className="px-5 py-3 font-medium">Prijs</th>
                   <th className="px-5 py-3 font-medium">Verpakking</th>
@@ -466,6 +468,7 @@ export default function ImportReviewPage({
               prefillEanCode={creatingForRow.ean_code ?? ""}
               prefillArticleNumber={creatingForRow.article_number ?? ""}
               prefillPackagingName={creatingForRow.packaging_description ?? ""}
+              prefillBrand={creatingForRow.brand ?? ""}
               onSaved={(newProduct) => {
                 const rowId = creatingForRow.id;
                 setCreatingForRow(null);
@@ -520,6 +523,7 @@ function RowLine({
     <tr className="border-t border-border">
       <td className="px-5 py-3 text-muted tabular">{row.row_number}</td>
       <td className="px-5 py-3">{row.description ?? "—"}</td>
+      <td className="px-5 py-3 text-muted">{row.brand ?? "—"}</td>
       <td className="px-5 py-3 text-muted">
         {row.ean_code ?? row.article_number ?? "—"}
       </td>

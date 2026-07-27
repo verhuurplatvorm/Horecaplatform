@@ -69,6 +69,7 @@ export interface ProductFormProps {
   prefillEanCode?: string;
   prefillArticleNumber?: string;
   prefillPackagingName?: string;
+  prefillBrand?: string;
   /** 'page' toont een terugknop en navigeert na opslaan; 'dialog' geeft
    * het opgeslagen product terug aan de aanroeper (voor snelinvoer vanuit
    * een receptregel of, zoals hier, vanuit de prijsimport). */
@@ -84,6 +85,7 @@ export function ProductForm({
   prefillEanCode,
   prefillArticleNumber,
   prefillPackagingName,
+  prefillBrand,
   mode = "page",
   onSaved,
   onCancel,
@@ -95,7 +97,7 @@ export function ProductForm({
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   const [name, setName] = useState(initialProduct?.name ?? prefillName ?? "");
-  const [brand, setBrand] = useState(initialProduct?.brand ?? "");
+  const [brand, setBrand] = useState(initialProduct?.brand ?? prefillBrand ?? "");
   const [description, setDescription] = useState(
     initialProduct?.description ?? ""
   );

@@ -72,6 +72,7 @@ export async function createImportBatch(
     ean_code: row.eanCode,
     article_number: row.articleNumber,
     description: row.description,
+    brand: row.brand,
     packaging_description: row.packagingDescription,
     packaging_unit_count: row.packagingUnitCount,
     purchase_price: row.purchasePrice,

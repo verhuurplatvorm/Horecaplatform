@@ -371,6 +371,7 @@ export type PriceImportRow = {
   ean_code: string | null;
   article_number: string | null;
   description: string | null;
+  brand: string | null;
   packaging_description: string | null;
   packaging_unit_count: number | null;
   purchase_price: number | null;
