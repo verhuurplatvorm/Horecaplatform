@@ -4,7 +4,7 @@
  * bekende varianten (NL/EN) in plaats van exacte namen te eisen.
  */
 
-import { parsePackagingText, parseCombinedArticleLine } from "./packaging-parser";
+import { parsePackagingText, parseCombinedArticleLine, UNIT_TO_BASE_FACTOR } from "./packaging-parser";
 
 export interface ParsedPriceRow {
   rowNumber: number;
@@ -229,17 +229,23 @@ export function normalizeRow(
   // Bepaal de hoeveelheid uit welke bron dan ook daadwerkelijk een getal
   // oplevert — een "Eenheid"-kolom als "DOOS" of "BAK" heeft geen
   // hoeveelheid en mag de herkenning uit de artikelregel niet blokkeren.
+  // parsePackagingText geeft de hoeveelheid in de herkende eenheid (bv.
+  // liter, kg) — die moet naar de systeem-basiseenheid (ml, g, stuk)
+  // omgerekend worden, anders wordt "1x2ltr" als "2" in plaats van 2000
+  // (ml) opgeslagen.
   if (packagingUnitCount === null) {
     const fromExplicit = packagingDescription
       ? parsePackagingText(packagingDescription)
       : null;
     if (fromExplicit) {
-      packagingUnitCount = fromExplicit.totalQuantity;
+      const factor = UNIT_TO_BASE_FACTOR[fromExplicit.unit]?.factor ?? 1;
+      packagingUnitCount = fromExplicit.totalQuantity * factor;
       effectivePackagingDescription = packagingDescription;
     } else if (combinedPackagingText) {
       const fromCombined = parsePackagingText(combinedPackagingText);
       if (fromCombined) {
-        packagingUnitCount = fromCombined.totalQuantity;
+        const factor = UNIT_TO_BASE_FACTOR[fromCombined.unit]?.factor ?? 1;
+        packagingUnitCount = fromCombined.totalQuantity * factor;
         effectivePackagingDescription = packagingDescription
           ? `${packagingDescription} · ${combinedPackagingText}`
           : combinedPackagingText;

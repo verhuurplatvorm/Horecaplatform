@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { ProductForm } from "@/components/products/product-form";
 import { createClient } from "@/lib/supabase/client";
+import { getCurrentGroupId } from "@/lib/supabase/current-group";
+import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
 import type {
   PriceImportBatch,
   PriceImportRow,
@@ -28,6 +30,8 @@ export default function ImportReviewPage({
   >(new Map());
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [bulkCreating, setBulkCreating] = useState(false);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
   const [onlyChanges, setOnlyChanges] = useState(true);
@@ -168,6 +172,104 @@ export default function ImportReviewPage({
     reload();
   }
 
+  async function handleBulkCreate() {
+    const unmatched = rows.filter((r) => !r.matched_product_id && r.description);
+    if (unmatched.length === 0) return;
+    if (
+      !window.confirm(
+        `${unmatched.length} nieuwe producten aanmaken op basis van deze regels? Controleer daarna zelf steekproefsgewijs of de herkenning klopt.`
+      )
+    ) {
+      return;
+    }
+
+    setBulkCreating(true);
+    setBulkResult(null);
+    const supabase = createClient();
+    const groupId = await getCurrentGroupId(supabase);
+    if (!groupId) {
+      setBulkResult("Kan groep van gebruiker niet bepalen. Log opnieuw in.");
+      setBulkCreating(false);
+      return;
+    }
+
+    const { data: units } = await supabase.from("units").select("id, key");
+    const unitIdByKey = new Map((units ?? []).map((u) => [u.key, u.id]));
+
+    // Voorkom dubbele producten binnen dezelfde import: dezelfde
+    // (genormaliseerde) naam hergebruikt hetzelfde nieuw aangemaakte product.
+    const createdByName = new Map<string, string>();
+    let created = 0;
+    let linked = 0;
+    let skipped = 0;
+
+    for (const row of unmatched) {
+      const key = (row.description ?? "").trim().toLowerCase();
+      let productId = createdByName.get(key);
+
+      if (!productId) {
+        const parsedPackaging = row.packaging_description
+          ? parsePackagingText(row.packaging_description)
+          : null;
+        const baseUnitKey = parsedPackaging
+          ? UNIT_TO_BASE_FACTOR[parsedPackaging.unit]?.baseUnitKey ?? "stuk"
+          : "stuk";
+        const baseUnitId = unitIdByKey.get(baseUnitKey) ?? unitIdByKey.get("stuk");
+        if (!baseUnitId) {
+          skipped++;
+          continue;
+        }
+
+        const { data: newProduct, error: productError } = await supabase
+          .from("products")
+          .insert({
+            group_id: groupId,
+            name: row.description as string,
+            article_number: row.article_number,
+            ean_code: row.ean_code,
+            base_unit_id: baseUnitId,
+            kind: "inkoopartikel" as const,
+          })
+          .select("id")
+          .single();
+
+        if (productError || !newProduct) {
+          skipped++;
+          continue;
+        }
+        productId = newProduct.id;
+        created++;
+
+        if (row.packaging_description && row.packaging_unit_count) {
+          await supabase.from("product_packagings").insert({
+            product_id: productId,
+            name: row.packaging_description,
+            quantity_in_base_unit: row.packaging_unit_count,
+            is_default: true,
+          });
+        }
+        createdByName.set(key, productId);
+      }
+
+      const { error: patchError } = await supabase
+        .from("price_import_rows")
+        .update({
+          matched_product_id: productId,
+          match_method: "handmatig" as const,
+          status: "gematcht" as const,
+        })
+        .eq("id", row.id);
+      if (!patchError) linked++;
+    }
+
+    setBulkCreating(false);
+    setBulkResult(
+      `${created} nieuwe producten aangemaakt, ${linked} regels gekoppeld` +
+        (skipped > 0 ? `, ${skipped} overgeslagen (geen naam/eenheid herkend).` : ".")
+    );
+    reload();
+  }
+
   if (loading) {
     return (
       <>
@@ -234,6 +336,17 @@ export default function ImportReviewPage({
                   {rollingBack ? "Bezig…" : "Import ongedaan maken"}
                 </Button>
               )}
+              {unmatchedCount > 0 && (
+                <Button
+                  variant="secondary"
+                  onClick={handleBulkCreate}
+                  disabled={bulkCreating}
+                >
+                  {bulkCreating
+                    ? "Bezig…"
+                    : `${unmatchedCount} niet-gekoppelde regels als nieuwe producten aanmaken`}
+                </Button>
+              )}
               <Button
                 onClick={handleApply}
                 disabled={applying || applyableCount === 0}
@@ -247,6 +360,11 @@ export default function ImportReviewPage({
           {applyResult && (
             <CardContent className="pt-0 text-sm text-success">
               {applyResult}
+            </CardContent>
+          )}
+          {bulkResult && (
+            <CardContent className="pt-0 text-sm text-success">
+              {bulkResult}
             </CardContent>
           )}
           {missingPackagingCount > 0 && (
