@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Plus, Search, TriangleAlert } from "lucide-react";
+import { CheckCircle2, CircleAlert, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -270,6 +270,24 @@ export default function ImportReviewPage({
     reload();
   }
 
+  async function handleDeleteRow(rowId: string) {
+    if (
+      !window.confirm(
+        "Deze regel verwijderen uit de import? Wordt niet als product of prijs verwerkt."
+      )
+    ) {
+      return;
+    }
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from("price_import_rows")
+      .delete()
+      .eq("id", rowId);
+    if (!deleteError) {
+      setRows((prev) => prev.filter((r) => r.id !== rowId));
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -399,6 +417,7 @@ export default function ImportReviewPage({
                   <th className="px-5 py-3 font-medium">Verpakking</th>
                   <th className="px-5 py-3 font-medium">Gekoppeld product</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -426,6 +445,7 @@ export default function ImportReviewPage({
                       handlePackagingChange(row.id, count)
                     }
                     onStartCreate={() => setCreatingForRow(row)}
+                    onDelete={() => handleDeleteRow(row.id)}
                   />
                 ))}
               </tbody>
@@ -466,6 +486,7 @@ function RowLine({
   onManualMatch,
   onPackagingChange,
   onStartCreate,
+  onDelete,
 }: {
   row: PriceImportRow;
   product?: Product;
@@ -474,6 +495,7 @@ function RowLine({
   onManualMatch: (productId: string) => void;
   onPackagingChange: (count: number) => void;
   onStartCreate: () => void;
+  onDelete: () => void;
 }) {
   const [searching, setSearching] = useState(false);
   const [packagingInput, setPackagingInput] = useState(
@@ -593,6 +615,17 @@ function RowLine({
           </span>
         ) : (
           <ConfidenceBadge confidence={row.match_confidence} />
+        )}
+      </td>
+      <td className="px-5 py-3">
+        {row.status !== "toegepast" && (
+          <button
+            onClick={onDelete}
+            title="Regel verwijderen uit de import"
+            className="text-muted hover:text-danger"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         )}
       </td>
     </tr>
