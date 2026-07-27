@@ -8,6 +8,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { useCompanyScope } from "@/components/company-context";
 import type { Recipe, StockMovement, UserProfile } from "@/lib/types/database";
 
 const FORMATS: { value: string; label: string; widthMm: number; heightMm: number }[] = [
@@ -40,9 +41,15 @@ export default function NieuweStickerPage({
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
+  const { activeCompanyIds } = useCompanyScope();
+  const referenceCompanyId = activeCompanyIds[0] ?? null;
+
   const [recentMovements, setRecentMovements] = useState<StockMovement[]>([]);
   const [movement, setMovement] = useState<StockMovement | null>(null);
   const [existingLabelCount, setExistingLabelCount] = useState<number>(0);
+  const [quickQuantity, setQuickQuantity] = useState("");
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [manualNames, setManualNames] = useState("");
@@ -269,19 +276,84 @@ export default function NieuweStickerPage({
   }
 
   if (!movement) {
+    async function handleQuickRegister() {
+      if (!referenceCompanyId || !Number(quickQuantity) || Number(quickQuantity) <= 0) {
+        setRegisterError("Vul een geldige geproduceerde hoeveelheid in.");
+        return;
+      }
+      setRegistering(true);
+      setRegisterError(null);
+      const supabase = createClient();
+      const { data: newMovementId, error: rpcError } = await supabase.rpc(
+        "register_recipe_production",
+        {
+          p_recipe_id: recipeId,
+          p_company_id: referenceCompanyId,
+          p_quantity: Number(quickQuantity),
+        }
+      );
+      if (rpcError || !newMovementId) {
+        setRegisterError("Registreren mislukt: " + (rpcError?.message ?? "onbekende fout"));
+        setRegistering(false);
+        return;
+      }
+      const { data: m } = await supabase
+        .from("stock_movements")
+        .select("*")
+        .eq("id", newMovementId)
+        .single();
+      setRegistering(false);
+      if (m) setMovement(m as StockMovement);
+    }
+
     return (
       <>
         <Topbar title="Sticker afdrukken" />
         <main className="max-w-2xl p-6 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Nieuwe productie registreren</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted">
+                Nog niet geproduceerd? Vul de hoeveelheid in — de productie
+                wordt geregistreerd en je gaat direct door naar de sticker.
+              </p>
+              {!referenceCompanyId ? (
+                <p className="text-sm text-copper">
+                  Selecteer eerst een bedrijf via de bedrijfsselector rechtsboven.
+                </p>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-medium text-foreground">
+                      Geproduceerde hoeveelheid{unitName ? ` (${unitName})` : ""}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={quickQuantity}
+                      onChange={(e) => setQuickQuantity(e.target.value)}
+                      className="input"
+                    />
+                  </div>
+                  <Button onClick={handleQuickRegister} disabled={registering}>
+                    {registering ? "Bezig…" : "Registreren & sticker maken"}
+                  </Button>
+                </div>
+              )}
+              {registerError && <p className="text-sm text-danger">{registerError}</p>}
+            </CardContent>
+          </Card>
+
           <p className="text-sm text-muted">
-            Kies voor welke productie je een sticker wilt afdrukken.
+            Of kies een eerdere productie om (opnieuw) een sticker voor af te drukken.
           </p>
           <Card>
             <CardContent className="p-0">
               {recentMovements.length === 0 ? (
                 <p className="p-5 text-sm text-muted">
-                  Nog geen producties geregistreerd voor dit halfproduct. Ga
-                  naar Voorraad → Productie registreren.
+                  Nog geen eerdere producties geregistreerd voor dit halfproduct.
                 </p>
               ) : (
                 <table className="w-full text-sm">
@@ -313,6 +385,19 @@ export default function NieuweStickerPage({
               )}
             </CardContent>
           </Card>
+
+          <style jsx>{`
+            .input {
+              display: block;
+              width: 100%;
+              height: 2.5rem;
+              border-radius: 0.375rem;
+              border: 1px solid var(--border);
+              background: var(--surface);
+              padding: 0 0.75rem;
+              font-size: 0.875rem;
+            }
+          `}</style>
         </main>
       </>
     );
