@@ -415,6 +415,8 @@ export default function ImportReviewPage({
                   <th className="px-5 py-3 font-medium">EAN / artikelnr.</th>
                   <th className="px-5 py-3 font-medium">Prijs</th>
                   <th className="px-5 py-3 font-medium">Verpakking</th>
+                  <th className="px-5 py-3 font-medium">Aantal</th>
+                  <th className="px-5 py-3 font-medium">Inhoud per stuk</th>
                   <th className="px-5 py-3 font-medium">Gekoppeld product</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
@@ -510,6 +512,9 @@ function RowLine({
     existingPrice &&
     row.packaging_unit_count !== null &&
     existingPrice.packagingCount !== row.packaging_unit_count;
+  const packagingBreakdown = row.packaging_description
+    ? parsePackagingText(row.packaging_description)
+    : null;
 
   return (
     <tr className="border-t border-border">
@@ -562,6 +567,14 @@ function RowLine({
             de prijs per basiseenheid.
           </p>
         )}
+      </td>
+      <td className="px-5 py-3 tabular text-muted">
+        {packagingBreakdown ? packagingBreakdown.count : "—"}
+      </td>
+      <td className="px-5 py-3 tabular text-muted">
+        {packagingBreakdown
+          ? `${packagingBreakdown.unitQuantity} ${packagingBreakdown.unit}`
+          : "—"}
       </td>
       <td className="px-5 py-3">
         {row.matched_product_id ? (

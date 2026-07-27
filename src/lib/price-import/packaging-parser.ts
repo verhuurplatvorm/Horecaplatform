@@ -79,6 +79,10 @@ export interface ParsedPackaging {
   totalQuantity: number;
   unit: string;
   explanation: string;
+  /** Aantal stuks/flessen/dozen in de verpakking (bv. 6 bij "6x0,75L"). 1 als er geen vermenigvuldiging herkend is. */
+  count: number;
+  /** Inhoud per stuk, in dezelfde eenheid als `unit` (bv. 0,75 bij "6x0,75L"). */
+  unitQuantity: number;
 }
 
 const UNIT_ALIASES: Record<string, string> = {
@@ -133,6 +137,8 @@ export function parsePackagingText(text: string): ParsedPackaging | null {
         totalQuantity: total,
         unit,
         explanation: `${count} × ${perUnit} ${unit} = ${total} ${unit}`,
+        count,
+        unitQuantity: perUnit,
       };
     }
   }
@@ -144,7 +150,13 @@ export function parsePackagingText(text: string): ParsedPackaging | null {
     const count = normalizeNumber(containerPack[1]);
     const unit = UNIT_ALIASES[containerPack[2]] ?? containerPack[2];
     if (Number.isFinite(count)) {
-      return { totalQuantity: count, unit, explanation: `${count} ${unit}` };
+      return {
+        totalQuantity: count,
+        unit,
+        explanation: `${count} ${unit}`,
+        count: 1,
+        unitQuantity: count,
+      };
     }
   }
 
@@ -155,7 +167,13 @@ export function parsePackagingText(text: string): ParsedPackaging | null {
     const count = normalizeNumber(single[1]);
     const unit = UNIT_ALIASES[single[2]] ?? single[2];
     if (Number.isFinite(count)) {
-      return { totalQuantity: count, unit, explanation: `${count} ${unit}` };
+      return {
+        totalQuantity: count,
+        unit,
+        explanation: `${count} ${unit}`,
+        count: 1,
+        unitQuantity: count,
+      };
     }
   }
 
