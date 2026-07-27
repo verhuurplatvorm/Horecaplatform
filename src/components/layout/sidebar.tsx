@@ -22,7 +22,7 @@ const nav = [
   { href: "/halfproducten", label: "Halfproducten", icon: SoupIcon },
   { href: "/recepturen", label: "Recepten (Gerechten)", icon: BookOpen },
   { href: "/verkoopproducten", label: "Verkoopproducten", icon: ShoppingBag },
-  { href: "/voorraad", label: "Voorraad", icon: Warehouse },
+  { href: "/voorraad", label: "Producties", icon: Warehouse },
   { href: "/bedrijven", label: "Bedrijven", icon: Building2 },
   { href: "/gebruikers", label: "Gebruikers & rechten", icon: Users },
 ];

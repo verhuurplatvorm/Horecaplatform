@@ -1,30 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Package, Plus, SoupIcon, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
-import type { CurrentStock } from "@/lib/types/database";
+import type { ProductionLabel } from "@/lib/types/database";
 
-interface StockRow {
-  key: string;
-  type: "product" | "halfproduct";
-  id: string;
-  name: string;
-  unitName: string | null;
-  onHand: number;
-  minStock: number | null;
+interface AllergenSummary {
+  bevat: string[];
+  sporen: string[];
 }
 
-export default function VoorraadPage() {
+interface ProductionRow {
+  movementId: string;
+  recipeId: string;
+  recipeName: string;
+  storageMethod: string | null;
+  unitName: string | null;
+  quantity: number;
+  batchNumber: string | null;
+  productionAt: string;
+  expiryAt: string | null;
+  producedBy: string | null;
+  extraText: string | null;
+  allergens: AllergenSummary | null;
+}
+
+export default function ProductiesPage() {
   const { activeCompanyIds, scope, companies, loading: scopeLoading } =
     useCompanyScope();
-  const [rows, setRows] = useState<StockRow[]>([]);
+  const [rows, setRows] = useState<ProductionRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const referenceCompanyId = activeCompanyIds[0] ?? null;
@@ -38,70 +47,103 @@ export default function VoorraadPage() {
 
     async function run() {
       const supabase = createClient();
-      const { data: stock } = await supabase
-        .from("current_stock")
+      const { data: movements } = await supabase
+        .from("stock_movements")
         .select("*")
-        .eq("company_id", referenceCompanyId);
-      if (cancelled || !stock) {
+        .eq("company_id", referenceCompanyId)
+        .eq("movement_type", "productie")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (cancelled || !movements || movements.length === 0) {
+        setRows([]);
         setLoading(false);
         return;
       }
 
-      const productIds = (stock as CurrentStock[])
-        .map((s) => s.product_id)
-        .filter(Boolean) as string[];
-      const recipeIds = (stock as CurrentStock[])
-        .map((s) => s.recipe_id)
-        .filter(Boolean) as string[];
+      const recipeIds = [
+        ...new Set(movements.map((m) => m.recipe_id).filter(Boolean)),
+      ] as string[];
+      const movementIds = movements.map((m) => m.id);
 
-      const [{ data: products }, { data: recipes }, { data: units }] =
+      const [{ data: recipes }, { data: units }, { data: labels }, { data: userProfiles }] =
         await Promise.all([
-          productIds.length
-            ? supabase
-                .from("products")
-                .select("id, name, base_unit_id, min_stock_quantity")
-                .in("id", productIds)
-            : Promise.resolve({ data: [] }),
-          recipeIds.length
-            ? supabase
-                .from("recipes")
-                .select("id, name, base_unit_id")
-                .in("id", recipeIds)
-            : Promise.resolve({ data: [] }),
+          supabase
+            .from("recipes")
+            .select("id, name, recipe_kind, storage_method, base_unit_id")
+            .in("id", recipeIds),
           supabase.from("units").select("id, name"),
+          supabase
+            .from("production_labels")
+            .select("*")
+            .in("stock_movement_id", movementIds)
+            .order("printed_at", { ascending: false }),
+          supabase.from("user_profiles").select("id, full_name"),
         ]);
       if (cancelled) return;
 
-      const unitNameById = new Map((units ?? []).map((u) => [u.id, u.name]));
-      const productMap = new Map((products ?? []).map((p) => [p.id, p]));
       const recipeMap = new Map((recipes ?? []).map((r) => [r.id, r]));
+      const unitNameById = new Map((units ?? []).map((u) => [u.id, u.name]));
+      const userNameById = new Map(
+        (userProfiles ?? []).map((u) => [u.id, u.full_name])
+      );
 
-      const result: StockRow[] = (stock as CurrentStock[]).map((s) => {
-        if (s.product_id) {
-          const p = productMap.get(s.product_id);
-          return {
-            key: `product-${s.product_id}`,
-            type: "product" as const,
-            id: s.product_id,
-            name: p?.name ?? s.product_id,
-            unitName: p?.base_unit_id ? unitNameById.get(p.base_unit_id) ?? null : null,
-            onHand: s.on_hand_quantity,
-            minStock: p?.min_stock_quantity ?? null,
-          };
+      // Meest recente label per productieboeking (voor herdrukken).
+      const latestLabelByMovement = new Map<string, ProductionLabel>();
+      for (const l of labels ?? []) {
+        if (!latestLabelByMovement.has(l.stock_movement_id)) {
+          latestLabelByMovement.set(l.stock_movement_id, l as ProductionLabel);
         }
-        const r = recipeMap.get(s.recipe_id!);
+      }
+
+      // Alleen halfproducten, meest recente productie bovenaan (al zo
+      // gesorteerd door de query, maar expliciet gehouden na filtering).
+      const halfproductMovements = movements.filter(
+        (m) => m.recipe_id && recipeMap.get(m.recipe_id)?.recipe_kind === "halfproduct"
+      );
+
+      const uniqueRecipeIds = [
+        ...new Set(halfproductMovements.map((m) => m.recipe_id!)),
+      ];
+      const allergensByRecipe = new Map<string, AllergenSummary>();
+      await Promise.all(
+        uniqueRecipeIds.map(async (id) => {
+          const { data } = await supabase.rpc("calculate_recipe_allergens", {
+            p_recipe_id: id,
+          });
+          if (data) allergensByRecipe.set(id, data as AllergenSummary);
+        })
+      );
+
+      const result: ProductionRow[] = halfproductMovements.map((m) => {
+        const recipe = recipeMap.get(m.recipe_id!);
+        const label = latestLabelByMovement.get(m.id);
+        const producedByNames = label
+          ? [
+              ...(label.produced_by_user_ids ?? []).map(
+                (id: string) => userNameById.get(id) ?? null
+              ),
+              ...(label.produced_by_manual_names ?? []),
+            ].filter(Boolean)
+          : [];
+
         return {
-          key: `halfproduct-${s.recipe_id}`,
-          type: "halfproduct" as const,
-          id: s.recipe_id!,
-          name: r?.name ?? s.recipe_id!,
-          unitName: r?.base_unit_id ? unitNameById.get(r.base_unit_id) ?? null : null,
-          onHand: s.on_hand_quantity,
-          minStock: null,
+          movementId: m.id,
+          recipeId: m.recipe_id!,
+          recipeName: recipe?.name ?? m.recipe_id!,
+          storageMethod: recipe?.storage_method ?? null,
+          unitName: recipe?.base_unit_id
+            ? unitNameById.get(recipe.base_unit_id) ?? null
+            : null,
+          quantity: m.quantity_change,
+          batchNumber: m.batch_number,
+          productionAt: label?.production_at ?? m.created_at,
+          expiryAt: label?.expiry_at ?? m.expiry_date ?? null,
+          producedBy: producedByNames.length > 0 ? producedByNames.join(", ") : null,
+          extraText: label?.extra_text ?? null,
+          allergens: allergensByRecipe.get(m.recipe_id!) ?? null,
         };
       });
 
-      result.sort((a, b) => a.name.localeCompare(b.name));
       setRows(result);
       setLoading(false);
     }
@@ -112,51 +154,31 @@ export default function VoorraadPage() {
     };
   }, [referenceCompanyId, scopeLoading]);
 
-  const belowMinCount = useMemo(
-    () => rows.filter((r) => r.minStock !== null && r.onHand < r.minStock).length,
-    [rows]
-  );
-
   return (
     <>
-      <Topbar title="Voorraad" />
+      <Topbar title="Producties" />
       <main className="p-6 space-y-4">
         {!referenceCompanyId ? (
           <p className="text-sm text-muted">
-            Selecteer een bedrijf via de bedrijfsselector rechtsboven om de
-            voorraad te zien.
+            Selecteer een bedrijf via de bedrijfsselector rechtsboven om
+            producties te zien.
           </p>
         ) : (
           <>
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted">
-                Voorraad voor{" "}
+                Producties van halfproducten voor{" "}
                 {scope.mode === "group"
                   ? `${referenceCompanyName} (eerste bedrijf in groepsweergave)`
                   : referenceCompanyName}
-                . {belowMinCount > 0 && (
-                  <span className="text-copper">
-                    {belowMinCount} artikel(en) onder minimale voorraad.
-                  </span>
-                )}
+                , nieuwste bovenaan.
               </p>
-              <div className="flex gap-2">
-                <Link href="/voorraad/besteladvies">
-                  <Button variant="secondary">Besteladvies</Button>
-                </Link>
-                <Link href="/voorraad/mutatie/nieuw">
-                  <Button variant="secondary">
-                    <Plus className="h-4 w-4" />
-                    Mutatie registreren
-                  </Button>
-                </Link>
-                <Link href="/voorraad/productie/nieuw">
-                  <Button>
-                    <Plus className="h-4 w-4" />
-                    Productie registreren
-                  </Button>
-                </Link>
-              </div>
+              <Link href="/voorraad/productie/nieuw">
+                <Button>
+                  <Plus className="h-4 w-4" />
+                  Productie registreren
+                </Button>
+              </Link>
             </div>
 
             <Card>
@@ -164,62 +186,79 @@ export default function VoorraadPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                      <th className="px-5 py-3 font-medium">Artikel</th>
-                      <th className="px-5 py-3 font-medium">Type</th>
-                      <th className="px-5 py-3 font-medium">Actuele voorraad</th>
-                      <th className="px-5 py-3 font-medium">Minimale voorraad</th>
+                      <th className="px-5 py-3 font-medium">Halfproduct</th>
+                      <th className="px-5 py-3 font-medium">Geproduceerd door</th>
+                      <th className="px-5 py-3 font-medium">Productiedatum</th>
+                      <th className="px-5 py-3 font-medium">Houdbaar tot</th>
+                      <th className="px-5 py-3 font-medium">Bewaren</th>
+                      <th className="px-5 py-3 font-medium">Allergenen</th>
+                      <th className="px-5 py-3 font-medium">Hoeveelheid</th>
+                      <th className="px-5 py-3 font-medium">Batchnummer</th>
+                      <th className="px-5 py-3 font-medium">Extra tekst</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((r) => {
-                      const belowMin =
-                        r.minStock !== null && r.onHand < r.minStock;
+                      const expiringSoon =
+                        r.expiryAt && new Date(r.expiryAt) < new Date();
                       return (
-                        <tr key={r.key} className="border-t border-border">
-                          <td className="px-5 py-3 font-medium">{r.name}</td>
-                          <td className="px-5 py-3">
-                            <span
-                              className={cn(
-                                "flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs",
-                                r.type === "product"
-                                  ? "bg-teal/10 text-teal"
-                                  : "bg-copper/10 text-copper"
-                              )}
+                        <tr key={r.movementId} className="border-t border-border">
+                          <td className="px-5 py-3 font-medium">
+                            <Link
+                              href={`/halfproducten/${r.recipeId}/bewerken`}
+                              className="hover:text-teal hover:underline"
                             >
-                              {r.type === "product" ? (
-                                <Package className="h-3 w-3" />
-                              ) : (
-                                <SoupIcon className="h-3 w-3" />
-                              )}
-                              {r.type === "product" ? "Product" : "Halfproduct"}
-                            </span>
+                              {r.recipeName}
+                            </Link>
                           </td>
-                          <td
-                            className={cn(
-                              "tabular px-5 py-3",
-                              belowMin ? "font-medium text-copper" : "text-foreground"
-                            )}
-                          >
-                            {belowMin && (
-                              <TriangleAlert className="mr-1 inline h-3.5 w-3.5" />
-                            )}
-                            {r.onHand.toLocaleString("nl-NL", {
-                              maximumFractionDigits: 2,
-                            })}{" "}
-                            {r.unitName ?? ""}
+                          <td className="px-5 py-3 text-muted">
+                            {r.producedBy ?? "—"}
                           </td>
-                          <td className="px-5 py-3 tabular text-muted">
-                            {r.minStock !== null
-                              ? `${r.minStock} ${r.unitName ?? ""}`
-                              : "—"}
+                          <td className="px-5 py-3 text-muted">
+                            {new Date(r.productionAt).toLocaleString("nl-NL")}
+                          </td>
+                          <td className="px-5 py-3">
+                            {r.expiryAt ? (
+                              <span
+                                className={
+                                  expiringSoon
+                                    ? "flex items-center gap-1 text-danger"
+                                    : "text-foreground"
+                                }
+                              >
+                                {expiringSoon && (
+                                  <TriangleAlert className="h-3.5 w-3.5" />
+                                )}
+                                {new Date(r.expiryAt).toLocaleDateString("nl-NL")}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-muted">
+                            {r.storageMethod ?? "—"}
+                          </td>
+                          <td className="px-5 py-3 text-muted">
+                            {r.allergens && r.allergens.bevat.length > 0
+                              ? `Bevat ${r.allergens.bevat.join(", ")}`
+                              : "Geen bekende allergenen"}
+                          </td>
+                          <td className="px-5 py-3 tabular">
+                            {r.quantity} {r.unitName ?? ""}
+                          </td>
+                          <td className="px-5 py-3 text-muted">
+                            {r.batchNumber ?? "—"}
+                          </td>
+                          <td className="px-5 py-3 text-muted">
+                            {r.extraText ?? "—"}
                           </td>
                         </tr>
                       );
                     })}
                     {rows.length === 0 && !loading && (
                       <tr>
-                        <td colSpan={4} className="px-5 py-6 text-center text-muted">
-                          Nog geen voorraadmutaties voor dit bedrijf.
+                        <td colSpan={9} className="px-5 py-6 text-center text-muted">
+                          Nog geen producties geregistreerd voor dit bedrijf.
                         </td>
                       </tr>
                     )}
