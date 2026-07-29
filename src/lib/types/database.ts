@@ -321,6 +321,16 @@ export type UserCompanyAccess = {
   role_id: string;
 }
 
+export type RolePermission = {
+  role_id: string;
+  module_key: string;
+  can_view: boolean;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  can_view_financial: boolean;
+}
+
 export type PriceSourceType = "manual_upload" | "api_sync";
 export type PriceImportStatus =
   | "wordt_verwerkt"
@@ -467,6 +477,12 @@ export type Database = {
         Row: Role;
         Insert: Partial<Role>;
         Update: Partial<Role>;
+        Relationships: [];
+      };
+      role_permissions: {
+        Row: RolePermission;
+        Insert: Partial<RolePermission>;
+        Update: Partial<RolePermission>;
         Relationships: [];
       };
       user_company_access: {

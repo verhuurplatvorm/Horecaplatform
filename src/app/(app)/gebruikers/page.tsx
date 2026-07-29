@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import Link from "next/link";
+import { Plus, Shield } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +51,13 @@ export default function GebruikersPage() {
     <>
       <Topbar title="Gebruikers & rechten" />
       <main className="p-6 space-y-6">
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Link href="/gebruikers/rollen">
+            <Button variant="secondary">
+              <Shield className="h-4 w-4" />
+              Rollen beheren
+            </Button>
+          </Link>
           <Button onClick={() => setInviting(true)}>
             <Plus className="h-4 w-4" />
             Gebruiker uitnodigen
@@ -74,7 +81,14 @@ export default function GebruikersPage() {
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id} className="border-t border-border">
-                    <td className="px-5 py-3 font-medium">{u.full_name}</td>
+                    <td className="px-5 py-3 font-medium">
+                      <Link
+                        href={`/gebruikers/${u.id}/bewerken`}
+                        className="hover:text-teal hover:underline"
+                      >
+                        {u.full_name}
+                      </Link>
+                    </td>
                     <td className="px-5 py-3 text-muted">{u.email}</td>
                     <td className="px-5 py-3 text-muted">
                       {u.is_group_admin ? "Groepsbeheerder" : "Per bedrijf toegewezen"}
