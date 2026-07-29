@@ -1,5 +1,6 @@
 import { Workbook, type CellValue } from "exceljs";
 import Papa from "papaparse";
+import { PDFParse } from "pdf-parse";
 import { buildHeaderMap, buildHeaderMapFromMapping, normalizeRow, type ParsedPriceRow } from "./columns";
 
 export interface RawTable {
@@ -24,8 +25,11 @@ export async function parseRawTable(file: File): Promise<RawTable> {
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
     return parseExcelRaw(buffer);
   }
+  if (name.endsWith(".pdf")) {
+    return parsePdfRaw(buffer);
+  }
   throw new Error(
-    "Onbekend bestandstype. Upload een .csv, .xlsx of .xls bestand."
+    "Onbekend bestandstype. Upload een .csv, .xlsx, .xls of (tekst-)pdf bestand."
   );
 }
 
@@ -161,4 +165,100 @@ export function applyMapping(
 ): ParsedPriceRow[] {
   const headerMap = buildHeaderMapFromMapping(mapping);
   return table.rows.map((r) => normalizeRow(r.rowNumber, r.raw, headerMap));
+}
+
+/**
+ * Leest een tekst-PDF (geen scan/foto) uit tot een tabel. Gebruikt eerst
+ * de ingebouwde tabelherkenning van pdf-parse (betrouwbaarder dan zelf
+ * op spaties gokken); valt terug op een eenvoudige kolom-uit-spaties-
+ * heuristiek als er geen tabel herkend wordt. Werkt niet voor gescande
+ * PDF's of foto's (die bevatten geen echte tekst, alleen een plaatje) —
+ * daarvoor is een OCR-dienst nodig, wat hier bewust niet wordt
+ * gesimuleerd.
+ */
+async function parsePdfRaw(buffer: Buffer): Promise<RawTable> {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const tableResult = await parser.getTable();
+    const bestTable = tableResult.mergedTables?.[0] ?? tableResult.pages[0]?.tables?.[0];
+
+    if (bestTable && bestTable.length >= 2) {
+      const headers = bestTable[0].map((h) => h.trim()).filter(Boolean);
+      if (headers.length >= 2) {
+        const rows: { rowNumber: number; raw: Record<string, unknown> }[] = [];
+        for (let i = 1; i < bestTable.length; i++) {
+          const cells = bestTable[i];
+          if (!cells.some((c) => c && c.trim())) continue;
+          const raw: Record<string, unknown> = {};
+          headers.forEach((h, idx) => {
+            if (cells[idx] !== undefined) raw[h] = cells[idx];
+          });
+          rows.push({ rowNumber: i + 1, raw });
+        }
+        if (rows.length > 0) return { headers, rows };
+      }
+    }
+
+    // Geen tabel herkend — terugvallen op tekst + kolommen-uit-spaties.
+    const textResult = await parser.getText();
+    return parseTextAsTable(textResult.text);
+  } finally {
+    await parser.destroy();
+  }
+}
+
+function parseTextAsTable(text: string): RawTable {
+  const rawLines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (rawLines.length === 0) {
+    throw new Error(
+      "Geen tekst gevonden in deze PDF. Waarschijnlijk is dit een scan of foto zonder herkenbare tekst — gebruik in dat geval Excel, CSV, of kopiëren en plakken."
+    );
+  }
+
+  const splitLine = (line: string) =>
+    line.split(/\s{2,}|\t+/).map((c) => c.trim()).filter(Boolean);
+
+  // Zoek in de eerste 20 regels de regel met de meeste kolommen — dat is
+  // vermoedelijk de kopregel.
+  let headerIndex = 0;
+  let headerCellCount = -1;
+  const scanLimit = Math.min(20, rawLines.length);
+  for (let i = 0; i < scanLimit; i++) {
+    const cells = splitLine(rawLines[i]);
+    if (cells.length > headerCellCount) {
+      headerCellCount = cells.length;
+      headerIndex = i;
+    }
+  }
+
+  const headers = splitLine(rawLines[headerIndex]);
+  if (headers.length < 2) {
+    throw new Error(
+      "Kan geen kolomstructuur herkennen in deze PDF. Tekst-PDF's met nette kolomuitlijning werken het best — gebruik anders Excel, CSV, of kopiëren en plakken."
+    );
+  }
+
+  const rows: { rowNumber: number; raw: Record<string, unknown> }[] = [];
+  for (let i = headerIndex + 1; i < rawLines.length; i++) {
+    const cells = splitLine(rawLines[i]);
+    if (cells.length < 2) continue;
+    const raw: Record<string, unknown> = {};
+    headers.forEach((h, idx) => {
+      if (cells[idx] !== undefined) raw[h] = cells[idx];
+    });
+    if (Object.keys(raw).length === 0) continue;
+    rows.push({ rowNumber: i + 1, raw });
+  }
+
+  if (rows.length === 0) {
+    throw new Error(
+      "Kopregel gevonden, maar geen bruikbare rijen daaronder. Deze PDF is mogelijk een scan/foto, of de kolomuitlijning is te onregelmatig — gebruik in dat geval Excel, CSV, of kopiëren en plakken."
+    );
+  }
+
+  return { headers, rows };
 }

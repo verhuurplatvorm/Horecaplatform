@@ -314,15 +314,22 @@ export default function ImporterenPage() {
                     Kies een bestand
                     <input
                       type="file"
-                      accept=".csv,.xlsx,.xls"
+                      accept=".csv,.xlsx,.xls,.pdf"
                       onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                       className="hidden"
                     />
                   </label>
                   {file && <p className="mt-2 text-xs text-muted">Gekozen: {file.name}</p>}
                   <p className="mt-2 text-xs text-muted">
-                    Excel of CSV. Geen speciaal sjabloon nodig.
+                    Excel, CSV, of een tekst-PDF (geen scan/foto).
                   </p>
+                  {file?.name.toLowerCase().endsWith(".pdf") && (
+                    <p className="mt-1 flex items-center justify-center gap-1 text-xs text-copper">
+                      <TriangleAlert className="h-3.5 w-3.5" />
+                      Werkt alleen bij een PDF met echte, selecteerbare tekst —
+                      niet bij een scan of foto.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div>
