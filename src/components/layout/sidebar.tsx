@@ -12,6 +12,7 @@ import {
   Warehouse,
   Building2,
   Users,
+  UtensilsCrossed,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const nav = [
   { href: "/leveranciers", label: "Leveranciers", icon: Truck },
   { href: "/halfproducten", label: "Halfproducten", icon: SoupIcon },
   { href: "/recepturen", label: "Recepten (Gerechten)", icon: BookOpen },
+  { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed },
   { href: "/verkoopproducten", label: "Verkoopproducten", icon: ShoppingBag },
   { href: "/voorraad", label: "Producties", icon: Warehouse },
   { href: "/bedrijven", label: "Bedrijven", icon: Building2 },

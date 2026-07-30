@@ -331,6 +331,64 @@ export type RolePermission = {
   can_view_financial: boolean;
 }
 
+export type MenuCardStatus =
+  | "concept"
+  | "in_voorbereiding"
+  | "actief"
+  | "gepland"
+  | "verlopen"
+  | "gearchiveerd";
+
+export type MenuCard = {
+  id: string;
+  group_id: string;
+  company_id: string | null;
+  name: string;
+  menu_type: string | null;
+  description: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: MenuCardStatus;
+  version: number;
+  language: string;
+  duplicated_from_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MenuFolder = {
+  id: string;
+  menu_card_id: string;
+  parent_folder_id: string | null;
+  name: string;
+  sort_order: number;
+  is_hidden: boolean;
+}
+
+export type MenuItem = {
+  id: string;
+  folder_id: string;
+  recipe_id: string;
+  display_name: string | null;
+  short_description: string | null;
+  price: number | null;
+  sort_order: number;
+  is_visible: boolean;
+  available_from: string | null;
+  available_to: string | null;
+  is_new: boolean;
+  is_popular: boolean;
+  is_chefs_special: boolean;
+  is_vegetarian: boolean;
+  is_vegan: boolean;
+  is_gluten_free: boolean;
+  supplement_price: number | null;
+  paired_drink: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type PriceSourceType = "manual_upload" | "api_sync";
 export type PriceImportStatus =
   | "wordt_verwerkt"
@@ -569,6 +627,24 @@ export type Database = {
         Update: Partial<SupplierImportTemplate>;
         Relationships: [];
       };
+      menu_cards: {
+        Row: MenuCard;
+        Insert: Partial<MenuCard>;
+        Update: Partial<MenuCard>;
+        Relationships: [];
+      };
+      menu_folders: {
+        Row: MenuFolder;
+        Insert: Partial<MenuFolder>;
+        Update: Partial<MenuFolder>;
+        Relationships: [];
+      };
+      menu_items: {
+        Row: MenuItem;
+        Insert: Partial<MenuItem>;
+        Update: Partial<MenuItem>;
+        Relationships: [];
+      };
     };
     Views: {
       current_product_cost: {
@@ -592,6 +668,15 @@ export type Database = {
       rollback_price_import_batch: {
         Args: { p_batch_id: string };
         Returns: void;
+      };
+      duplicate_menu_card: {
+        Args: {
+          p_menu_card_id: string;
+          p_new_name: string;
+          p_new_company_id?: string;
+          p_new_start_date?: string;
+        };
+        Returns: string;
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
