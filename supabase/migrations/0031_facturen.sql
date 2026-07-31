@@ -107,3 +107,71 @@ create policy "facturen_insert_eigen_groep"
     bucket_id = 'facturen'
     and (storage.foldername(name))[1] = public.current_user_group_id()::text
   );
+
+-- ---------------------------------------------------------------------
+-- Postvak-in voor inkomende e-mailfacturen (spec §1). Eén of meerdere
+-- mailboxen per groep, elk met een geheim webhook-token — dat token
+-- (niet een gewoon wachtwoord) is de enige beveiliging van het
+-- webhook-endpoint, dus geheimhouden zoals een API-sleutel.
+-- ---------------------------------------------------------------------
+create table public.invoice_mailboxes (
+  id            uuid primary key default gen_random_uuid(),
+  group_id      uuid not null references public.groups(id) on delete cascade,
+  company_id    uuid references public.companies(id) on delete cascade, -- null = groepsbreed
+  label         text not null,
+  webhook_token text not null unique default encode(gen_random_bytes(24), 'hex'),
+  is_active     boolean not null default true,
+  created_at    timestamptz not null default now()
+);
+
+alter table public.invoice_mailboxes enable row level security;
+
+create policy invoice_mailboxes_select on public.invoice_mailboxes
+  for select using (
+    (company_id is null and group_id = public.current_user_group_id())
+    or public.has_company_access(company_id)
+  );
+
+create policy invoice_mailboxes_write on public.invoice_mailboxes
+  for all using (public.is_group_admin())
+  with check (public.is_group_admin());
+
+-- E-mailbijlagen waarvan de leverancier niet met zekerheid herkend kon
+-- worden, komen hier terecht i.p.v. direct een prijsimport-batch aan te
+-- maken (die vereist een bekende supplier_id) — een gebruiker rondt de
+-- verwerking af via dezelfde "leverancier bevestigen"-stap als bij
+-- handmatig uploaden.
+create table public.inbound_invoice_queue (
+  id                uuid primary key default gen_random_uuid(),
+  group_id          uuid not null references public.groups(id) on delete cascade,
+  mailbox_id        uuid references public.invoice_mailboxes(id) on delete set null,
+  company_id        uuid references public.companies(id) on delete set null,
+  sender_email      text,
+  original_filename text not null,
+  storage_path      text not null,
+  file_kind         text not null, -- 'ubl' | 'pdf' | 'onbekend'
+  parsed_header     jsonb,
+  parsed_lines      jsonb,
+  supplier_candidates jsonb not null default '[]'::jsonb,
+  status            text not null default 'wacht_op_leverancier', -- wacht_op_leverancier | verwerkt | afgewezen
+  resulting_batch_id uuid references public.price_import_batches(id) on delete set null,
+  received_at       timestamptz not null default now()
+);
+
+alter table public.inbound_invoice_queue enable row level security;
+
+create policy inbound_invoice_queue_select on public.inbound_invoice_queue
+  for select using (
+    (company_id is null and group_id = public.current_user_group_id())
+    or public.has_company_access(company_id)
+  );
+
+create policy inbound_invoice_queue_write on public.inbound_invoice_queue
+  for all using (
+    (company_id is null and group_id = public.current_user_group_id())
+    or public.has_company_access(company_id)
+  )
+  with check (
+    (company_id is null and group_id = public.current_user_group_id())
+    or public.has_company_access(company_id)
+  );

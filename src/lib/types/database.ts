@@ -393,6 +393,36 @@ export type MenuItem = {
   updated_at: string;
 }
 
+export type InvoiceMailbox = {
+  id: string;
+  group_id: string;
+  company_id: string | null;
+  label: string;
+  webhook_token: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type InboundInvoiceQueueItem = {
+  id: string;
+  group_id: string;
+  mailbox_id: string | null;
+  company_id: string | null;
+  sender_email: string | null;
+  original_filename: string;
+  storage_path: string;
+  file_kind: "ubl" | "pdf" | "onbekend";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parsed_header: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parsed_lines: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supplier_candidates: any;
+  status: "wacht_op_leverancier" | "verwerkt" | "afgewezen";
+  resulting_batch_id: string | null;
+  received_at: string;
+}
+
 export type PriceSourceType = "manual_upload" | "api_sync";
 export type PriceImportStatus =
   | "wordt_verwerkt"
@@ -657,6 +687,18 @@ export type Database = {
         Row: MenuItem;
         Insert: Partial<MenuItem>;
         Update: Partial<MenuItem>;
+        Relationships: [];
+      };
+      invoice_mailboxes: {
+        Row: InvoiceMailbox;
+        Insert: Partial<InvoiceMailbox>;
+        Update: Partial<InvoiceMailbox>;
+        Relationships: [];
+      };
+      inbound_invoice_queue: {
+        Row: InboundInvoiceQueueItem;
+        Insert: Partial<InboundInvoiceQueueItem>;
+        Update: Partial<InboundInvoiceQueueItem>;
         Relationships: [];
       };
     };
