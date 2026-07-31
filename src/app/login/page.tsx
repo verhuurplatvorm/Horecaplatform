@@ -1,10 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const callbackError = searchParams.get("error");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
     "idle"
@@ -33,6 +44,12 @@ export default function LoginPage() {
         <p className="mt-2 text-sm text-white/60">
           Log in met je werk-e-mailadres. Je ontvangt een inloglink.
         </p>
+
+        {callbackError && (
+          <p className="mt-4 rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            Inloggen mislukt: {callbackError}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-3">
           <input
