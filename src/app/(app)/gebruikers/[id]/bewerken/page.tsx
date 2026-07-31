@@ -37,6 +37,9 @@ export default function BewerkGebruikerPage({
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordResetDone, setPasswordResetDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [newCompanyId, setNewCompanyId] = useState("");
@@ -123,6 +126,29 @@ export default function BewerkGebruikerPage({
       return;
     }
     router.push("/gebruikers");
+  }
+
+  async function handleResetPassword() {
+    if (newPassword.length < 8) {
+      setError("Wachtwoord moet minimaal 8 tekens zijn.");
+      return;
+    }
+    setResettingPassword(true);
+    setError(null);
+    setPasswordResetDone(false);
+    const res = await fetch(`/api/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    const body = await res.json();
+    setResettingPassword(false);
+    if (!res.ok) {
+      setError(body.error ?? "Wachtwoord resetten mislukt.");
+      return;
+    }
+    setPasswordResetDone(true);
+    setNewPassword("");
   }
 
   async function handleAddAccess() {
@@ -239,6 +265,44 @@ export default function BewerkGebruikerPage({
             </Button>
           </div>
         </form>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Wachtwoord resetten</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted">
+              Stel direct een nieuw wachtwoord in — handig als iemand het is vergeten of nog geen
+              account kon activeren. Deel dit wachtwoord zelf met de gebruiker.
+            </p>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    setPasswordResetDone(false);
+                  }}
+                  placeholder="Nieuw wachtwoord (min. 8 tekens)"
+                  className="input"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleResetPassword}
+                disabled={resettingPassword || newPassword.length < 8}
+              >
+                {resettingPassword ? "Bezig…" : "Resetten"}
+              </Button>
+            </div>
+            {passwordResetDone && (
+              <p className="text-sm text-success">Wachtwoord is bijgewerkt.</p>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

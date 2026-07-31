@@ -152,6 +152,8 @@ function InviteForm({
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [isGroupAdmin, setIsGroupAdmin] = useState(false);
+  const [setPasswordDirectly, setSetPasswordDirectly] = useState(true);
+  const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setErrorMsg] = useState<string | null>(null);
 
@@ -163,7 +165,12 @@ function InviteForm({
     const res = await fetch("/api/users/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullName, email, isGroupAdmin }),
+      body: JSON.stringify({
+        fullName,
+        email,
+        isGroupAdmin,
+        password: setPasswordDirectly ? password : undefined,
+      }),
     });
     const body = await res.json();
     setSaving(false);
@@ -207,8 +214,52 @@ function InviteForm({
       <p className="text-xs text-muted">
         {isGroupAdmin
           ? "Deze gebruiker krijgt direct toegang tot alle bedrijven."
-          : "Toegang tot specifieke bedrijven en rollen wijs je na het accepteren van de uitnodiging toe (via user_company_access)."}
+          : "Toegang tot specifieke bedrijven en rollen wijs je na het aanmaken toe (via de bewerkpagina van deze gebruiker)."}
       </p>
+
+      <div className="flex gap-1 rounded-md border border-border bg-surface p-1">
+        <button
+          type="button"
+          onClick={() => setSetPasswordDirectly(true)}
+          className={`flex-1 rounded px-3 py-1.5 text-sm font-medium ${
+            setPasswordDirectly ? "bg-teal text-white" : "text-muted"
+          }`}
+        >
+          Wachtwoord instellen
+        </button>
+        <button
+          type="button"
+          onClick={() => setSetPasswordDirectly(false)}
+          className={`flex-1 rounded px-3 py-1.5 text-sm font-medium ${
+            !setPasswordDirectly ? "bg-teal text-white" : "text-muted"
+          }`}
+        >
+          Uitnodigingsmail sturen
+        </button>
+      </div>
+
+      {setPasswordDirectly ? (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-foreground">Wachtwoord</label>
+          <input
+            required
+            type="text"
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Minimaal 8 tekens"
+            className="input"
+          />
+          <p className="mt-1 text-xs text-muted">
+            Deel dit wachtwoord zelf met de gebruiker (bv. mondeling of via jullie eigen chat) —
+            er wordt geen e-mail verstuurd. De gebruiker kan het later zelf wijzigen.
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-muted">
+          De gebruiker krijgt een e-mail met een link om zelf in te loggen.
+        </p>
+      )}
 
       {error && <p className="text-sm text-danger">{error}</p>}
 

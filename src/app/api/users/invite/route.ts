@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { fullName, email, isGroupAdmin } = body ?? {};
+  const { fullName, email, isGroupAdmin, password } = body ?? {};
 
   if (
     typeof fullName !== "string" ||
@@ -36,6 +36,13 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json(
       { error: "Naam en e-mailadres zijn verplicht." },
+      { status: 400 }
+    );
+  }
+
+  if (password !== undefined && (typeof password !== "string" || password.length < 8)) {
+    return NextResponse.json(
+      { error: "Wachtwoord moet minimaal 8 tekens zijn." },
       { status: 400 }
     );
   }
@@ -50,12 +57,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
-    email.trim(),
-    {
-      redirectTo: `${new URL(request.url).origin}/auth/callback`,
-    }
-  );
+  const { data: invited, error: inviteError } = password
+    ? await admin.auth.admin.createUser({
+        email: email.trim(),
+        password,
+        email_confirm: true, // meteen bruikbaar, geen bevestigingsmail nodig
+      })
+    : await admin.auth.admin.inviteUserByEmail(email.trim(), {
+        redirectTo: `${new URL(request.url).origin}/auth/callback`,
+      });
 
   if (inviteError || !invited.user) {
     return NextResponse.json(
