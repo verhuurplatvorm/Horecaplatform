@@ -36,6 +36,7 @@ export default function BewerkGebruikerPage({
   const [isGroupAdmin, setIsGroupAdmin] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [newCompanyId, setNewCompanyId] = useState("");
@@ -98,6 +99,27 @@ export default function BewerkGebruikerPage({
     setSaving(false);
     if (updateError) {
       setError("Opslaan mislukt: " + updateError.message);
+      return;
+    }
+    router.push("/gebruikers");
+  }
+
+  async function handleDeleteUser() {
+    if (!profile) return;
+    if (
+      !window.confirm(
+        `"${profile.full_name}" definitief verwijderen? Dit verwijdert het account en alle toegang. Dit kan niet ongedaan worden gemaakt.`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+    const body = await res.json();
+    setDeleting(false);
+    if (!res.ok) {
+      setError(body.error ?? "Verwijderen mislukt.");
       return;
     }
     router.push("/gebruikers");
@@ -205,6 +227,15 @@ export default function BewerkGebruikerPage({
             </Button>
             <Button type="button" variant="secondary" onClick={() => router.push("/gebruikers")}>
               Annuleren
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={deleting}
+              onClick={handleDeleteUser}
+              className="ml-auto"
+            >
+              {deleting ? "Verwijderen…" : "Gebruiker verwijderen"}
             </Button>
           </div>
         </form>
