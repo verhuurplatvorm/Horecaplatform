@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, TrendingUp, Upload } from "lucide-react";
+import { Plus, TrendingUp, Upload, FileText } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +28,12 @@ export default async function LeveranciersPage() {
             <Button variant="secondary">
               <TrendingUp className="h-4 w-4" />
               Prijswijzigingen
+            </Button>
+          </Link>
+          <Link href="/leveranciers/facturen">
+            <Button variant="secondary">
+              <FileText className="h-4 w-4" />
+              Facturen
             </Button>
           </Link>
           <Link href="/leveranciers/prijzen/importeren">

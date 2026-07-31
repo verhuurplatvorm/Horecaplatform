@@ -329,8 +329,36 @@ export default function ImportReviewPage({
 
   return (
     <>
-      <Topbar title="Prijslijst controleren" />
+      <Topbar title={batch.source_kind === "factuur" ? "Factuur controleren" : "Prijslijst controleren"} />
       <main className="p-6 space-y-4">
+        {batch.source_kind === "factuur" && (
+          <Card>
+            <CardContent className="grid grid-cols-2 gap-2 py-4 text-sm sm:grid-cols-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Factuurnummer</p>
+                <p className="font-medium">{batch.invoice_number ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Factuurdatum</p>
+                <p className="font-medium">
+                  {batch.invoice_date ? new Date(batch.invoice_date).toLocaleDateString("nl-NL") : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Vervaldatum</p>
+                <p className="font-medium">
+                  {batch.due_date ? new Date(batch.due_date).toLocaleDateString("nl-NL") : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Totaal incl. btw</p>
+                <p className="font-medium">
+                  {batch.total_incl_vat !== null ? `€ ${batch.total_incl_vat.toFixed(2)}` : "—"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>

@@ -18,9 +18,21 @@ export async function createImportBatch(
     originalFilename: string;
     importedBy: string;
     parsedRows: ParsedPriceRow[];
+    invoice?: {
+      invoiceNumber: string | null;
+      invoiceDate: string | null;
+      dueDate: string | null;
+      supplierVatNumber: string | null;
+      supplierKvkNumber: string | null;
+      supplierIban: string | null;
+      ibanMismatch: boolean;
+      totalInclVat: number | null;
+      originalFilePath: string | null;
+    };
   }
 ): Promise<{ batchId: string } | { error: string }> {
-  const { groupId, supplierId, companyId, originalFilename, importedBy, parsedRows } = params;
+  const { groupId, supplierId, companyId, originalFilename, importedBy, parsedRows, invoice } =
+    params;
 
   let { data: source } = await supabase
     .from("supplier_price_sources")
@@ -57,6 +69,16 @@ export async function createImportBatch(
       matched_rows: matchedCount,
       unmatched_rows: matched.length - matchedCount,
       imported_by: importedBy,
+      source_kind: invoice ? "factuur" : "prijslijst",
+      invoice_number: invoice?.invoiceNumber ?? null,
+      invoice_date: invoice?.invoiceDate ?? null,
+      due_date: invoice?.dueDate ?? null,
+      supplier_vat_number_on_invoice: invoice?.supplierVatNumber ?? null,
+      supplier_kvk_number_on_invoice: invoice?.supplierKvkNumber ?? null,
+      supplier_iban_on_invoice: invoice?.supplierIban ?? null,
+      iban_mismatch: invoice?.ibanMismatch ?? false,
+      total_incl_vat: invoice?.totalInclVat ?? null,
+      original_file_path: invoice?.originalFilePath ?? null,
     })
     .select("id")
     .single();

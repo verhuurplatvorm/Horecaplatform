@@ -127,6 +127,10 @@ export type Supplier = {
   delivery_days: string[] | null;
   minimum_order_amount: number | null;
   reliability_score: number | null;
+  vat_number: string | null;
+  kvk_number: string | null;
+  iban: string | null;
+  iban_verified_at: string | null;
   is_active: boolean;
 }
 
@@ -429,6 +433,16 @@ export type PriceImportBatch = {
   imported_by: string | null;
   created_at: string;
   completed_at: string | null;
+  source_kind: "prijslijst" | "factuur";
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  supplier_vat_number_on_invoice: string | null;
+  supplier_kvk_number_on_invoice: string | null;
+  supplier_iban_on_invoice: string | null;
+  iban_mismatch: boolean;
+  total_incl_vat: number | null;
+  original_file_path: string | null;
 };
 
 export type PriceImportRow = {
@@ -677,6 +691,21 @@ export type Database = {
           p_new_start_date?: string;
         };
         Returns: string;
+      };
+      match_supplier_from_invoice: {
+        Args: {
+          p_group_id: string;
+          p_vat_number: string | null;
+          p_kvk_number: string | null;
+          p_iban: string | null;
+          p_name: string | null;
+        };
+        Returns: {
+          supplier_id: string;
+          supplier_name: string;
+          match_method: string;
+          iban_mismatch: boolean;
+        }[];
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
