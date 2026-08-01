@@ -47,7 +47,9 @@ export default function NieuweStickerPage({
   const [recentMovements, setRecentMovements] = useState<StockMovement[]>([]);
   const [movement, setMovement] = useState<StockMovement | null>(null);
   const [existingLabelCount, setExistingLabelCount] = useState<number>(0);
-  const [quickQuantity, setQuickQuantity] = useState("");
+  const [quickQuantity, setQuickQuantity] = useState(
+    () => searchParams.get("quantity") ?? ""
+  );
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
 

@@ -4,30 +4,33 @@
 -- impact-preview) in plaats van een evenwijdig systeem te bouwen — een
 -- factuur is voor de kostprijsberekening in essentie een prijslijst met
 -- een paar extra factuurvelden.
+--
+-- Deze migratie is idempotent (veilig opnieuw te draaien) — elke stap
+-- controleert eerst of hij al is uitgevoerd.
 
 alter table public.suppliers
-  add column vat_number text,
-  add column kvk_number text,
-  add column iban text,
-  add column iban_verified_at timestamptz;
+  add column if not exists vat_number text,
+  add column if not exists kvk_number text,
+  add column if not exists iban text,
+  add column if not exists iban_verified_at timestamptz;
 
 comment on column public.suppliers.iban is
   'Laatst bekende/geverifieerde IBAN van deze leverancier — gebruikt om te waarschuwen wanneer een nieuwe factuur een ANDER rekeningnummer vermeldt (spec §20: bekend fraudepatroon, nooit automatisch accepteren).';
 
-create index idx_suppliers_vat_number on public.suppliers(vat_number) where vat_number is not null;
-create index idx_suppliers_kvk_number on public.suppliers(kvk_number) where kvk_number is not null;
+create index if not exists idx_suppliers_vat_number on public.suppliers(vat_number) where vat_number is not null;
+create index if not exists idx_suppliers_kvk_number on public.suppliers(kvk_number) where kvk_number is not null;
 
 alter table public.price_import_batches
-  add column source_kind text not null default 'prijslijst',
-  add column invoice_number text,
-  add column invoice_date date,
-  add column due_date date,
-  add column supplier_vat_number_on_invoice text,
-  add column supplier_kvk_number_on_invoice text,
-  add column supplier_iban_on_invoice text,
-  add column iban_mismatch boolean not null default false,
-  add column total_incl_vat numeric(12,2),
-  add column original_file_path text;
+  add column if not exists source_kind text not null default 'prijslijst',
+  add column if not exists invoice_number text,
+  add column if not exists invoice_date date,
+  add column if not exists due_date date,
+  add column if not exists supplier_vat_number_on_invoice text,
+  add column if not exists supplier_kvk_number_on_invoice text,
+  add column if not exists supplier_iban_on_invoice text,
+  add column if not exists iban_mismatch boolean not null default false,
+  add column if not exists total_incl_vat numeric(12,2),
+  add column if not exists original_file_path text;
 
 comment on column public.price_import_batches.iban_mismatch is
   'True wanneer het IBAN op deze factuur afwijkt van het laatst bekende IBAN van de leverancier. Moet expliciet bevestigd worden vóór verwerking.';
@@ -94,6 +97,7 @@ insert into storage.buckets (id, name, public)
 values ('facturen', 'facturen', false)
 on conflict (id) do nothing;
 
+drop policy if exists "facturen_select_eigen_groep" on storage.objects;
 create policy "facturen_select_eigen_groep"
   on storage.objects for select
   using (
@@ -101,6 +105,7 @@ create policy "facturen_select_eigen_groep"
     and (storage.foldername(name))[1] = public.current_user_group_id()::text
   );
 
+drop policy if exists "facturen_insert_eigen_groep" on storage.objects;
 create policy "facturen_insert_eigen_groep"
   on storage.objects for insert
   with check (
@@ -114,7 +119,7 @@ create policy "facturen_insert_eigen_groep"
 -- (niet een gewoon wachtwoord) is de enige beveiliging van het
 -- webhook-endpoint, dus geheimhouden zoals een API-sleutel.
 -- ---------------------------------------------------------------------
-create table public.invoice_mailboxes (
+create table if not exists public.invoice_mailboxes (
   id            uuid primary key default gen_random_uuid(),
   group_id      uuid not null references public.groups(id) on delete cascade,
   company_id    uuid references public.companies(id) on delete cascade, -- null = groepsbreed
@@ -126,12 +131,14 @@ create table public.invoice_mailboxes (
 
 alter table public.invoice_mailboxes enable row level security;
 
+drop policy if exists invoice_mailboxes_select on public.invoice_mailboxes;
 create policy invoice_mailboxes_select on public.invoice_mailboxes
   for select using (
     (company_id is null and group_id = public.current_user_group_id())
     or public.has_company_access(company_id)
   );
 
+drop policy if exists invoice_mailboxes_write on public.invoice_mailboxes;
 create policy invoice_mailboxes_write on public.invoice_mailboxes
   for all using (public.is_group_admin())
   with check (public.is_group_admin());
@@ -141,7 +148,7 @@ create policy invoice_mailboxes_write on public.invoice_mailboxes
 -- maken (die vereist een bekende supplier_id) — een gebruiker rondt de
 -- verwerking af via dezelfde "leverancier bevestigen"-stap als bij
 -- handmatig uploaden.
-create table public.inbound_invoice_queue (
+create table if not exists public.inbound_invoice_queue (
   id                uuid primary key default gen_random_uuid(),
   group_id          uuid not null references public.groups(id) on delete cascade,
   mailbox_id        uuid references public.invoice_mailboxes(id) on delete set null,
@@ -160,12 +167,14 @@ create table public.inbound_invoice_queue (
 
 alter table public.inbound_invoice_queue enable row level security;
 
+drop policy if exists inbound_invoice_queue_select on public.inbound_invoice_queue;
 create policy inbound_invoice_queue_select on public.inbound_invoice_queue
   for select using (
     (company_id is null and group_id = public.current_user_group_id())
     or public.has_company_access(company_id)
   );
 
+drop policy if exists inbound_invoice_queue_write on public.inbound_invoice_queue;
 create policy inbound_invoice_queue_write on public.inbound_invoice_queue
   for all using (
     (company_id is null and group_id = public.current_user_group_id())

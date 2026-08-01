@@ -608,8 +608,7 @@ export function RecipeForm({
     router.push("/recepturen");
   }
 
-  return (
-    <form onSubmit={(e) => handleSubmit(e)} className="space-y-4">
+  const basisgegevensCard = (
       <Card>
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>
@@ -777,7 +776,9 @@ export function RecipeForm({
           </Field>
         </CardContent>
       </Card>
+  );
 
+  const ingredientenCard = (
       <Card>
         <CardHeader>
           <CardTitle>
@@ -818,7 +819,9 @@ export function RecipeForm({
           </Button>
         </CardContent>
       </Card>
+  );
 
+  const kostprijsCard = (
       <Card>
         <CardContent className="space-y-3 py-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -868,7 +871,9 @@ export function RecipeForm({
           )}
         </CardContent>
       </Card>
+  );
 
+  const allergenenCard = (
       <Card>
         <CardHeader>
           <CardTitle>Allergenen &amp; voedingswaarden (automatisch)</CardTitle>
@@ -936,59 +941,99 @@ export function RecipeForm({
           )}
         </CardContent>
       </Card>
+  );
 
-      {isEdit && recipeKind === "halfproduct" && initialRecipe && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Gebruikt in</CardTitle>
-            <div className="flex gap-2">
-              <Link href={`/halfproducten/${initialRecipe.id}/producties`}>
-                <Button type="button" variant="secondary" size="sm">
-                  Producties
-                </Button>
-              </Link>
-              <Link href={`/halfproducten/${initialRecipe.id}/sticker/nieuw`}>
-                <Button type="button" variant="secondary" size="sm">
-                  Sticker afdrukken
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <UsageList recipeId={initialRecipe.id} companyId={referenceCompanyId} />
-          </CardContent>
-        </Card>
-      )}
+  const gebruiktInCard =
+    isEdit && recipeKind === "halfproduct" && initialRecipe ? (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Gebruikt in</CardTitle>
+          <div className="flex gap-2">
+            <Link href={`/halfproducten/${initialRecipe.id}/producties`}>
+              <Button type="button" variant="secondary" size="sm">
+                Producties
+              </Button>
+            </Link>
+            <Link href={`/halfproducten/${initialRecipe.id}/sticker/nieuw`}>
+              <Button type="button" variant="secondary" size="sm">
+                Sticker afdrukken
+              </Button>
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <UsageList recipeId={initialRecipe.id} companyId={referenceCompanyId} />
+        </CardContent>
+      </Card>
+    ) : null;
 
+  const errorBlock = (
+    <>
       {error && <p className="text-sm text-danger">{error}</p>}
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
+    </>
+  );
 
-      <div className="flex gap-2">
-        <Button type="submit" disabled={saving} onClick={(e) => handleSubmit(e, "concept")}>
-          {saving ? "Opslaan…" : "Opslaan als concept"}
-        </Button>
+  const buttonsBlock = (
+    <div className="flex gap-2">
+      <Button type="submit" disabled={saving} onClick={(e) => handleSubmit(e, "concept")}>
+        {saving ? "Opslaan…" : "Opslaan als concept"}
+      </Button>
+      <Button type="button" disabled={saving} onClick={(e) => handleSubmit(e, "goedgekeurd")}>
+        Opslaan & publiceren
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => router.push(recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen")}
+      >
+        Annuleren
+      </Button>
+      {isEdit && (
         <Button
           type="button"
-          disabled={saving}
-          onClick={(e) => handleSubmit(e, "goedgekeurd")}
+          variant="danger"
+          disabled={deleting}
+          onClick={handleDelete}
+          className="ml-auto"
         >
-          Opslaan & publiceren
+          {deleting ? "Verwijderen…" : "Verwijderen"}
         </Button>
-        <Button type="button" variant="secondary" onClick={() => router.push("/recepturen")}>
-          Annuleren
-        </Button>
-        {isEdit && (
-          <Button
-            type="button"
-            variant="danger"
-            disabled={deleting}
-            onClick={handleDelete}
-            className="ml-auto"
-          >
-            {deleting ? "Verwijderen…" : "Verwijderen"}
-          </Button>
-        )}
-      </div>
+      )}
+    </div>
+  );
+
+  return (
+    <form onSubmit={(e) => handleSubmit(e)} className="space-y-4">
+      {recipeKind === "halfproduct" ? (
+        <>
+          {/* Het volledige recept (ingrediënten + kostprijs) linksboven,
+              zodat het meteen zichtbaar is — de rest ernaast. */}
+          <div className="grid gap-4 lg:grid-cols-[3fr_2fr] lg:items-start">
+            <div className="space-y-4">
+              {ingredientenCard}
+              {kostprijsCard}
+            </div>
+            <div className="space-y-4">
+              {basisgegevensCard}
+              {allergenenCard}
+              {gebruiktInCard}
+            </div>
+          </div>
+          {errorBlock}
+          {buttonsBlock}
+        </>
+      ) : (
+        <>
+          {basisgegevensCard}
+          {ingredientenCard}
+          {kostprijsCard}
+          {allergenenCard}
+          {gebruiktInCard}
+          {errorBlock}
+          {buttonsBlock}
+        </>
+      )}
 
       <style jsx>{`
         .input {
