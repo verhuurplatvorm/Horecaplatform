@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createImportBatch } from "@/lib/price-import/create-batch";
 import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
 import { extractInvoiceWithClaude } from "@/lib/invoice-import/claude-ocr";
+import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
 interface IncomingAttachment {
   filename: string;
@@ -44,16 +45,6 @@ async function extractAttachments(request: Request): Promise<{
   }
   return { sender, attachments };
 }
-
-const UNIT_CODE_TO_BASE: Record<string, { factor: number }> = {
-  KGM: { factor: 1000 },
-  GRM: { factor: 1 },
-  LTR: { factor: 1000 },
-  MLT: { factor: 1 },
-  C62: { factor: 1 },
-  EA: { factor: 1 },
-  H87: { factor: 1 },
-};
 
 export async function POST(
   request: Request,
@@ -170,20 +161,7 @@ export async function POST(
       continue;
     }
 
-    const parsedRows = parsed.lines.map((line) => {
-      const unitInfo = line.unit ? UNIT_CODE_TO_BASE[line.unit.toUpperCase()] : null;
-      return {
-        rowNumber: line.lineNumber,
-        raw: line as unknown as Record<string, unknown>,
-        eanCode: line.eanCode,
-        articleNumber: line.articleNumber,
-        description: line.description,
-        brand: null,
-        packagingDescription: line.unit ? `1 ${line.unit}` : null,
-        packagingUnitCount: unitInfo ? unitInfo.factor : null,
-        purchasePrice: line.unitPrice,
-      };
-    });
+    const parsedRows = linesToRows(parsed.lines);
 
     const result = await createImportBatch(admin, {
       groupId: mailbox.group_id,

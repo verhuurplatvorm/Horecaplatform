@@ -21,6 +21,7 @@ const EXTRACTION_PROMPT = `Je krijgt een foto of PDF van een inkoopfactuur van e
       "eanCode": string of null,
       "articleNumber": string of null,
       "description": string of null,
+      "packagingDescription": string of null,
       "quantity": number of null,
       "unit": string of null,
       "unitPrice": number of null,
@@ -31,6 +32,7 @@ const EXTRACTION_PROMPT = `Je krijgt een foto of PDF van een inkoopfactuur van e
 
 Belangrijk:
 - Als een veld niet leesbaar of niet aanwezig is, gebruik null — verzin nooit een waarde.
+- "packagingDescription" is de verpakkingstekst PRECIES zoals op de factuur staat, bijvoorbeeld "doos à 12", "6 x 1L", "krat 24x330ml", "zak 5kg" — laat dit veld null als er geen aparte verpakkingsvermelding is.
 - "unitPrice" is de prijs per de vermelde eenheid (bv. per kg, per stuk, per doos), niet per totale regel.
 - Gebruik een punt als decimaalteken in getallen, ongeacht hoe het op de factuur staat.
 - Geef uitsluitend het JSON-object terug, niets ervoor of erna.`;

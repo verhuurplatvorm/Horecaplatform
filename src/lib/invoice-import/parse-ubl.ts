@@ -18,6 +18,10 @@ export interface ParsedInvoiceLine {
   eanCode: string | null;
   articleNumber: string | null;
   description: string | null;
+  /** Verpakkingstekst zoals op de factuur staat (bv. "doos à 12", "6 x 1L"),
+   * indien beschikbaar — gebruikt de bestaande, robuuste
+   * verpakkingsherkenning i.p.v. los quantity/unit te gokken. */
+  packagingDescription?: string | null;
   quantity: number | null;
   unit: string | null;
   unitPrice: number | null;

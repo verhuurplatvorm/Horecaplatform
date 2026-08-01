@@ -3,34 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createImportBatch } from "@/lib/price-import/create-batch";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import type { ParsedInvoiceHeader, ParsedInvoiceLine } from "@/lib/invoice-import/parse-ubl";
-import type { ParsedPriceRow } from "@/lib/price-import/columns";
-
-const UNIT_CODE_TO_BASE: Record<string, { factor: number }> = {
-  KGM: { factor: 1000 },
-  GRM: { factor: 1 },
-  LTR: { factor: 1000 },
-  MLT: { factor: 1 },
-  C62: { factor: 1 },
-  EA: { factor: 1 },
-  H87: { factor: 1 },
-};
-
-function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
-  return lines.map((line) => {
-    const unitInfo = line.unit ? UNIT_CODE_TO_BASE[line.unit.toUpperCase()] : null;
-    return {
-      rowNumber: line.lineNumber,
-      raw: line as unknown as Record<string, unknown>,
-      eanCode: line.eanCode,
-      articleNumber: line.articleNumber,
-      description: line.description,
-      brand: null,
-      packagingDescription: line.unit ? `1 ${line.unit}` : null,
-      packagingUnitCount: unitInfo ? unitInfo.factor : null,
-      purchasePrice: line.unitPrice,
-    };
-  });
-}
+import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
 export async function POST(request: Request) {
   const supabase = await createClient();

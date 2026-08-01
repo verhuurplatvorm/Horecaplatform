@@ -1,46 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createImportBatch } from "@/lib/price-import/create-batch";
-import { parseUblInvoice, looksLikeUbl, type ParsedInvoice, type ParsedInvoiceLine } from "@/lib/invoice-import/parse-ubl";
+import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
 import { extractInvoiceWithClaude, isClaudeOcrSupported } from "@/lib/invoice-import/claude-ocr";
-import type { ParsedPriceRow } from "@/lib/price-import/columns";
-
-const UNIT_CODE_TO_BASE: Record<string, { factor: number }> = {
-  KGM: { factor: 1000 },
-  GRM: { factor: 1 },
-  LTR: { factor: 1000 },
-  MLT: { factor: 1 },
-  C62: { factor: 1 },
-  EA: { factor: 1 },
-  H87: { factor: 1 },
-  // Vrije-tekst eenheden die Claude teruggeeft (i.p.v. UN/CEFACT-codes).
-  KG: { factor: 1000 },
-  G: { factor: 1 },
-  GRAM: { factor: 1 },
-  L: { factor: 1000 },
-  LITER: { factor: 1000 },
-  ML: { factor: 1 },
-  STUK: { factor: 1 },
-  STUKS: { factor: 1 },
-  ST: { factor: 1 },
-};
-
-function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
-  return lines.map((line) => {
-    const unitInfo = line.unit ? UNIT_CODE_TO_BASE[line.unit.toUpperCase()] : null;
-    return {
-      rowNumber: line.lineNumber,
-      raw: line as unknown as Record<string, unknown>,
-      eanCode: line.eanCode,
-      articleNumber: line.articleNumber,
-      description: line.description,
-      brand: null,
-      packagingDescription: line.unit ? `1 ${line.unit}` : null,
-      packagingUnitCount: unitInfo ? unitInfo.factor : null,
-      purchasePrice: line.unitPrice,
-    };
-  });
-}
+import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
