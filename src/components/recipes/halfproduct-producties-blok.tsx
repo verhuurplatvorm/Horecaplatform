@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
-import type { ProductionLabel, StockMovement } from "@/lib/types/database";
+import type { ProductionLabel, StockMovement, UserProfile } from "@/lib/types/database";
 
 interface ProductionRow {
   movement: StockMovement;
@@ -24,13 +24,14 @@ interface BreakdownLine {
 }
 
 /**
- * Het volledige "Productie"-onderdeel van de halfproduct-pagina:
- * schaalbaar receptoverzicht bovenaan, productiegeschiedenis in het
- * midden, en de invoer om een nieuwe productie te starten onderaan. Eén
- * component omdat het receptoverzicht en de invoer dezelfde
- * (schaal)hoeveelheid delen.
+ * Het volledige "Productie"-onderdeel van de halfproduct-pagina.
+ * Bovenaan de pagina: een module "Ingrediënten" met de te produceren
+ * hoeveelheid, de verplichte producentkeuze en het schaalbare
+ * receptoverzicht — vanhieruit wordt ook direct geregistreerd en de
+ * sticker afgedrukt. "Producties" (de geschiedenis) is puur naslagwerk
+ * en staat daarom onderaan de pagina.
  */
-export function HalfproductProductieSectie({
+export function HalfproductIngredientenModule({
   recipeId,
   standardYield,
   unitName,
@@ -43,14 +44,22 @@ export function HalfproductProductieSectie({
   const referenceCompanyId = activeCompanyIds[0] ?? null;
 
   const [quantity, setQuantity] = useState(standardYield?.toString() ?? "");
-  const [producedBy, setProducedBy] = useState("");
+  const [producedByUserId, setProducedByUserId] = useState("");
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [breakdown, setBreakdown] = useState<BreakdownLine[]>([]);
-  const [productionRows, setProductionRows] = useState<ProductionRow[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(() => Boolean(referenceCompanyId));
 
   const scale = standardYield && Number(quantity) > 0 ? Number(quantity) / standardYield : 1;
 
-  // Kostprijs per ingrediëntregel (ongeschaald — de weergave schaalt zelf).
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("is_active", true)
+      .order("full_name")
+      .then(({ data }) => setUsers((data as UserProfile[]) ?? []));
+  }, []);
+
   useEffect(() => {
     if (!referenceCompanyId) return;
     let cancelled = false;
@@ -68,11 +77,150 @@ export function HalfproductProductieSectie({
     };
   }, [recipeId, referenceCompanyId]);
 
-  // Productiegeschiedenis.
+  const totalScaledCost = useMemo(
+    () => breakdown.reduce((sum, l) => sum + (l.line_cost ?? 0) * scale, 0),
+    [breakdown, scale]
+  );
+
+  const producedByName = users.find((u) => u.id === producedByUserId)?.full_name ?? "";
+
+  const stickerHref = `/halfproducten/${recipeId}/sticker/nieuw?quantity=${quantity}&producedBy=${encodeURIComponent(
+    producedByName
+  )}`;
+
+  const canRegister = Boolean(Number(quantity)) && Boolean(producedByUserId);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ingrediënten</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">
+              Gewenste productiehoeveelheid ({unitName ?? "eenheid"})
+            </label>
+            <input
+              type="number"
+              step="any"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="input"
+            />
+            <p className="mt-1 text-xs text-muted">
+              Standaard {standardYield ?? "—"} {unitName ?? ""}. Ingrediënten en kostprijs
+              herberekenen automatisch evenredig.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">
+              Producent <span className="text-danger">*</span>
+            </label>
+            <select
+              required
+              value={producedByUserId}
+              onChange={(e) => setProducedByUserId(e.target.value)}
+              className="input"
+            >
+              <option value="">Kies producent…</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name}
+                </option>
+              ))}
+            </select>
+            {!producedByUserId && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-copper">
+                <TriangleAlert className="h-3.5 w-3.5" />
+                Verplicht voordat je kunt registreren of een sticker afdrukken.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-t border-border text-left text-xs uppercase tracking-wide text-muted">
+              <th className="px-2 py-3 font-medium">Ingrediënt</th>
+              <th className="px-2 py-3 font-medium">Hoeveelheid</th>
+              <th className="px-2 py-3 font-medium">Eenheid</th>
+              <th className="px-2 py-3 font-medium">Kostprijs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {breakdown.map((line) => (
+              <tr key={line.sort_order} className="border-t border-border">
+                <td className="px-2 py-3 font-medium">{line.ingredient_name ?? "—"}</td>
+                <td className="px-2 py-3 tabular">
+                  {(line.quantity * scale).toLocaleString("nl-NL", { maximumFractionDigits: 3 })}
+                </td>
+                <td className="px-2 py-3 text-muted">{line.unit_name ?? "—"}</td>
+                <td className="px-2 py-3 tabular text-muted">
+                  {line.line_cost !== null ? `€ ${(line.line_cost * scale).toFixed(4)}` : "—"}
+                </td>
+              </tr>
+            ))}
+            {breakdown.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-2 py-6 text-center text-muted">
+                  {referenceCompanyId
+                    ? "Nog geen ingrediënten toegevoegd."
+                    : "Selecteer een bedrijf via de bedrijfsselector rechtsboven."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        {breakdown.length > 0 && (
+          <div className="flex items-center justify-between border-t border-border pt-3">
+            <div className="text-sm">
+              <span className="text-muted">Totale kostprijs:&nbsp;</span>
+              <span className="font-semibold text-foreground">€ {totalScaledCost.toFixed(2)}</span>
+              {scale !== 1 && <span className="ml-1 text-muted">(×{scale.toFixed(2)})</span>}
+            </div>
+            <Link href={canRegister ? stickerHref : "#"} aria-disabled={!canRegister}>
+              <Button type="button" disabled={!canRegister}>
+                <Printer className="h-4 w-4" />
+                Registreren & sticker afdrukken
+              </Button>
+            </Link>
+          </div>
+        )}
+      </CardContent>
+
+      <style jsx>{`
+        .input {
+          display: block;
+          width: 100%;
+          height: 2.5rem;
+          border-radius: 0.375rem;
+          border: 1px solid var(--border);
+          background: var(--surface);
+          padding: 0 0.75rem;
+          font-size: 0.875rem;
+        }
+      `}</style>
+    </Card>
+  );
+}
+
+/** Producties-geschiedenis — puur naslagwerk, staat daarom onderaan de pagina. */
+export function ProductiesGeschiedenis({
+  recipeId,
+  unitName,
+}: {
+  recipeId: string;
+  unitName: string | null;
+}) {
+  const { activeCompanyIds } = useCompanyScope();
+  const referenceCompanyId = activeCompanyIds[0] ?? null;
+  const [rows, setRows] = useState<ProductionRow[]>([]);
+  const [loading, setLoading] = useState(() => Boolean(referenceCompanyId));
+
   useEffect(() => {
-    if (!referenceCompanyId) {
-      return;
-    }
+    if (!referenceCompanyId) return;
     let cancelled = false;
     async function run() {
       const supabase = createClient();
@@ -83,10 +231,10 @@ export function HalfproductProductieSectie({
         .eq("company_id", referenceCompanyId as string)
         .eq("movement_type", "productie")
         .order("created_at", { ascending: false })
-        .limit(5);
+        .limit(10);
       if (cancelled || !movements || movements.length === 0) {
-        setProductionRows([]);
-        setLoadingHistory(false);
+        setRows([]);
+        setLoading(false);
         return;
       }
 
@@ -139,8 +287,8 @@ export function HalfproductProductieSectie({
       );
 
       if (!cancelled) {
-        setProductionRows(result);
-        setLoadingHistory(false);
+        setRows(result);
+        setLoading(false);
       }
     }
     run();
@@ -149,187 +297,59 @@ export function HalfproductProductieSectie({
     };
   }, [recipeId, referenceCompanyId]);
 
-  const totalScaledCost = useMemo(
-    () => breakdown.reduce((sum, l) => sum + (l.line_cost ?? 0) * scale, 0),
-    [breakdown, scale]
-  );
-
-  const stickerHref = `/halfproducten/${recipeId}/sticker/nieuw?quantity=${quantity}&producedBy=${encodeURIComponent(
-    producedBy
-  )}`;
-
   return (
-    <div className="space-y-4">
-      {/* Receptoverzicht — bovenaan, schaalt automatisch mee met de
-          productiehoeveelheid hieronder. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Receptoverzicht</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-5 py-3 font-medium">Ingrediënt</th>
-                <th className="px-5 py-3 font-medium">Hoeveelheid</th>
-                <th className="px-5 py-3 font-medium">Eenheid</th>
-                <th className="px-5 py-3 font-medium">Kostprijs</th>
+    <Card>
+      <CardHeader>
+        <CardTitle>Producties</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-muted">
+              <th className="px-5 py-3 font-medium">Batchnummer</th>
+              <th className="px-5 py-3 font-medium">Productiedatum</th>
+              <th className="px-5 py-3 font-medium">Hoeveelheid</th>
+              <th className="px-5 py-3 font-medium">Kostprijs</th>
+              <th className="px-5 py-3 font-medium">Producent</th>
+              <th className="px-5 py-3 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ movement, cost, producedBy }) => (
+              <tr key={movement.id} className="border-t border-border">
+                <td className="px-5 py-3 font-mono text-xs">{movement.batch_number ?? "—"}</td>
+                <td className="px-5 py-3">
+                  {new Date(movement.created_at).toLocaleString("nl-NL")}
+                </td>
+                <td className="px-5 py-3 tabular">
+                  {movement.quantity_change} {unitName ?? ""}
+                </td>
+                <td className="px-5 py-3 tabular text-muted">
+                  {cost !== null ? `€ ${cost.toFixed(2)}` : "—"}
+                </td>
+                <td className="px-5 py-3 text-muted">{producedBy ?? "—"}</td>
+                <td className="px-5 py-3">
+                  <Link href={`/halfproducten/${recipeId}/sticker/nieuw?movementId=${movement.id}`}>
+                    <Button size="sm" variant="secondary">
+                      <Printer className="h-3.5 w-3.5" />
+                      Sticker opnieuw afdrukken
+                    </Button>
+                  </Link>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {breakdown.map((line) => (
-                <tr key={line.sort_order} className="border-t border-border">
-                  <td className="px-5 py-3 font-medium">{line.ingredient_name ?? "—"}</td>
-                  <td className="px-5 py-3 tabular">
-                    {(line.quantity * scale).toLocaleString("nl-NL", { maximumFractionDigits: 3 })}
-                  </td>
-                  <td className="px-5 py-3 text-muted">{line.unit_name ?? "—"}</td>
-                  <td className="px-5 py-3 tabular text-muted">
-                    {line.line_cost !== null ? `€ ${(line.line_cost * scale).toFixed(4)}` : "—"}
-                  </td>
-                </tr>
-              ))}
-              {breakdown.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-5 py-6 text-center text-muted">
-                    {referenceCompanyId
-                      ? "Nog geen ingrediënten toegevoegd."
-                      : "Selecteer een bedrijf via de bedrijfsselector rechtsboven."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          {breakdown.length > 0 && (
-            <div className="flex justify-end border-t border-border px-5 py-3 text-sm">
-              <span className="text-muted">Totale receptkostprijs:&nbsp;</span>
-              <span className="font-semibold text-foreground">€ {totalScaledCost.toFixed(2)}</span>
-              {scale !== 1 && <span className="ml-1 text-muted">(×{scale.toFixed(2)})</span>}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Productiegeschiedenis */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Producties</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-5 py-3 font-medium">Batchnummer</th>
-                <th className="px-5 py-3 font-medium">Productiedatum</th>
-                <th className="px-5 py-3 font-medium">Hoeveelheid</th>
-                <th className="px-5 py-3 font-medium">Kostprijs</th>
-                <th className="px-5 py-3 font-medium">Producent</th>
-                <th className="px-5 py-3 font-medium"></th>
+            ))}
+            {rows.length === 0 && !loading && (
+              <tr>
+                <td colSpan={6} className="px-5 py-6 text-center text-muted">
+                  {referenceCompanyId
+                    ? "Nog geen producties geregistreerd."
+                    : "Selecteer een bedrijf via de bedrijfsselector rechtsboven."}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {productionRows.map(({ movement, cost, producedBy: rowProducedBy }) => (
-                <tr key={movement.id} className="border-t border-border">
-                  <td className="px-5 py-3 font-mono text-xs">{movement.batch_number ?? "—"}</td>
-                  <td className="px-5 py-3">
-                    {new Date(movement.created_at).toLocaleString("nl-NL")}
-                  </td>
-                  <td className="px-5 py-3 tabular">
-                    {movement.quantity_change} {unitName ?? ""}
-                  </td>
-                  <td className="px-5 py-3 tabular text-muted">
-                    {cost !== null ? `€ ${cost.toFixed(2)}` : "—"}
-                  </td>
-                  <td className="px-5 py-3 text-muted">{rowProducedBy ?? "—"}</td>
-                  <td className="px-5 py-3">
-                    <Link href={`/halfproducten/${recipeId}/sticker/nieuw?movementId=${movement.id}`}>
-                      <Button size="sm" variant="secondary">
-                        <Printer className="h-3.5 w-3.5" />
-                        Sticker opnieuw afdrukken
-                      </Button>
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {productionRows.length === 0 && !loadingHistory && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-6 text-center text-muted">
-                    {referenceCompanyId
-                      ? "Nog geen producties geregistreerd."
-                      : "Selecteer een bedrijf via de bedrijfsselector rechtsboven."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-
-      {/* Productie starten — onderaan dit blok. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Productie starten</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted">
-            Standaard {standardYield ?? "—"} {unitName ?? ""}. Pas de hoeveelheid aan om het
-            receptoverzicht hierboven evenredig te herberekenen.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-foreground">
-                Te produceren hoeveelheid ({unitName ?? "eenheid"})
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-foreground">
-                Naam producent <span className="text-danger">*</span>
-              </label>
-              <input
-                required
-                value={producedBy}
-                onChange={(e) => setProducedBy(e.target.value)}
-                className="input"
-              />
-            </div>
-            <div className="flex items-end pb-2 text-sm text-muted">
-              Kostprijs: <span className="ml-1 font-medium text-foreground">€ {totalScaledCost.toFixed(2)}</span>
-            </div>
-          </div>
-          {!producedBy.trim() && (
-            <p className="flex items-center gap-1 text-xs text-copper">
-              <TriangleAlert className="h-3.5 w-3.5" />
-              Naam producent is verplicht voordat je kunt registreren.
-            </p>
-          )}
-          <Link href={stickerHref}>
-            <Button type="button" disabled={!Number(quantity) || !producedBy.trim()}>
-              <Printer className="h-4 w-4" />
-              Registreren & sticker afdrukken
-            </Button>
-          </Link>
-        </CardContent>
-
-        <style jsx>{`
-          .input {
-            display: block;
-            width: 100%;
-            height: 2.5rem;
-            border-radius: 0.375rem;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            padding: 0 0.75rem;
-            font-size: 0.875rem;
-          }
-        `}</style>
-      </Card>
-    </div>
+            )}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
   );
 }

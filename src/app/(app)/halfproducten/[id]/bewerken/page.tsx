@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { RecipeForm } from "@/components/recipes/recipe-form";
-import { HalfproductProductieSectie } from "@/components/recipes/halfproduct-producties-blok";
+import {
+  HalfproductIngredientenModule,
+  ProductiesGeschiedenis,
+} from "@/components/recipes/halfproduct-producties-blok";
 import { createClient } from "@/lib/supabase/server";
 import type { Recipe, RecipeIngredient } from "@/lib/types/database";
 
@@ -38,7 +41,7 @@ export default async function BewerkHalfproductPage({
     <>
       <Topbar title={`Bewerken: ${recipe.name}`} />
       <main className="max-w-6xl space-y-4 p-6">
-        <HalfproductProductieSectie
+        <HalfproductIngredientenModule
           recipeId={id}
           standardYield={recipe.yield_quantity}
           unitName={unitName}
@@ -48,6 +51,7 @@ export default async function BewerkHalfproductPage({
           initialIngredients={(ingredients as RecipeIngredient[]) ?? []}
           lockedKind="halfproduct"
         />
+        <ProductiesGeschiedenis recipeId={id} unitName={unitName} />
       </main>
     </>
   );
