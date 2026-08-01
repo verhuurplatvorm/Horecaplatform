@@ -313,14 +313,14 @@ export default function FactuurUploadenPage() {
                 <input
                   required
                   type="file"
-                  accept=".xml,.ubl,.pdf"
+                  accept=".xml,.ubl,.pdf,.jpg,.jpeg,.png,.webp"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   className="block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-teal file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-teal-light"
                 />
                 <p className="mt-1 text-xs text-muted">
-                  UBL/XML wordt automatisch uitgelezen. Een PDF wordt bewaard als archief, maar
-                  niet automatisch uitgelezen — vraag bij voorkeur een UBL/XML-export bij je
-                  leverancier.
+                  UBL/XML wordt direct gestructureerd uitgelezen. Een PDF of foto wordt
+                  geprobeerd via automatische herkenning — lukt dat niet, dan wordt het bestand
+                  bewaard als archief en kies je zelf de leverancier.
                 </p>
               </div>
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createImportBatch } from "@/lib/price-import/create-batch";
-import { parseUblInvoice, looksLikeUbl } from "@/lib/invoice-import/parse-ubl";
+import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
+import { extractInvoiceWithClaude } from "@/lib/invoice-import/claude-ocr";
 
 interface IncomingAttachment {
   filename: string;
@@ -98,23 +99,30 @@ export async function POST(
       attachment.filename.toLowerCase().endsWith(".xml") ||
       attachment.filename.toLowerCase().endsWith(".ubl");
 
-    if (!isXml) {
-      await admin.from("inbound_invoice_queue").insert({
-        group_id: mailbox.group_id,
-        mailbox_id: mailbox.id,
-        company_id: mailbox.company_id,
-        sender_email: sender,
-        original_filename: attachment.filename,
-        storage_path: storagePath,
-        file_kind: "pdf",
-        status: "wacht_op_leverancier",
-      });
-      results.push({ filename: attachment.filename, outcome: "postvak_in_pdf" });
-      continue;
+    let parsed: ParsedInvoice | null = null;
+    let fileKind: "ubl" | "pdf" | "onbekend" = "onbekend";
+
+    if (isXml) {
+      fileKind = "ubl";
+      const xmlText = attachment.buffer.toString("utf-8");
+      if (looksLikeUbl(xmlText)) {
+        try {
+          parsed = parseUblInvoice(xmlText);
+        } catch {
+          parsed = null;
+        }
+      }
+    } else if (attachment.filename.toLowerCase().endsWith(".pdf")) {
+      fileKind = "pdf";
+      try {
+        const claudeResult = await extractInvoiceWithClaude(attachment.buffer, "application/pdf");
+        if (claudeResult.lines.length > 0) parsed = claudeResult;
+      } catch {
+        parsed = null; // geen sleutel ingesteld, of niet leesbaar — naar het postvak
+      }
     }
 
-    const xmlText = attachment.buffer.toString("utf-8");
-    if (!looksLikeUbl(xmlText)) {
+    if (!parsed) {
       await admin.from("inbound_invoice_queue").insert({
         group_id: mailbox.group_id,
         mailbox_id: mailbox.id,
@@ -122,28 +130,10 @@ export async function POST(
         sender_email: sender,
         original_filename: attachment.filename,
         storage_path: storagePath,
-        file_kind: "onbekend",
+        file_kind: fileKind,
         status: "wacht_op_leverancier",
       });
-      results.push({ filename: attachment.filename, outcome: "postvak_in_onherkend" });
-      continue;
-    }
-
-    let parsed;
-    try {
-      parsed = parseUblInvoice(xmlText);
-    } catch {
-      await admin.from("inbound_invoice_queue").insert({
-        group_id: mailbox.group_id,
-        mailbox_id: mailbox.id,
-        company_id: mailbox.company_id,
-        sender_email: sender,
-        original_filename: attachment.filename,
-        storage_path: storagePath,
-        file_kind: "ubl",
-        status: "wacht_op_leverancier",
-      });
-      results.push({ filename: attachment.filename, outcome: "postvak_in_parsefout" });
+      results.push({ filename: attachment.filename, outcome: `postvak_in_${fileKind}` });
       continue;
     }
 
@@ -167,7 +157,7 @@ export async function POST(
         sender_email: sender,
         original_filename: attachment.filename,
         storage_path: storagePath,
-        file_kind: "ubl",
+        file_kind: fileKind,
         parsed_header: parsed.header,
         parsed_lines: parsed.lines,
         supplier_candidates: candidates ?? [],
