@@ -108,7 +108,6 @@ export function ProductPricing({
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Leverancier</th>
-              <th className="px-5 py-3 font-medium">Bereik</th>
               <th className="px-5 py-3 font-medium">Verpakking</th>
               <th className="px-5 py-3 font-medium">Prijs</th>
               <th className="px-5 py-3 font-medium">Prijs/basiseenheid</th>
@@ -126,9 +125,6 @@ export function ProductPricing({
                       contract
                     </span>
                   )}
-                </td>
-                <td className="px-5 py-3 text-muted">
-                  {r.companyName ?? "groepsbreed"}
                 </td>
                 <td className="px-5 py-3 text-muted">
                   {r.packagingDescription ?? "—"}
