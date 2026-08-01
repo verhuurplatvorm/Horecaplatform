@@ -32,7 +32,8 @@ const EXTRACTION_PROMPT = `Je krijgt een foto of PDF van een inkoopfactuur van e
 
 Belangrijk:
 - Als een veld niet leesbaar of niet aanwezig is, gebruik null — verzin nooit een waarde.
-- "packagingDescription" is de verpakkingstekst PRECIES zoals op de factuur staat, bijvoorbeeld "doos à 12", "6 x 1L", "krat 24x330ml", "zak 5kg" — laat dit veld null als er geen aparte verpakkingsvermelding is.
+- "packagingDescription" is de INHOUD van één verpakking (bv. "2 kg", "1 liter", "6 x 330ml") — let op: leveranciers zetten dit vaak IN de artikelnaam zelf, bijvoorbeeld "MOSSELEN SUPER SELECT 2 KG" betekent dat één verpakking 2 kg bevat. Haal dit er dan uit, ook al staat het niet in een aparte kolom.
+- "quantity" is het AANTAL bestelde verpakkingen (bv. 10 zakken van 2 kg), NIET de inhoud per verpakking — verwar deze twee niet met elkaar.
 - "unitPrice" is de prijs per de vermelde eenheid (bv. per kg, per stuk, per doos), niet per totale regel.
 - Gebruik een punt als decimaalteken in getallen, ongeacht hoe het op de factuur staat.
 - Geef uitsluitend het JSON-object terug, niets ervoor of erna.`;

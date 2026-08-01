@@ -21,9 +21,18 @@ const UN_CEFACT_TO_BASE: Record<string, { baseUnitKey: string; factor: number }>
 export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
   return lines.map((line) => {
     let packagingUnitCount: number | null = null;
+    let matchedPackagingText: string | null = null;
 
+    // Volgorde van betrouwbaarheid: 1) expliciete verpakkingstekst van
+    // Claude, 2) verpakking die in de artikelomschrijving zelf verwerkt
+    // zit (bv. "MOSSELEN SUPER SELECT 2 KG" → 2 kg), 3) pas als laatste
+    // terugval aantal+eenheid — dat is namelijk vaak "aantal besteld",
+    // niet "inhoud per verpakking", en geeft dus regelmatig een
+    // misleidend correcte match (bv. "10 stuks besteld" i.p.v. de
+    // werkelijke inhoud van 2 kg per stuk).
     const candidateTexts = [
       line.packagingDescription,
+      line.description,
       line.quantity && line.unit ? `${line.quantity} ${line.unit}` : null,
     ].filter(Boolean) as string[];
 
@@ -32,13 +41,17 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       if (parsed) {
         const factor = UNIT_TO_BASE_FACTOR[parsed.unit]?.factor ?? 1;
         packagingUnitCount = parsed.totalQuantity * factor;
+        matchedPackagingText = parsed.explanation;
         break;
       }
     }
 
     if (packagingUnitCount === null && line.unit) {
       const unCefact = UN_CEFACT_TO_BASE[line.unit.toUpperCase()];
-      if (unCefact) packagingUnitCount = unCefact.factor;
+      if (unCefact) {
+        packagingUnitCount = unCefact.factor;
+        matchedPackagingText = `${line.quantity ?? 1} ${line.unit}`;
+      }
     }
 
     return {
@@ -49,7 +62,9 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       description: line.description,
       brand: null,
       packagingDescription:
-        line.packagingDescription ?? (line.unit ? `${line.quantity ?? 1} ${line.unit}` : null),
+        matchedPackagingText ??
+        line.packagingDescription ??
+        (line.unit ? `${line.quantity ?? 1} ${line.unit}` : null),
       packagingUnitCount,
       purchasePrice: line.unitPrice,
     };
