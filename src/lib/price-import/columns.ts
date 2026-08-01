@@ -15,6 +15,11 @@ export interface ParsedPriceRow {
   brand: string | null;
   packagingDescription: string | null;
   packagingUnitCount: number | null;
+  /** In welke eenheid packagingUnitCount is uitgedrukt (meestal 'g', 'ml'
+   * of 'stuk' — de kleinste eenheid). Null = de waarde komt rechtstreeks
+   * uit een kolom zonder herkenbare eenheid, en wordt bij toepassen
+   * beschouwd als al in de basiseenheid van het gekoppelde product. */
+  packagingUnitKey: string | null;
   purchasePrice: number | null;
 }
 
@@ -213,6 +218,7 @@ export function normalizeRow(
 
   const packagingDescription = toText(byCanonical.packagingDescription);
   let packagingUnitCount = toNumber(byCanonical.packagingUnitCount);
+  let packagingUnitKey: string | null = null;
   let description = toText(byCanonical.description);
   let articleNumber = toText(byCanonical.articleNumber);
   let effectivePackagingDescription = packagingDescription;
@@ -235,20 +241,25 @@ export function normalizeRow(
   // parsePackagingText geeft de hoeveelheid in de herkende eenheid (bv.
   // liter, kg) — die moet naar de systeem-basiseenheid (ml, g, stuk)
   // omgerekend worden, anders wordt "1x2ltr" als "2" in plaats van 2000
-  // (ml) opgeslagen.
+  // (ml) opgeslagen. packagingUnitKey onthoudt in wélke eenheid dat is,
+  // zodat later — bij toepassen — omgerekend kan worden naar de
+  // werkelijke basiseenheid van het gekoppelde product (die kan afwijken
+  // van de kleinste eenheid, bv. een product met "kg" als basiseenheid).
   if (packagingUnitCount === null) {
     const fromExplicit = packagingDescription
       ? parsePackagingText(packagingDescription)
       : null;
     if (fromExplicit) {
-      const factor = UNIT_TO_BASE_FACTOR[fromExplicit.unit]?.factor ?? 1;
-      packagingUnitCount = fromExplicit.totalQuantity * factor;
+      const baseUnit = UNIT_TO_BASE_FACTOR[fromExplicit.unit];
+      packagingUnitCount = fromExplicit.totalQuantity * (baseUnit?.factor ?? 1);
+      packagingUnitKey = baseUnit?.baseUnitKey ?? null;
       effectivePackagingDescription = packagingDescription;
     } else if (combinedPackagingText) {
       const fromCombined = parsePackagingText(combinedPackagingText);
       if (fromCombined) {
-        const factor = UNIT_TO_BASE_FACTOR[fromCombined.unit]?.factor ?? 1;
-        packagingUnitCount = fromCombined.totalQuantity * factor;
+        const baseUnit = UNIT_TO_BASE_FACTOR[fromCombined.unit];
+        packagingUnitCount = fromCombined.totalQuantity * (baseUnit?.factor ?? 1);
+        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
         effectivePackagingDescription = packagingDescription
           ? `${packagingDescription} · ${combinedPackagingText}`
           : combinedPackagingText;
@@ -265,6 +276,7 @@ export function normalizeRow(
     brand: toText(byCanonical.brand),
     packagingDescription: effectivePackagingDescription,
     packagingUnitCount,
+    packagingUnitKey,
     purchasePrice: toNumber(byCanonical.purchasePrice),
   };
 }

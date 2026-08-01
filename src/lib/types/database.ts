@@ -489,6 +489,7 @@ export type PriceImportRow = {
   brand: string | null;
   packaging_description: string | null;
   packaging_unit_count: number | null;
+  packaging_unit_key: string | null;
   purchase_price: number | null;
   matched_product_id: string | null;
   match_method: PriceMatchMethod | null;

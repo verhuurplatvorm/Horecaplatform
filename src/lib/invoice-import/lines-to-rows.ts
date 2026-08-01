@@ -11,16 +11,10 @@ const UN_CEFACT_TO_BASE: Record<string, { baseUnitKey: string; factor: number }>
   EA: { baseUnitKey: "stuk", factor: 1 },
   H87: { baseUnitKey: "stuk", factor: 1 },
 };
-
-/**
- * Zet uitgelezen factuurregels om naar prijsimport-rijen, met dezelfde
- * verpakkingsherkenning als bij een gewone prijslijst-import (spec §5:
- * "6 x 1 liter", "doos 12 stuks" etc.) — zodat handmatig invullen van de
- * verpakkingseenheid de uitzondering is, niet de regel.
- */
 export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
   return lines.map((line) => {
     let packagingUnitCount: number | null = null;
+    let packagingUnitKey: string | null = null;
     let matchedPackagingText: string | null = null;
 
     // Volgorde van betrouwbaarheid: 1) expliciete verpakkingstekst van
@@ -39,8 +33,9 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
     for (const text of candidateTexts) {
       const parsed = parsePackagingText(text);
       if (parsed) {
-        const factor = UNIT_TO_BASE_FACTOR[parsed.unit]?.factor ?? 1;
-        packagingUnitCount = parsed.totalQuantity * factor;
+        const baseUnit = UNIT_TO_BASE_FACTOR[parsed.unit];
+        packagingUnitCount = parsed.totalQuantity * (baseUnit?.factor ?? 1);
+        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
         matchedPackagingText = parsed.explanation;
         break;
       }
@@ -50,6 +45,7 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       const unCefact = UN_CEFACT_TO_BASE[line.unit.toUpperCase()];
       if (unCefact) {
         packagingUnitCount = unCefact.factor;
+        packagingUnitKey = unCefact.baseUnitKey;
         matchedPackagingText = `${line.quantity ?? 1} ${line.unit}`;
       }
     }
@@ -66,6 +62,7 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
         line.packagingDescription ??
         (line.unit ? `${line.quantity ?? 1} ${line.unit}` : null),
       packagingUnitCount,
+      packagingUnitKey,
       purchasePrice: line.unitPrice,
     };
   });

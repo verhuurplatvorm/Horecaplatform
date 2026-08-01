@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedPriceRow } from "./columns";
 import { matchRowsToProducts, type MatchedRow } from "./match";
-import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "./packaging-parser";
 
 /**
  * Maakt automatisch een nieuw product aan voor factuurregels die zeker
@@ -33,12 +32,7 @@ async function autoCreateNewProducts(
     let productId = createdByName.get(key);
 
     if (!productId) {
-      const parsedPackaging = row.packagingDescription
-        ? parsePackagingText(row.packagingDescription)
-        : null;
-      const baseUnitKey = parsedPackaging
-        ? (UNIT_TO_BASE_FACTOR[parsedPackaging.unit]?.baseUnitKey ?? "stuk")
-        : "stuk";
+      const baseUnitKey = row.packagingUnitKey ?? "stuk";
       const baseUnitId = unitIdByKey.get(baseUnitKey) ?? unitIdByKey.get("stuk");
       if (!baseUnitId) {
         result.push(row);
@@ -190,6 +184,7 @@ export async function createImportBatch(
     brand: row.brand,
     packaging_description: row.packagingDescription,
     packaging_unit_count: row.packagingUnitCount,
+    packaging_unit_key: row.packagingUnitKey,
     purchase_price: row.purchasePrice,
     matched_product_id: row.matchedProductId,
     match_method: row.matchMethod,
