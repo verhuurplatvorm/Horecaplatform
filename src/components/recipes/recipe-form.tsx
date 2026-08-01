@@ -225,7 +225,7 @@ export function RecipeForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [referenceCompanyId]);
 
   async function loadProductPrice(productId: string) {
     if (!referenceCompanyId) return;
