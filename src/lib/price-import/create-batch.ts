@@ -1,6 +1,91 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedPriceRow } from "./columns";
-import { matchRowsToProducts } from "./match";
+import { matchRowsToProducts, type MatchedRow } from "./match";
+import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "./packaging-parser";
+
+/**
+ * Maakt automatisch een nieuw product aan voor factuurregels die zeker
+ * geen match hebben (confidence 'nieuw' — geen EAN/artikelnummer-treffer
+ * én geen sterk gelijkende naam). Regels met een 'waarschijnlijk'- of
+ * 'mogelijk_dubbel'-signaal worden bewust NIET automatisch aangemaakt —
+ * die vereisen een menselijke blik om te voorkomen dat een bestaand
+ * product per ongeluk dubbel wordt aangemaakt onder een net iets andere
+ * naam of schrijfwijze.
+ */
+async function autoCreateNewProducts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  groupId: string,
+  rows: MatchedRow[]
+): Promise<MatchedRow[]> {
+  const { data: units } = await supabase.from("units").select("id, key");
+  const unitIdByKey = new Map((units ?? []).map((u: { id: string; key: string }) => [u.key, u.id]));
+  const createdByName = new Map<string, string>();
+
+  const result: MatchedRow[] = [];
+  for (const row of rows) {
+    if (row.confidence !== "nieuw" || row.matchedProductId || !row.description) {
+      result.push(row);
+      continue;
+    }
+
+    const key = row.description.trim().toLowerCase();
+    let productId = createdByName.get(key);
+
+    if (!productId) {
+      const parsedPackaging = row.packagingDescription
+        ? parsePackagingText(row.packagingDescription)
+        : null;
+      const baseUnitKey = parsedPackaging
+        ? (UNIT_TO_BASE_FACTOR[parsedPackaging.unit]?.baseUnitKey ?? "stuk")
+        : "stuk";
+      const baseUnitId = unitIdByKey.get(baseUnitKey) ?? unitIdByKey.get("stuk");
+      if (!baseUnitId) {
+        result.push(row);
+        continue;
+      }
+
+      const { data: newProduct, error: productError } = await supabase
+        .from("products")
+        .insert({
+          group_id: groupId,
+          name: row.description,
+          article_number: row.articleNumber,
+          ean_code: row.eanCode,
+          brand: row.brand,
+          base_unit_id: baseUnitId,
+          kind: "inkoopartikel" as const,
+        })
+        .select("id")
+        .single();
+
+      if (productError || !newProduct) {
+        result.push(row);
+        continue;
+      }
+      productId = newProduct.id as string;
+      createdByName.set(key, productId);
+
+      if (row.packagingDescription && row.packagingUnitCount) {
+        await supabase.from("product_packagings").insert({
+          product_id: productId,
+          name: row.packagingDescription,
+          quantity_in_base_unit: row.packagingUnitCount,
+          is_default: true,
+        });
+      }
+    }
+
+    result.push({
+      ...row,
+      matchedProductId: productId,
+      matchMethod: "automatisch_aangemaakt" as const,
+      confidence: "gekoppeld" as const,
+    });
+  }
+
+  return result;
+}
 
 /**
  * Maakt een prijsimport-batch + -regels aan van al genormaliseerde,
@@ -53,7 +138,15 @@ export async function createImportBatch(
     source = created;
   }
 
-  const matched = await matchRowsToProducts(supabase, groupId, parsedRows);
+  let matched = await matchRowsToProducts(supabase, groupId, parsedRows);
+
+  // Alleen bij facturen worden zeker-nieuwe artikelen automatisch
+  // aangemaakt en aan deze leverancier gekoppeld — bij een gewone
+  // prijslijst-import blijft dat een bewuste, aparte bulk-actie.
+  if (invoice) {
+    matched = await autoCreateNewProducts(supabase, groupId, matched);
+  }
+
   const matchedCount = matched.filter((r) => r.matchedProductId).length;
 
   const { data: batch, error: batchError } = await supabase

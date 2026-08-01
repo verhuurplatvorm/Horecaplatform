@@ -9,7 +9,7 @@ export type MatchConfidence =
 
 export interface MatchedRow extends ParsedPriceRow {
   matchedProductId: string | null;
-  matchMethod: "ean" | "artikelnummer" | null;
+  matchMethod: "ean" | "artikelnummer" | "handmatig" | "automatisch_aangemaakt" | null;
   confidence: MatchConfidence;
   /** Bij 'waarschijnlijk' of 'mogelijk_dubbel': maximaal 3 kandidaten om uit te kiezen. */
   suggestions: { id: string; name: string }[];

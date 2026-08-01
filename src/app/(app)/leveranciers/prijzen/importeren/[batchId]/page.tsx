@@ -365,6 +365,12 @@ export default function ImportReviewPage({
               {batch.original_filename ?? "Import"} — {rows.length} regels
             </CardTitle>
           </CardHeader>
+          {batch.error_message && (
+            <CardContent className="flex items-start gap-2 pt-0 text-sm text-copper">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{batch.error_message}</span>
+            </CardContent>
+          )}
           <CardContent className="flex items-center justify-between">
             <p className="text-sm text-muted">
               {rows.length - unmatchedCount} automatisch gematcht,{" "}
@@ -656,7 +662,9 @@ function RowLine({
         ) : row.matched_product_id ? (
           <span className="flex items-center gap-1 text-xs text-success">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Gekoppeld{row.match_method === "handmatig" ? " (handmatig)" : ""}
+            Gekoppeld
+            {row.match_method === "handmatig" && " (handmatig)"}
+            {row.match_method === "automatisch_aangemaakt" && " (nieuw product aangemaakt)"}
           </span>
         ) : (
           <ConfidenceBadge confidence={row.match_confidence} />

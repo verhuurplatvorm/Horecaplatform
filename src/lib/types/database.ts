@@ -438,7 +438,7 @@ export type PriceImportRowStatus =
   | "toegepast"
   | "overgeslagen"
   | "fout";
-export type PriceMatchMethod = "ean" | "artikelnummer" | "handmatig";
+export type PriceMatchMethod = "ean" | "artikelnummer" | "handmatig" | "automatisch_aangemaakt";
 
 export type SupplierPriceSource = {
   id: string;
