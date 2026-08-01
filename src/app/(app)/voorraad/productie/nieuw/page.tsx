@@ -34,6 +34,7 @@ export default function NieuweProductiePage() {
   const [selected, setSelected] = useState<HalfproductLite | null>(null);
   const [quantity, setQuantity] = useState("");
   const [note, setNote] = useState("");
+  const [producedBy, setProducedBy] = useState("");
   const [preview, setPreview] = useState<PreviewLine[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +128,10 @@ export default function NieuweProductiePage() {
       setError("Kies een halfproduct en een geproduceerde hoeveelheid.");
       return;
     }
+    if (!producedBy.trim()) {
+      setError("Naam producent is verplicht.");
+      return;
+    }
 
     setSaving(true);
     const supabase = createClient();
@@ -136,6 +141,7 @@ export default function NieuweProductiePage() {
         p_recipe_id: selected.id,
         p_company_id: companyId,
         p_quantity: Number(quantity),
+        p_produced_by: producedBy.trim(),
         p_note: note.trim() || undefined,
       }
     );
@@ -220,6 +226,18 @@ export default function NieuweProductiePage() {
                   step="any"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Naam producent <span className="text-danger">*</span>
+                </label>
+                <input
+                  required
+                  value={producedBy}
+                  onChange={(e) => setProducedBy(e.target.value)}
                   className="input"
                 />
               </div>

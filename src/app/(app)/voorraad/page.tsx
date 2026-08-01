@@ -138,7 +138,9 @@ export default function ProductiesPage() {
           batchNumber: m.batch_number,
           productionAt: label?.production_at ?? m.created_at,
           expiryAt: label?.expiry_at ?? m.expiry_date ?? null,
-          producedBy: producedByNames.length > 0 ? producedByNames.join(", ") : null,
+          producedBy:
+            m.produced_by ??
+            (producedByNames.length > 0 ? producedByNames.join(", ") : null),
           extraText: label?.extra_text ?? null,
           allergens: allergensByRecipe.get(m.recipe_id!) ?? null,
         };

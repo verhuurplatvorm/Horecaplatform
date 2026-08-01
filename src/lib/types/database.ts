@@ -241,6 +241,9 @@ export type StockMovement = {
   movement_type: StockMovementType;
   quantity_change: number;
   batch_number: string | null;
+  produced_by: string | null;
+  recipe_version: number | null;
+  cost_at_production: number | null;
   expiry_date: string | null;
   note: string | null;
   related_movement_id: string | null;
@@ -770,9 +773,20 @@ export type Database = {
           p_recipe_id: string;
           p_company_id: string;
           p_quantity: number;
+          p_produced_by: string;
           p_note?: string;
         };
         Returns: string;
+      };
+      get_recipe_cost_breakdown: {
+        Args: { p_recipe_id: string; p_company_id: string };
+        Returns: {
+          sort_order: number;
+          ingredient_name: string | null;
+          quantity: number;
+          unit_name: string | null;
+          line_cost: number | null;
+        }[];
       };
       get_recipe_usage: {
         Args: { p_recipe_id: string; p_company_id: string };

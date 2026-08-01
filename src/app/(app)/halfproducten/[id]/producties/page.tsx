@@ -69,6 +69,7 @@ export default function ProductiesPage({
                   <th className="px-5 py-3 font-medium">Datum</th>
                   <th className="px-5 py-3 font-medium">Hoeveelheid</th>
                   <th className="px-5 py-3 font-medium">Batchnummer</th>
+                  <th className="px-5 py-3 font-medium">Producent</th>
                   <th className="px-5 py-3 font-medium">Stickers afgedrukt</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
@@ -81,6 +82,7 @@ export default function ProductiesPage({
                     </td>
                     <td className="px-5 py-3 tabular">{m.quantity_change}</td>
                     <td className="px-5 py-3">{m.batch_number ?? "—"}</td>
+                    <td className="px-5 py-3 text-muted">{m.produced_by ?? "—"}</td>
                     <td className="px-5 py-3 tabular">{labelCounts.get(m.id) ?? 0}</td>
                     <td className="px-5 py-3">
                       <Link href={`/halfproducten/${recipeId}/sticker/nieuw?movementId=${m.id}`}>
@@ -94,7 +96,7 @@ export default function ProductiesPage({
                 ))}
                 {movements.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={6} className="px-5 py-6 text-center text-muted">
                       Nog geen producties geregistreerd voor dit halfproduct.
                     </td>
                   </tr>

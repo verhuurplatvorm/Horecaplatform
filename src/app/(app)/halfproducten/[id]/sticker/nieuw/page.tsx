@@ -50,6 +50,9 @@ export default function NieuweStickerPage({
   const [quickQuantity, setQuickQuantity] = useState(
     () => searchParams.get("quantity") ?? ""
   );
+  const [quickProducedBy, setQuickProducedBy] = useState(
+    () => searchParams.get("producedBy") ?? ""
+  );
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
 
@@ -224,6 +227,10 @@ export default function NieuweStickerPage({
       setError("Geef een reden op voor de herdruk.");
       return;
     }
+    if (producedByLabel === "—") {
+      setError("Naam producent is verplicht voordat je een sticker kunt afdrukken.");
+      return;
+    }
 
     setError(null);
     setSaving(true);
@@ -283,6 +290,10 @@ export default function NieuweStickerPage({
         setRegisterError("Vul een geldige geproduceerde hoeveelheid in.");
         return;
       }
+      if (!quickProducedBy.trim()) {
+        setRegisterError("Naam producent is verplicht.");
+        return;
+      }
       setRegistering(true);
       setRegisterError(null);
       const supabase = createClient();
@@ -292,6 +303,7 @@ export default function NieuweStickerPage({
           p_recipe_id: recipeId,
           p_company_id: referenceCompanyId,
           p_quantity: Number(quickQuantity),
+          p_produced_by: quickProducedBy.trim(),
         }
       );
       if (rpcError || !newMovementId) {
@@ -305,7 +317,10 @@ export default function NieuweStickerPage({
         .eq("id", newMovementId)
         .single();
       setRegistering(false);
-      if (m) setMovement(m as StockMovement);
+      if (m) {
+        setMovement(m as StockMovement);
+        setManualNames(quickProducedBy.trim());
+      }
     }
 
     return (
@@ -339,7 +354,21 @@ export default function NieuweStickerPage({
                       className="input"
                     />
                   </div>
-                  <Button onClick={handleQuickRegister} disabled={registering}>
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-medium text-foreground">
+                      Naam producent <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      required
+                      value={quickProducedBy}
+                      onChange={(e) => setQuickProducedBy(e.target.value)}
+                      className="input"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleQuickRegister}
+                    disabled={registering || !quickProducedBy.trim()}
+                  >
                     {registering ? "Bezig…" : "Registreren & sticker maken"}
                   </Button>
                 </div>
