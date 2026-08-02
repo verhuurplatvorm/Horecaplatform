@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -127,6 +127,14 @@ export default function ProductenPage() {
             <Button>
               <Plus className="h-4 w-4" />
               Nieuw product
+            </Button>
+          </Link>
+        </div>
+        <div className="flex justify-end">
+          <Link href="/producten/opschonen">
+            <Button variant="secondary" size="sm">
+              <TriangleAlert className="h-3.5 w-3.5" />
+              Producten opschonen
             </Button>
           </Link>
         </div>
