@@ -50,6 +50,12 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       }
     }
 
+    if (packagingUnitCount === null) {
+      console.warn(
+        `[invoice-import] Regel ${line.lineNumber} ("${line.description}"): geen verpakkingshoeveelheid herkend uit "${line.packagingDescription ?? "—"}" / "${line.description}" / "${line.quantity} ${line.unit}".`
+      );
+    }
+
     return {
       rowNumber: line.lineNumber,
       raw: line as unknown as Record<string, unknown>,

@@ -54,11 +54,18 @@ async function autoCreateNewProducts(
         .single();
 
       if (productError || !newProduct) {
+        console.error(
+          `[invoice-import] Automatisch aanmaken van product "${row.description}" mislukt:`,
+          productError?.message
+        );
         result.push(row);
         continue;
       }
       productId = newProduct.id as string;
       createdByName.set(key, productId);
+      console.log(
+        `[invoice-import] Nieuw product automatisch aangemaakt: "${row.description}" (basiseenheid ${baseUnitKey})`
+      );
 
       if (row.packagingDescription && row.packagingUnitCount) {
         await supabase.from("product_packagings").insert({
@@ -133,12 +140,23 @@ export async function createImportBatch(
   }
 
   let matched = await matchRowsToProducts(supabase, groupId, parsedRows);
+  console.log(
+    `[invoice-import] Matching: ${matched.length} regel(s), ${matched.filter((r) => r.matchedProductId).length} gekoppeld, confidence-verdeling: ${JSON.stringify(
+      matched.reduce((acc: Record<string, number>, r) => {
+        acc[r.confidence] = (acc[r.confidence] ?? 0) + 1;
+        return acc;
+      }, {})
+    )}`
+  );
 
   // Alleen bij facturen worden zeker-nieuwe artikelen automatisch
   // aangemaakt en aan deze leverancier gekoppeld — bij een gewone
   // prijslijst-import blijft dat een bewuste, aparte bulk-actie.
   if (invoice) {
     matched = await autoCreateNewProducts(supabase, groupId, matched);
+    console.log(
+      `[invoice-import] Na automatisch aanmaken: ${matched.filter((r) => r.matchedProductId).length}/${matched.length} regel(s) gekoppeld.`
+    );
   }
 
   const matchedCount = matched.filter((r) => r.matchedProductId).length;
@@ -171,8 +189,10 @@ export async function createImportBatch(
     .single();
 
   if (batchError || !batch) {
-    return { error: "Kan importbatch niet aanmaken." };
+    console.error("[invoice-import] Kan importbatch niet aanmaken:", batchError?.message);
+    return { error: "Kan importbatch niet aanmaken: " + (batchError?.message ?? "onbekende fout") };
   }
+  console.log(`[invoice-import] Batch aangemaakt: ${batch.id}`);
 
   const rowsToInsert = matched.map((row) => ({
     batch_id: batch.id,
@@ -200,8 +220,10 @@ export async function createImportBatch(
     .insert(rowsToInsert);
 
   if (rowsError) {
-    return { error: "Kan importregels niet opslaan." };
+    console.error("[invoice-import] Kan importregels niet opslaan:", rowsError.message);
+    return { error: "Kan importregels niet opslaan: " + rowsError.message };
   }
 
+  console.log(`[invoice-import] ${rowsToInsert.length} regel(s) opgeslagen in batch ${batch.id}.`);
   return { batchId: batch.id };
 }

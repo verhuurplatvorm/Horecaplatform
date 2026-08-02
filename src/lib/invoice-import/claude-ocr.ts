@@ -34,8 +34,11 @@ Belangrijk:
 - Als een veld niet leesbaar of niet aanwezig is, gebruik null — verzin nooit een waarde.
 - "packagingDescription" is de INHOUD van één verpakking (bv. "2 kg", "1 liter", "6 x 330ml") — let op: leveranciers zetten dit vaak IN de artikelnaam zelf, bijvoorbeeld "MOSSELEN SUPER SELECT 2 KG" betekent dat één verpakking 2 kg bevat. Haal dit er dan uit, ook al staat het niet in een aparte kolom.
 - "quantity" is het AANTAL bestelde verpakkingen (bv. 10 zakken van 2 kg), NIET de inhoud per verpakking — verwar deze twee niet met elkaar.
-- "unitPrice" is de prijs per de vermelde eenheid (bv. per kg, per stuk, per doos), niet per totale regel.
-- Gebruik een punt als decimaalteken in getallen, ongeacht hoe het op de factuur staat.
+- Sommige (met name vis-)leveranciers gebruiken één kolom "Aantal kg/st" voor zowel stuks als gewicht: een waarde met een "S" erachter (bv. "18 S") betekent stuks/verpakkingen; een kale decimale waarde zonder letter (bv. "29,808") betekent kilogram. Neem in dat laatste geval "quantity" = dat getal en "unit" = "kg" — verzin geen stuks-aantal.
+- "unitPrice" is de prijs per de vermelde eenheid: bij stuks-regels (S) is dat de prijs per verpakking; bij kilo-regels is dat de prijs per kilogram (niet de totale regelprijs).
+- Eén factuur kan meerdere leveringen/pakbonnen bevatten (bv. "Volgens pakbon nr. van ... 27-07-2026"). Behandel al deze regels gewoon als aparte factuurregels van dezelfde factuur — maak er geen aparte facturen van en sla de pakbon-kopregels zelf niet op als los item.
+- Negeer eventuele losse letters/codes aan het einde van een regel die alleen een btw-categorie aangeven (bv. een losse "L" of "H"), dat is geen onderdeel van de prijs of omschrijving.
+- Gebruik een punt als decimaalteken, ongeacht hoe het op de factuur staat (een factuur gebruikt vaak een komma).
 - Geef uitsluitend het JSON-object terug, niets ervoor of erna.`;
 
 /**
@@ -51,10 +54,15 @@ export async function extractInvoiceWithClaude(
 ): Promise<ParsedInvoice> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
+    console.error("[invoice-import] ANTHROPIC_API_KEY ontbreekt.");
     throw new Error(
       "ANTHROPIC_API_KEY ontbreekt. Voeg 'm toe aan .env.local (lokaal) en aan de Vercel-projectinstellingen (Environment Variables) — een eigen API-sleutel is te verkrijgen via console.anthropic.com (los van een claude.ai-abonnement)."
     );
   }
+
+  console.log(
+    `[invoice-import] Claude OCR gestart — ${buffer.length} bytes, type ${mimeType}`
+  );
 
   const base64 = buffer.toString("base64");
   const isPdf = mimeType === "application/pdf";
@@ -80,14 +88,18 @@ export async function extractInvoiceWithClaude(
     }),
   });
 
+  console.log(`[invoice-import] Claude API-antwoord: HTTP ${response.status}`);
+
   if (!response.ok) {
     const errText = await response.text();
+    console.error(`[invoice-import] Claude API-fout ${response.status}: ${errText.slice(0, 500)}`);
     throw new Error(`Claude API-fout (${response.status}): ${errText.slice(0, 300)}`);
   }
 
   const data = await response.json();
   const textBlock = data.content?.find((b: { type: string }) => b.type === "text");
   if (!textBlock?.text) {
+    console.error("[invoice-import] Claude gaf geen tekstblok terug:", JSON.stringify(data).slice(0, 500));
     throw new Error("Claude gaf geen leesbaar antwoord terug.");
   }
 
@@ -95,13 +107,23 @@ export async function extractInvoiceWithClaude(
   let parsed: ParsedInvoice;
   try {
     parsed = JSON.parse(cleaned);
-  } catch {
+  } catch (err) {
+    console.error(
+      "[invoice-import] Kan Claude-antwoord niet als JSON parsen. Eerste 500 tekens:",
+      cleaned.slice(0, 500),
+      err
+    );
     throw new Error("Kan het antwoord van Claude niet als JSON lezen. Controleer handmatig.");
   }
 
   if (!parsed.header || !Array.isArray(parsed.lines)) {
+    console.error("[invoice-import] Onverwacht antwoordformaat:", JSON.stringify(parsed).slice(0, 500));
     throw new Error("Onverwacht antwoordformaat van Claude.");
   }
+
+  console.log(
+    `[invoice-import] Claude OCR gelukt — leverancier "${parsed.header.supplierName}", ${parsed.lines.length} regels herkend`
+  );
 
   return parsed;
 }

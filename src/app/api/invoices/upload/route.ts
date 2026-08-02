@@ -64,6 +64,7 @@ export async function POST(request: Request) {
   // --- PDF/foto: proberen via Claude (vision), als er een sleutel is ingesteld. ---
   if (isClaudeOcrSupported(file.type, file.name)) {
     try {
+      console.log(`[invoice-import] Start Claude OCR voor "${file.name}" (${file.type || "onbekend type"})`);
       const parsed = await extractInvoiceWithClaude(buffer, file.type || "application/pdf");
       if (parsed.lines.length > 0) {
         return finalizeParsed(
@@ -76,8 +77,23 @@ export async function POST(request: Request) {
           parsed
         );
       }
+      console.warn(`[invoice-import] Claude OCR vond 0 regels voor "${file.name}".`);
+      return archiveOnly(
+        supabase,
+        profile.group_id,
+        user.id,
+        file,
+        companyId,
+        storagePath,
+        formData,
+        "Claude heeft dit bestand gelezen, maar geen factuurregels herkend."
+      );
     } catch (err) {
-      // Val stil terug op de archiveer-only flow hieronder — geen sleutel
+      console.error(
+        `[invoice-import] Claude OCR mislukt voor "${file.name}":`,
+        err instanceof Error ? err.message : err
+      );
+      // Val terug op de archiveer-only flow hieronder — geen sleutel
       // ingesteld, of Claude kon 'm niet lezen. De reden komt in
       // batch.error_message te staan zodat het niet onzichtbaar blijft.
       return archiveOnly(
@@ -189,11 +205,16 @@ async function finalizeParsed(
     p_name: parsed.header.supplierName,
   });
 
+  console.log(
+    `[invoice-import] Leveranciersmatch voor "${parsed.header.supplierName}": ${candidates?.length ?? 0} kandida(a)t(en) — ${JSON.stringify(candidates?.map((c: { match_method: string }) => c.match_method))}`
+  );
+
   const confidentMatch = candidates?.find((c: { match_method: string }) =>
     ["btw_nummer", "kvk_nummer", "iban"].includes(c.match_method)
   );
 
   if (!confidentMatch) {
+    console.log(`[invoice-import] Geen zekere leveranciersmatch — gebruiker moet zelf kiezen.`);
     return NextResponse.json({
       needsSupplier: true,
       header: parsed.header,
