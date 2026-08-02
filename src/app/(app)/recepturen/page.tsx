@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,6 +34,7 @@ export default function RecepturenPage() {
   const [recipes, setRecipes] = useState<RecipeWithCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [query, setQuery] = useState("");
 
   // Voor de kostprijsberekening is een concreet bedrijf nodig (recepten
   // kunnen groepsbreed of lokaal zijn, maar inkoopprijzen kunnen per
@@ -97,11 +98,29 @@ export default function RecepturenPage() {
     };
   }, [referenceCompanyId, scopeLoading]);
 
+  const q = query.trim().toLowerCase();
+  const filteredRecipes = q
+    ? recipes.filter((r) =>
+        [r.name, r.category, r.status]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(q))
+      )
+    : recipes;
+
   return (
     <>
       <Topbar title="Recepten (Gerechten)" />
       <main className="p-6 space-y-4">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3">
+          <div className="relative max-w-sm flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Zoek op naam, categorie of status…"
+              className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
+            />
+          </div>
           <Link href="/recepturen/nieuw">
             <Button>
               <Plus className="h-4 w-4" />
@@ -125,7 +144,7 @@ export default function RecepturenPage() {
                 </tr>
               </thead>
               <tbody>
-                {recipes.map((r) => {
+                {filteredRecipes.map((r) => {
                   const priceExclVat =
                     r.sales_price && r.vat_rate !== null
                       ? r.sales_price / (1 + r.vat_rate / 100)
@@ -177,11 +196,13 @@ export default function RecepturenPage() {
                     </tr>
                   );
                 })}
-                {recipes.length === 0 && !loading && (
+                {filteredRecipes.length === 0 && !loading && (
                   <tr>
                     <td colSpan={7} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
+                        : q
+                        ? "Geen gerechten gevonden voor deze zoekopdracht."
                         : "Nog geen gerechten vastgelegd."}
                     </td>
                   </tr>

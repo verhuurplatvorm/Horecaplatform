@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, TriangleAlert } from "lucide-react";
+import { Plus, TriangleAlert, Search } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +35,7 @@ export default function ProductiesPage() {
     useCompanyScope();
   const [rows, setRows] = useState<ProductionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   const referenceCompanyId = activeCompanyIds[0] ?? null;
   const referenceCompanyName = companies.find(
@@ -156,6 +157,15 @@ export default function ProductiesPage() {
     };
   }, [referenceCompanyId, scopeLoading]);
 
+  const q = query.trim().toLowerCase();
+  const filteredRows = q
+    ? rows.filter((r) =>
+        [r.recipeName, r.batchNumber, r.producedBy, r.storageMethod]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(q))
+      )
+    : rows;
+
   return (
     <>
       <Topbar title="Producties" />
@@ -167,14 +177,16 @@ export default function ProductiesPage() {
           </p>
         ) : (
           <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted">
-                Producties van halfproducten voor{" "}
-                {scope.mode === "group"
-                  ? `${referenceCompanyName} (eerste bedrijf in groepsweergave)`
-                  : referenceCompanyName}
-                , nieuwste bovenaan.
-              </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="relative max-w-sm flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Zoek op halfproduct, batchnummer of producent…"
+                  className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
+                />
+              </div>
               <Link href="/voorraad/productie/nieuw">
                 <Button>
                   <Plus className="h-4 w-4" />
@@ -182,6 +194,13 @@ export default function ProductiesPage() {
                 </Button>
               </Link>
             </div>
+            <p className="text-sm text-muted">
+              Producties van halfproducten voor{" "}
+              {scope.mode === "group"
+                ? `${referenceCompanyName} (eerste bedrijf in groepsweergave)`
+                : referenceCompanyName}
+              , nieuwste bovenaan.
+            </p>
 
             <Card>
               <CardContent className="p-0">
@@ -200,7 +219,7 @@ export default function ProductiesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => {
+                    {filteredRows.map((r) => {
                       const expiringSoon =
                         r.expiryAt && new Date(r.expiryAt) < new Date();
                       return (
@@ -257,10 +276,12 @@ export default function ProductiesPage() {
                         </tr>
                       );
                     })}
-                    {rows.length === 0 && !loading && (
+                    {filteredRows.length === 0 && !loading && (
                       <tr>
                         <td colSpan={9} className="px-5 py-6 text-center text-muted">
-                          Nog geen producties geregistreerd voor dit bedrijf.
+                          {q
+                            ? "Geen producties gevonden voor deze zoekopdracht."
+                            : "Nog geen producties geregistreerd voor dit bedrijf."}
                         </td>
                       </tr>
                     )}
