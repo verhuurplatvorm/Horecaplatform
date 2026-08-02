@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { RecipeForm } from "@/components/recipes/recipe-form";
+import { RecipeMenuPlacements } from "@/components/recipes/recipe-menu-placements";
 import { createClient } from "@/lib/supabase/server";
 import type { Recipe, RecipeIngredient } from "@/lib/types/database";
 
@@ -29,12 +30,13 @@ export default async function BewerkReceptuurPage({
   return (
     <>
       <Topbar title={`Bewerken: ${recipe.name}`} />
-      <main className="max-w-4xl p-6">
+      <main className="max-w-4xl space-y-4 p-6">
         <RecipeForm
           initialRecipe={recipe as Recipe}
           initialIngredients={(ingredients as RecipeIngredient[]) ?? []}
           lockedKind="gerecht"
         />
+        <RecipeMenuPlacements recipeId={id} recipeSalesPrice={recipe.sales_price} />
       </main>
     </>
   );
