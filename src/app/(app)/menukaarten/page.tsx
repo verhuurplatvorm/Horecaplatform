@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, FileUp } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,6 +72,12 @@ export default function MenukaartenPage() {
               </option>
             ))}
           </select>
+          <Link href="/menukaarten/pdf-importeren">
+            <Button variant="secondary">
+              <FileUp className="h-4 w-4" />
+              Menukaart uploaden (PDF)
+            </Button>
+          </Link>
           <Link href="/menukaarten/nieuw">
             <Button>
               <Plus className="h-4 w-4" />

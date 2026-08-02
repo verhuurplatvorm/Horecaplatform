@@ -173,6 +173,7 @@ export type Recipe = {
   base_unit_id: string | null;
   storage_method: string | null;
   shelf_life_days: number | null;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -359,6 +360,7 @@ export type MenuCard = {
   version: number;
   language: string;
   duplicated_from_id: string | null;
+  source_file_path: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -752,6 +754,10 @@ export type Database = {
           match_method: string;
           iban_mismatch: boolean;
         }[];
+      };
+      match_recipe_by_name: {
+        Args: { p_group_id: string; p_name: string };
+        Returns: { recipe_id: string; recipe_name: string; similarity_score: number }[];
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
