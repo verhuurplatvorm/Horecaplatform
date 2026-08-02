@@ -218,6 +218,21 @@ export default function MenukaartWorkspacePage({
     reload();
   }
 
+  async function handleMoveItemToFolder(itemId: string, targetFolderId: string) {
+    const item = items.find((i) => i.id === itemId);
+    if (!item || item.folder_id === targetFolderId) return;
+    const targetSiblings = itemsByFolder.get(targetFolderId) ?? [];
+    const supabase = createClient();
+    // Alleen folder_id (en een nieuwe sort_order aan het eind van de
+    // doelmap) wordt aangepast — recept, prijs en overige gegevens van
+    // het menukaartitem blijven exact zoals ze waren, geen duplicaat.
+    await supabase
+      .from("menu_items")
+      .update({ folder_id: targetFolderId, sort_order: targetSiblings.length })
+      .eq("id", itemId);
+    reload();
+  }
+
   async function handleToggleVisible(item: ItemWithRecipe) {
     const supabase = createClient();
     await supabase.from("menu_items").update({ is_visible: !item.is_visible }).eq("id", item.id);
@@ -327,6 +342,7 @@ export default function MenukaartWorkspacePage({
                 onRename={handleRenameFolder}
                 onDelete={handleDeleteFolder}
                 onMove={handleMoveFolder}
+                onMoveItemToFolder={handleMoveItemToFolder}
               />
               {folders.length === 0 && (
                 <p className="px-2 py-3 text-xs text-muted">Nog geen mappen.</p>
@@ -381,7 +397,15 @@ export default function MenukaartWorkspacePage({
                         const foodcost =
                           priceExcl && item.cost !== null ? (item.cost / priceExcl) * 100 : null;
                         return (
-                          <tr key={item.id} className="border-t border-border">
+                          <tr
+                            key={item.id}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("text/menu-item-id", item.id);
+                              e.dataTransfer.effectAllowed = "move";
+                            }}
+                            className="cursor-grab border-t border-border active:cursor-grabbing"
+                          >
                             <td className="px-5 py-3">
                               <div className="flex items-center gap-1">
                                 <div className="flex flex-col">
@@ -527,6 +551,7 @@ function FolderList({
   onRename,
   onDelete,
   onMove,
+  onMoveItemToFolder,
   depth = 0,
 }: {
   parentId: string | null;
@@ -540,6 +565,7 @@ function FolderList({
   onRename: (folder: MenuFolder) => void;
   onDelete: (folder: MenuFolder) => void;
   onMove: (folder: MenuFolder, direction: -1 | 1) => void;
+  onMoveItemToFolder: (itemId: string, targetFolderId: string) => void;
   depth?: number;
 }) {
   const children = [...(childrenByParent.get(parentId) ?? [])].sort((a, b) => a.sort_order - b.sort_order);
@@ -553,50 +579,23 @@ function FolderList({
         const count = (itemsByFolder.get(folder.id) ?? []).length;
         return (
           <li key={folder.id}>
-            <div
-              className={cn(
-                "group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm hover:bg-background",
-                selectedFolderId === folder.id && "bg-teal/10 text-teal"
-              )}
-              style={{ paddingLeft: `${depth * 14 + 8}px` }}
-            >
-              <button onClick={() => onToggleExpand(folder.id)} className="shrink-0">
-                {hasChildren ? (
-                  isExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  )
-                ) : (
-                  <span className="inline-block w-3.5" />
-                )}
-              </button>
-              <button onClick={() => onSelect(folder.id)} className="flex-1 truncate text-left">
-                {folder.name}
-                {count > 0 && <span className="ml-1 text-xs text-muted">({count})</span>}
-              </button>
-              <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
-                <button onClick={() => onMove(folder, -1)} disabled={idx === 0} className="disabled:opacity-20">
-                  <ArrowUp className="h-3 w-3 text-muted hover:text-teal" />
-                </button>
-                <button
-                  onClick={() => onMove(folder, 1)}
-                  disabled={idx === children.length - 1}
-                  className="disabled:opacity-20"
-                >
-                  <ArrowDown className="h-3 w-3 text-muted hover:text-teal" />
-                </button>
-                <button onClick={() => onAddSubfolder(folder.id)} title="Submap toevoegen">
-                  <FolderPlus className="h-3.5 w-3.5 text-muted hover:text-teal" />
-                </button>
-                <button onClick={() => onRename(folder)} title="Hernoemen">
-                  <Pencil className="h-3.5 w-3.5 text-muted hover:text-teal" />
-                </button>
-                <button onClick={() => onDelete(folder)} title="Verwijderen">
-                  <Trash2 className="h-3.5 w-3.5 text-muted hover:text-danger" />
-                </button>
-              </div>
-            </div>
+            <FolderRow
+              folder={folder}
+              idx={idx}
+              siblingCount={children.length}
+              hasChildren={hasChildren}
+              isExpanded={isExpanded}
+              count={count}
+              depth={depth}
+              selected={selectedFolderId === folder.id}
+              onToggleExpand={onToggleExpand}
+              onSelect={onSelect}
+              onAddSubfolder={onAddSubfolder}
+              onRename={onRename}
+              onDelete={onDelete}
+              onMove={onMove}
+              onMoveItemToFolder={onMoveItemToFolder}
+            />
             {isExpanded && (
               <FolderList
                 parentId={folder.id}
@@ -610,6 +609,7 @@ function FolderList({
                 onRename={onRename}
                 onDelete={onDelete}
                 onMove={onMove}
+                onMoveItemToFolder={onMoveItemToFolder}
                 depth={depth + 1}
               />
             )}
@@ -617,6 +617,106 @@ function FolderList({
         );
       })}
     </ul>
+  );
+}
+
+function FolderRow({
+  folder,
+  idx,
+  siblingCount,
+  hasChildren,
+  isExpanded,
+  count,
+  depth,
+  selected,
+  onToggleExpand,
+  onSelect,
+  onAddSubfolder,
+  onRename,
+  onDelete,
+  onMove,
+  onMoveItemToFolder,
+}: {
+  folder: MenuFolder;
+  idx: number;
+  siblingCount: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  count: number;
+  depth: number;
+  selected: boolean;
+  onToggleExpand: (id: string) => void;
+  onSelect: (id: string) => void;
+  onAddSubfolder: (parentId: string) => void;
+  onRename: (folder: MenuFolder) => void;
+  onDelete: (folder: MenuFolder) => void;
+  onMove: (folder: MenuFolder, direction: -1 | 1) => void;
+  onMoveItemToFolder: (itemId: string, targetFolderId: string) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+
+  return (
+    <div
+      className={cn(
+        "group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm hover:bg-background",
+        selected && "bg-teal/10 text-teal",
+        dragOver && "bg-teal/20 outline outline-2 outline-teal"
+      )}
+      style={{ paddingLeft: `${depth * 14 + 8}px` }}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("text/menu-item-id")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }
+      }}
+      onDragEnter={(e) => {
+        if (e.dataTransfer.types.includes("text/menu-item-id")) setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const itemId = e.dataTransfer.getData("text/menu-item-id");
+        if (itemId) onMoveItemToFolder(itemId, folder.id);
+      }}
+    >
+      <button onClick={() => onToggleExpand(folder.id)} className="shrink-0">
+        {hasChildren ? (
+          isExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )
+        ) : (
+          <span className="inline-block w-3.5" />
+        )}
+      </button>
+      <button onClick={() => onSelect(folder.id)} className="flex-1 truncate text-left">
+        {folder.name}
+        {count > 0 && <span className="ml-1 text-xs text-muted">({count})</span>}
+      </button>
+      <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
+        <button onClick={() => onMove(folder, -1)} disabled={idx === 0} className="disabled:opacity-20">
+          <ArrowUp className="h-3 w-3 text-muted hover:text-teal" />
+        </button>
+        <button
+          onClick={() => onMove(folder, 1)}
+          disabled={idx === siblingCount - 1}
+          className="disabled:opacity-20"
+        >
+          <ArrowDown className="h-3 w-3 text-muted hover:text-teal" />
+        </button>
+        <button onClick={() => onAddSubfolder(folder.id)} title="Submap toevoegen">
+          <FolderPlus className="h-3.5 w-3.5 text-muted hover:text-teal" />
+        </button>
+        <button onClick={() => onRename(folder)} title="Hernoemen">
+          <Pencil className="h-3.5 w-3.5 text-muted hover:text-teal" />
+        </button>
+        <button onClick={() => onDelete(folder)} title="Verwijderen">
+          <Trash2 className="h-3.5 w-3.5 text-muted hover:text-danger" />
+        </button>
+      </div>
+    </div>
   );
 }
 
