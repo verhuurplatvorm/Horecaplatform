@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleAlert, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ export default function ImportReviewPage({
   params: Promise<{ batchId: string }>;
 }) {
   const { batchId } = use(params);
+  const router = useRouter();
   const [batch, setBatch] = useState<PriceImportBatch | null>(null);
   const [rows, setRows] = useState<PriceImportRow[]>([]);
   const [products, setProducts] = useState<Map<string, Product>>(new Map());
@@ -30,6 +32,7 @@ export default function ImportReviewPage({
   >(new Map());
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [deletingBatch, setDeletingBatch] = useState(false);
   const [bulkCreating, setBulkCreating] = useState(false);
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
@@ -123,20 +126,30 @@ export default function ImportReviewPage({
   }
 
   async function handleManualMatch(rowId: string, productId: string) {
-    await fetch(`/api/price-imports/${batchId}/rows/${rowId}`, {
+    const res = await fetch(`/api/price-imports/${batchId}/rows/${rowId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ productId }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      window.alert(body?.error ?? "Koppelen mislukt.");
+      return;
+    }
     reload();
   }
 
   async function handlePackagingChange(rowId: string, packagingUnitCount: number) {
-    await fetch(`/api/price-imports/${batchId}/rows/${rowId}`, {
+    const res = await fetch(`/api/price-imports/${batchId}/rows/${rowId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ packagingUnitCount }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      window.alert(body?.error ?? "Bijwerken van de verpakkingshoeveelheid mislukt.");
+      return;
+    }
     reload();
   }
 
@@ -170,6 +183,36 @@ export default function ImportReviewPage({
     setRollingBack(false);
     setApplyResult(null);
     reload();
+  }
+
+  async function handleDeleteBatch() {
+    if (
+      !window.confirm(
+        `Deze factuur/import definitief verwijderen? Alle regels verdwijnen mee. Al doorgevoerde prijzen op producten blijven gewoon staan — alleen de importgeschiedenis zelf verdwijnt. Dit kan niet ongedaan worden gemaakt.`
+      )
+    ) {
+      return;
+    }
+    setDeletingBatch(true);
+    const supabase = createClient();
+    const { error, data } = await supabase
+      .from("price_import_batches")
+      .delete()
+      .eq("id", batchId)
+      .select("id");
+    setDeletingBatch(false);
+
+    if (error) {
+      window.alert("Verwijderen mislukt: " + error.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      window.alert(
+        "Verwijderen is niet gelukt — je hebt hier mogelijk geen rechten voor (groepsbrede facturen kunnen alleen door een groepsbeheerder verwijderd worden)."
+      );
+      return;
+    }
+    router.push(batch?.source_kind === "factuur" ? "/leveranciers/facturen" : "/leveranciers");
   }
 
   async function handleBulkCreate() {
@@ -280,13 +323,22 @@ export default function ImportReviewPage({
       return;
     }
     const supabase = createClient();
-    const { error: deleteError } = await supabase
+    const { error: deleteError, data } = await supabase
       .from("price_import_rows")
       .delete()
-      .eq("id", rowId);
-    if (!deleteError) {
-      setRows((prev) => prev.filter((r) => r.id !== rowId));
+      .eq("id", rowId)
+      .select("id");
+    if (deleteError) {
+      window.alert("Verwijderen mislukt: " + deleteError.message);
+      return;
     }
+    if (!data || data.length === 0) {
+      window.alert(
+        "Verwijderen is niet gelukt — je hebt hier mogelijk geen rechten voor (groepsbrede facturen kunnen alleen door een groepsbeheerder bewerkt worden)."
+      );
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.id !== rowId));
   }
 
   if (loading) {
@@ -407,6 +459,10 @@ export default function ImportReviewPage({
                 {applying
                   ? "Bezig…"
                   : `${applyableCount} prijzen doorvoeren`}
+              </Button>
+              <Button variant="danger" onClick={handleDeleteBatch} disabled={deletingBatch}>
+                <Trash2 className="h-4 w-4" />
+                {deletingBatch ? "Bezig…" : "Factuur verwijderen"}
               </Button>
             </div>
           </CardContent>

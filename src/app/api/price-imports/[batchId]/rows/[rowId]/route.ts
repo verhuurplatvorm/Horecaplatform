@@ -47,15 +47,26 @@ export async function PATCH(
     );
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("price_import_rows")
     .update(update)
-    .eq("id", rowId);
+    .eq("id", rowId)
+    .select("id");
 
   if (error) {
     return NextResponse.json(
-      { error: "Kan regel niet bijwerken." },
+      { error: "Kan regel niet bijwerken: " + error.message },
       { status: 500 }
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "De wijziging is niet doorgevoerd — je hebt hier mogelijk geen rechten voor (groepsbrede facturen kunnen alleen door een groepsbeheerder bewerkt worden), of de regel bestaat niet meer.",
+      },
+      { status: 403 }
     );
   }
 

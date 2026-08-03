@@ -4,6 +4,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteInvoiceButton } from "@/components/invoices/delete-invoice-button";
 
 export default async function FacturenPage() {
   const supabase = await createClient();
@@ -46,6 +47,7 @@ export default async function FacturenPage() {
                   <th className="px-5 py-3 font-medium">Datum</th>
                   <th className="px-5 py-3 font-medium">Totaal</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -76,11 +78,14 @@ export default async function FacturenPage() {
                       {b.total_incl_vat !== null ? `€ ${b.total_incl_vat.toFixed(2)}` : "—"}
                     </td>
                     <td className="px-5 py-3 text-muted">{b.status.replace(/_/g, " ")}</td>
+                    <td className="px-5 py-3">
+                      <DeleteInvoiceButton batchId={b.id} filename={b.original_filename ?? "deze factuur"} />
+                    </td>
                   </tr>
                 ))}
                 {(!batches || batches.length === 0) && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan facturen niet laden — controleer de Supabase-koppeling."
                         : "Nog geen facturen geüpload."}
