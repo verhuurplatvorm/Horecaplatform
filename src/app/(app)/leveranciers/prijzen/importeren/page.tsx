@@ -59,7 +59,14 @@ export default function ImporterenPage() {
   async function handlePreview(e: React.FormEvent) {
     e.preventDefault();
     const toSend = buildFileToSend();
-    if (!toSend || !supplierId) return;
+    if (!supplierId) {
+      setError("Kies eerst een leverancier.");
+      return;
+    }
+    if (!toSend) {
+      setError(mode === "bestand" ? "Kies eerst een bestand." : "Plak eerst een tabel.");
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -235,7 +242,7 @@ export default function ImporterenPage() {
             <form onSubmit={handlePreview} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
-                  Leverancier
+                  Leverancier <span className="text-danger">*</span>
                 </label>
                 <select
                   required
@@ -250,6 +257,15 @@ export default function ImporterenPage() {
                     </option>
                   ))}
                 </select>
+                {suppliers.length === 0 && (
+                  <p className="mt-1 text-xs text-copper">
+                    Je hebt nog geen leveranciers.{" "}
+                    <a href="/leveranciers/nieuw" className="underline">
+                      Maak er eerst één aan
+                    </a>{" "}
+                    — zonder leverancier kan er niet geïmporteerd worden.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -351,6 +367,16 @@ export default function ImporterenPage() {
               )}
 
               {error && <p className="text-sm text-danger">{error}</p>}
+
+              {!canPreview && !submitting && (
+                <p className="text-xs text-copper">
+                  {!supplierId
+                    ? "Kies eerst een leverancier hierboven."
+                    : mode === "bestand"
+                    ? "Kies eerst een bestand om te uploaden."
+                    : "Plak eerst een tabel hierboven."}
+                </p>
+              )}
 
               <Button type="submit" disabled={!canPreview}>
                 <ArrowRight className="h-4 w-4" />
