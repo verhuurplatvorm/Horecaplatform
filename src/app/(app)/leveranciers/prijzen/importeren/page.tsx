@@ -74,17 +74,29 @@ export default function ImporterenPage() {
     const formData = new FormData();
     formData.append("file", toSend);
 
-    const res = await fetch("/api/price-imports", { method: "POST", body: formData });
-    const body = await res.json();
-    setSubmitting(false);
+    try {
+      const res = await fetch("/api/price-imports", { method: "POST", body: formData });
+      let body: PreviewData & { error?: string; suggestedMapping?: Record<string, string> };
+      try {
+        body = await res.json();
+      } catch {
+        throw new Error(
+          `De server gaf een onverwacht antwoord terug (HTTP ${res.status}). Probeer het opnieuw, of neem contact op als dit blijft gebeuren.`
+        );
+      }
 
-    if (!res.ok) {
-      setError(body.error ?? "Kan bestand niet lezen.");
-      return;
+      if (!res.ok) {
+        setError(body.error ?? "Kan bestand niet lezen.");
+        return;
+      }
+
+      setPreview(body);
+      setMapping(body.suggestedMapping ?? {});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Er ging iets mis bij het uploaden.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setPreview(body as PreviewData);
-    setMapping(body.suggestedMapping);
   }
 
   async function handleFinalize() {
@@ -92,26 +104,42 @@ export default function ImporterenPage() {
     setSubmitting(true);
     setError(null);
 
-    const res = await fetch("/api/price-imports/finalize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        supplierId,
-        companyId: companyId || null,
-        originalFilename: preview.originalFilename,
-        headers: preview.headers,
-        rows: preview.rows,
-        mapping,
-      }),
-    });
-    const body = await res.json();
-    setSubmitting(false);
+    try {
+      const res = await fetch("/api/price-imports/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierId,
+          companyId: companyId || null,
+          originalFilename: preview.originalFilename,
+          headers: preview.headers,
+          rows: preview.rows,
+          mapping,
+        }),
+      });
+      let body: { batchId?: string; error?: string };
+      try {
+        body = await res.json();
+      } catch {
+        throw new Error(
+          `De server gaf een onverwacht antwoord terug (HTTP ${res.status}). Probeer het opnieuw.`
+        );
+      }
 
-    if (!res.ok) {
-      setError(body.error ?? "Er ging iets mis bij het verwerken.");
-      return;
+      if (!res.ok) {
+        setError(body.error ?? "Er ging iets mis bij het verwerken.");
+        return;
+      }
+      if (!body.batchId) {
+        setError("Onverwacht antwoord van de server (geen batch-id ontvangen).");
+        return;
+      }
+      router.push(`/leveranciers/prijzen/importeren/${body.batchId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Er ging iets mis bij het verwerken.");
+    } finally {
+      setSubmitting(false);
     }
-    router.push(`/leveranciers/prijzen/importeren/${body.batchId}`);
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
