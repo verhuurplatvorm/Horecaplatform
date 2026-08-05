@@ -44,11 +44,42 @@ export default function ProductenPage() {
     let cancelled = false;
     async function run() {
       const supabase = createClient();
-      const { data: products, error: fetchError } = await supabase
-        .from("products")
-        .select("id, name, custom_name, base_unit, article_number, ean_code, is_active")
-        .order("name")
-        .limit(200);
+
+      // Haalt ALLE producten op in batches van 1000 i.p.v. een harde
+      // limiet van 200 — bij grotere catalogi (zoals Horesca Horecavo
+      // met 400+ artikelen) werd de lijst eerder stilzwijgend afgekapt
+      // zonder enige melding.
+      const PAGE_SIZE = 1000;
+      const allProducts: {
+        id: string;
+        name: string;
+        custom_name: string | null;
+        base_unit: string;
+        article_number: string | null;
+        ean_code: string | null;
+        is_active: boolean;
+      }[] = [];
+      let from = 0;
+      let fetchError: { message: string } | null = null;
+
+      while (true) {
+        const { data, error: pageError } = await supabase
+          .from("products")
+          .select("id, name, custom_name, base_unit, article_number, ean_code, is_active")
+          .order("name")
+          .range(from, from + PAGE_SIZE - 1);
+
+        if (pageError) {
+          fetchError = pageError;
+          break;
+        }
+        if (!data || data.length === 0) break;
+        allProducts.push(...data);
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+
+      const products = fetchError ? null : allProducts;
 
       if (cancelled) return;
       if (fetchError || !products) {
@@ -185,12 +216,21 @@ export default function ProductenPage() {
           </Link>
         </div>
         <div className="flex items-center justify-between">
-          <Link href="/producten/opschonen">
-            <Button variant="secondary" size="sm">
-              <TriangleAlert className="h-3.5 w-3.5" />
-              Producten opschonen
-            </Button>
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/producten/opschonen">
+              <Button variant="secondary" size="sm">
+                <TriangleAlert className="h-3.5 w-3.5" />
+                Producten opschonen
+              </Button>
+            </Link>
+            {!loading && (
+              <span className="text-xs text-muted">
+                {query.trim()
+                  ? `${filteredRows.length} van ${rows.length} producten`
+                  : `${rows.length} producten totaal`}
+              </span>
+            )}
+          </div>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2">
               <span className="text-sm text-foreground">{selectedIds.size} geselecteerd</span>
