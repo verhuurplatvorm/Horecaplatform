@@ -49,23 +49,35 @@ export function IngredientSearch({
 
     const timeout = setTimeout(async () => {
       const supabase = createClient();
-      const [{ data: products }, { data: halfproducts }] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, name, custom_name, base_unit_id, product_group")
-          .or(`name.ilike.%${query}%,custom_name.ilike.%${query}%`)
-          .limit(8),
-        supabase
-          .from("recipes")
-          .select("id, name, base_unit_id, category, yield_quantity, yield_unit")
-          .eq("recipe_kind", "halfproduct")
-          .ilike("name", `%${query}%`)
-          .limit(8),
-      ]);
+      const [{ data: byName }, { data: byCustomName }, { data: halfproducts }] =
+        await Promise.all([
+          supabase
+            .from("products")
+            .select("id, name, custom_name, base_unit_id, product_group")
+            .ilike("name", `%${query}%`)
+            .limit(8),
+          supabase
+            .from("products")
+            .select("id, name, custom_name, base_unit_id, product_group")
+            .ilike("custom_name", `%${query}%`)
+            .limit(8),
+          supabase
+            .from("recipes")
+            .select("id, name, base_unit_id, category, yield_quantity, yield_unit")
+            .eq("recipe_kind", "halfproduct")
+            .ilike("name", `%${query}%`)
+            .limit(8),
+        ]);
       if (cancelled) return;
 
+      const productsById = new Map<string, Product & { product_group: string | null }>();
+      for (const p of [...(byName ?? []), ...(byCustomName ?? [])]) {
+        productsById.set(p.id, p as Product & { product_group: string | null });
+      }
+      const products = [...productsById.values()];
+
       const merged: SearchResult[] = [
-        ...((products as (Product & { product_group: string | null })[]) ?? []).map(
+        ...(products ?? []).map(
           (p) => ({
             type: "product" as const,
             id: p.id,

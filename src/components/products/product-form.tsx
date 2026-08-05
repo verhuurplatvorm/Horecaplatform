@@ -202,32 +202,64 @@ export function ProductForm({
     let cancelled = false;
     const timeout = setTimeout(async () => {
       const supabase = createClient();
-      const orFilters: string[] = [];
-      if (trimmedName.length >= 3) orFilters.push(`name.ilike.%${trimmedName}%`);
-      if (eanCode) orFilters.push(`ean_code.eq.${eanCode}`);
-      if (articleNumber) orFilters.push(`article_number.eq.${articleNumber}`);
-      if (orFilters.length === 0) return;
 
-      const { data } = await supabase
-        .from("products")
-        .select("id, name, ean_code, article_number")
-        .or(orFilters.join(","))
-        .limit(5);
+      // Bewust drie losse queries i.p.v. één samengestelde .or()-filter:
+      // een productnaam kan tekens bevatten die de queryformaat-syntax
+      // van Supabase/PostgREST verstoren (bv. haakjes, komma's), wat tot
+      // een kapotte filter en willekeurige resultaten leidt.
+      const queries = [];
+      if (trimmedName.length >= 3) {
+        queries.push(
+          supabase
+            .from("products")
+            .select("id, name, ean_code, article_number")
+            .ilike("name", `%${trimmedName}%`)
+            .limit(5)
+        );
+      }
+      if (eanCode) {
+        queries.push(
+          supabase
+            .from("products")
+            .select("id, name, ean_code, article_number")
+            .eq("ean_code", eanCode)
+            .limit(5)
+        );
+      }
+      if (articleNumber) {
+        queries.push(
+          supabase
+            .from("products")
+            .select("id, name, ean_code, article_number")
+            .eq("article_number", articleNumber)
+            .limit(5)
+        );
+      }
+      if (queries.length === 0) return;
 
+      const results = await Promise.all(queries);
       if (cancelled) return;
-      const found = (data ?? [])
-        .filter((p) => p.id !== initialProduct?.id)
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          reason:
-            p.ean_code && p.ean_code === eanCode
-              ? "zelfde EAN-code"
-              : p.article_number && p.article_number === articleNumber
-              ? "zelfde artikelnummer"
-              : "vergelijkbare naam",
-        }));
-      setDuplicates(found);
+
+      const seen = new Map<
+        string,
+        { id: string; name: string; reason: string }
+      >();
+      for (const { data } of results) {
+        for (const p of data ?? []) {
+          if (p.id === initialProduct?.id || seen.has(p.id)) continue;
+          seen.set(p.id, {
+            id: p.id,
+            name: p.name,
+            reason:
+              p.ean_code && p.ean_code === eanCode
+                ? "zelfde EAN-code"
+                : p.article_number && p.article_number === articleNumber
+                ? "zelfde artikelnummer"
+                : "vergelijkbare naam",
+          });
+        }
+      }
+      setDuplicates([...seen.values()].slice(0, 5));
     }, 400);
 
     return () => {

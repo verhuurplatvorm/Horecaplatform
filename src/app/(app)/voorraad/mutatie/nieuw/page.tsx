@@ -60,22 +60,32 @@ export default function NieuweVoorraadmutatiePage() {
     let cancelled = false;
     const timeout = setTimeout(async () => {
       const supabase = createClient();
-      const [{ data: products }, { data: halfproducts }] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, name, base_unit_id")
-          .or(`name.ilike.%${query}%,custom_name.ilike.%${query}%`)
-          .limit(8),
-        supabase
-          .from("recipes")
-          .select("id, name, base_unit_id")
-          .eq("recipe_kind", "halfproduct")
-          .ilike("name", `%${query}%`)
-          .limit(8),
-      ]);
+      const [{ data: byName }, { data: byCustomName }, { data: halfproducts }] =
+        await Promise.all([
+          supabase
+            .from("products")
+            .select("id, name, base_unit_id")
+            .ilike("name", `%${query}%`)
+            .limit(8),
+          supabase
+            .from("products")
+            .select("id, name, base_unit_id")
+            .ilike("custom_name", `%${query}%`)
+            .limit(8),
+          supabase
+            .from("recipes")
+            .select("id, name, base_unit_id")
+            .eq("recipe_kind", "halfproduct")
+            .ilike("name", `%${query}%`)
+            .limit(8),
+        ]);
       if (cancelled) return;
+      const productsById = new Map<string, { id: string; name: string; base_unit_id: string | null }>();
+      for (const p of [...(byName ?? []), ...(byCustomName ?? [])]) {
+        productsById.set(p.id, p);
+      }
       setResults([
-        ...(products ?? []).map((p) => ({
+        ...[...productsById.values()].map((p) => ({
           type: "product" as const,
           id: p.id,
           name: p.name,
