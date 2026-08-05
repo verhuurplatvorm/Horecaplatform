@@ -11,6 +11,8 @@ import {
   SoupIcon,
   Trash2,
   TriangleAlert,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,6 +100,12 @@ export function RecipeForm({
     initialRecipe?.vat_rate?.toString() ?? "9"
   );
   const [targetFoodCostPct, setTargetFoodCostPct] = useState("30");
+  const [wastePercentage, setWastePercentage] = useState(
+    initialRecipe?.waste_percentage?.toString() ?? "0"
+  );
+  const [marginFreeCosts, setMarginFreeCosts] = useState(
+    initialRecipe?.margin_free_costs?.toString() ?? "0"
+  );
   const [scopeChoice, setScopeChoice] = useState<"central" | "company">(
     initialRecipe
       ? initialRecipe.company_id
@@ -135,6 +143,7 @@ export function RecipeForm({
         allergens: string[];
         traces: string[];
         nutritionPer100: Record<string, number> | null;
+        priceDirection: "up" | "down" | null;
       }
     >
   >(new Map());
@@ -230,7 +239,7 @@ export function RecipeForm({
   async function loadProductPrice(productId: string) {
     if (!referenceCompanyId) return;
     const supabase = createClient();
-    const [{ data: cost }, { data: product }] = await Promise.all([
+    const [{ data: cost }, { data: product }, { data: history }] = await Promise.all([
       supabase
         .from("current_product_cost")
         .select("price_per_base_unit")
@@ -242,7 +251,24 @@ export function RecipeForm({
         .select("base_unit_id, allergens, contains_traces, nutrition_per_100")
         .eq("id", productId)
         .single(),
+      supabase
+        .from("price_change_history")
+        .select("old_price_per_base_unit, new_price_per_base_unit")
+        .eq("product_id", productId)
+        .eq("company_id", referenceCompanyId)
+        .not("old_price_per_base_unit", "is", null)
+        .order("valid_from", { ascending: false })
+        .limit(1),
     ]);
+    const latestChange = history?.[0];
+    const priceDirection: "up" | "down" | null =
+      latestChange?.new_price_per_base_unit != null && latestChange?.old_price_per_base_unit != null
+        ? latestChange.new_price_per_base_unit > latestChange.old_price_per_base_unit
+          ? "up"
+          : latestChange.new_price_per_base_unit < latestChange.old_price_per_base_unit
+          ? "down"
+          : null
+        : null;
     setProductPrices((prev) =>
       new Map(prev).set(productId, {
         pricePerBaseUnit: cost?.price_per_base_unit ?? 0,
@@ -250,6 +276,7 @@ export function RecipeForm({
         allergens: product?.allergens ?? [],
         traces: product?.contains_traces ?? [],
         nutritionPer100: product?.nutrition_per_100 ?? null,
+        priceDirection,
       })
     );
   }
@@ -324,7 +351,12 @@ export function RecipeForm({
     (sum, row, i) => (row.type === "halfproduct" && lineCosts[i] !== null ? sum + lineCosts[i]! : sum),
     0
   );
-  const totalCost = ingredientCost + halfproductCost;
+  const ingredientAndHalfproductCost = ingredientCost + halfproductCost;
+  const wastePct = Number(wastePercentage) || 0;
+  const wasteAmount = ingredientAndHalfproductCost * (wastePct / 100);
+  const costBeforeMarginFree = ingredientAndHalfproductCost + wasteAmount;
+  const marginFreeCostsNum = Number(marginFreeCosts) || 0;
+  const totalCost = costBeforeMarginFree + marginFreeCostsNum;
 
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
@@ -414,7 +446,7 @@ export function RecipeForm({
     salesPriceExclEstimate !== null ? salesPriceExclEstimate - totalCost : null;
   const advisedPrice =
     targetFoodCostPct && Number(targetFoodCostPct) > 0
-      ? totalCost / (Number(targetFoodCostPct) / 100)
+      ? costBeforeMarginFree / (Number(targetFoodCostPct) / 100) + marginFreeCostsNum
       : null;
   const advisedPriceInclVat =
     advisedPrice !== null ? advisedPrice * (1 + Number(vatRate) / 100) : null;
@@ -500,6 +532,8 @@ export function RecipeForm({
       shelf_life_days: recipeKind === "halfproduct" && shelfLifeDays ? Number(shelfLifeDays) : null,
       sales_price: recipeKind === "gerecht" && salesPrice ? Number(salesPrice) : null,
       vat_rate: Number(vatRate),
+      waste_percentage: wastePercentage ? Number(wastePercentage) : 0,
+      margin_free_costs: marginFreeCosts ? Number(marginFreeCosts) : 0,
     };
 
     let recipeId = initialRecipe?.id;
@@ -798,6 +832,11 @@ export function RecipeForm({
               row={row}
               units={unitsForDimension(row.baseUnitId)}
               cost={lineCosts[i]}
+              priceDirection={
+                row.type === "product" && row.refId
+                  ? productPrices.get(row.refId)?.priceDirection ?? null
+                  : null
+              }
               isDuplicate={duplicateIndexes.has(i)}
               isIncomplete={incompleteLineIndexes.includes(i)}
               companyId={referenceCompanyId}
@@ -825,6 +864,45 @@ export function RecipeForm({
       <Card>
         <CardContent className="space-y-3 py-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-sm text-muted">Ingrediëntkosten</p>
+              <p className="text-lg font-medium text-foreground">
+                € {ingredientAndHalfproductCost.toFixed(4)}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted">Afval% (algemeen)</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={wastePercentage}
+                  onChange={(e) => setWastePercentage(e.target.value)}
+                  className="input h-8 w-20"
+                />
+                <span className="text-xs text-muted">
+                  = € {wasteAmount.toFixed(4)}
+                </span>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-muted">Margevrije kosten (€)</p>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={marginFreeCosts}
+                onChange={(e) => setMarginFreeCosts(e.target.value)}
+                className="input h-8 w-24"
+              />
+              <p className="mt-0.5 text-xs text-muted">
+                telt mee in kostprijs, niet in de marge
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 border-t border-border pt-3 sm:grid-cols-3">
             <Stat label="Totale kostprijs" value={`€ ${totalCost.toFixed(4)}`} emphasis />
             <div>
               <p className="text-sm text-muted">Gewenst foodcost%</p>
@@ -869,6 +947,8 @@ export function RecipeForm({
               hierdoor geblokkeerd.
             </p>
           )}
+
+          {totalCost > 0 && <CostPieChart rows={rows} lineCosts={lineCosts} totalCost={totalCost} />}
         </CardContent>
       </Card>
   );
@@ -1091,6 +1171,99 @@ function Field({
   );
 }
 
+const PIE_COLORS = [
+  "#0f766e", // teal
+  "#b45309", // copper
+  "#16a34a", // success
+  "#dc2626", // danger
+  "#7c3aed",
+  "#0891b2",
+  "#ca8a04",
+  "#db2777",
+  "#4f46e5",
+  "#65a30d",
+];
+
+/** Kostprijs-taartdiagram: verdeling van de totale kostprijs over de
+ * ingrediënten/halfproducten, puur SVG (geen extra library nodig). */
+function CostPieChart({
+  rows,
+  lineCosts,
+  totalCost,
+}: {
+  rows: IngredientRow[];
+  lineCosts: (number | null)[];
+  totalCost: number;
+}) {
+  const slices = rows
+    .map((row, i) => ({
+      label: row.refName ?? "Onbekend",
+      cost: lineCosts[i] ?? 0,
+    }))
+    .filter((s) => s.cost > 0)
+    .sort((a, b) => b.cost - a.cost);
+
+  if (slices.length === 0 || totalCost <= 0) return null;
+
+  const radius = 60;
+  const cx = 70;
+  const cy = 70;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+  const startAngles = slices.reduce<number[]>((acc, slice, i) => {
+    const prevEnd = i === 0 ? -90 : acc[i - 1] + (slices[i - 1].cost / totalCost) * 360;
+    acc.push(prevEnd);
+    return acc;
+  }, []);
+
+  const paths = slices.map((slice, i) => {
+    const fraction = slice.cost / totalCost;
+    const angle = fraction * 360;
+    const startAngle = startAngles[i];
+    const endAngle = startAngle + angle;
+
+    const x1 = cx + radius * Math.cos(toRad(startAngle));
+    const y1 = cy + radius * Math.sin(toRad(startAngle));
+    const x2 = cx + radius * Math.cos(toRad(endAngle));
+    const y2 = cy + radius * Math.sin(toRad(endAngle));
+    const largeArc = angle > 180 ? 1 : 0;
+
+    // Eén ingrediënt dat de hele kostprijs is: gewone cirkel i.p.v. een
+    // ontaarde taartpunt (SVG-arcs kunnen geen volledige 360° in één pad).
+    const d =
+      fraction >= 0.9999
+        ? `M ${cx - radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx + radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx - radius} ${cy} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+
+    return { d, color: PIE_COLORS[i % PIE_COLORS.length], label: slice.label, fraction };
+  });
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 border-t border-border pt-3">
+      <svg viewBox="0 0 140 140" className="h-32 w-32 shrink-0">
+        {paths.map((p, i) => (
+          <path key={i} d={p.d} fill={p.color} stroke="var(--surface)" strokeWidth="1" />
+        ))}
+      </svg>
+      <ul className="space-y-1 text-xs">
+        {paths.slice(0, 8).map((p, i) => (
+          <li key={i} className="flex items-center gap-1.5">
+            <span
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: p.color }}
+            />
+            <span className="text-foreground">{p.label}</span>
+            <span className="text-muted">({(p.fraction * 100).toFixed(0)}%)</span>
+          </li>
+        ))}
+        {paths.length > 8 && (
+          <li className="text-muted">+ {paths.length - 8} andere</li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 function Stat({
   label,
   value,
@@ -1120,6 +1293,7 @@ function IngredientLine({
   row,
   units,
   cost,
+  priceDirection,
   isDuplicate,
   isIncomplete,
   companyId,
@@ -1133,6 +1307,7 @@ function IngredientLine({
   row: IngredientRow;
   units: Unit[];
   cost: number | null;
+  priceDirection?: "up" | "down" | null;
   isDuplicate: boolean;
   isIncomplete: boolean;
   companyId: string | null;
@@ -1246,10 +1421,16 @@ function IngredientLine({
           className="h-8 rounded-md border border-border bg-surface px-2 text-xs sm:col-span-1"
         />
         <div
-          className={`tabular flex h-8 items-center justify-end text-xs font-medium ${
+          className={`tabular flex h-8 items-center justify-end gap-1 text-xs font-medium ${
             isIncomplete ? "text-copper" : "text-foreground"
           }`}
         >
+          {priceDirection === "up" && (
+            <TrendingUp className="h-3 w-3 shrink-0 text-danger" aria-label="Prijs recent gestegen" />
+          )}
+          {priceDirection === "down" && (
+            <TrendingDown className="h-3 w-3 shrink-0 text-success" aria-label="Prijs recent gedaald" />
+          )}
           {cost !== null ? `€ ${cost.toFixed(4)}` : isIncomplete ? "onvolledig" : "—"}
         </div>
       </div>

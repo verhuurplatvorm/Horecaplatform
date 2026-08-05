@@ -173,6 +173,8 @@ export type Recipe = {
   base_unit_id: string | null;
   storage_method: string | null;
   shelf_life_days: number | null;
+  waste_percentage: number;
+  margin_free_costs: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
