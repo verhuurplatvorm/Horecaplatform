@@ -1121,7 +1121,20 @@ export function RecipeForm({
   );
 
   return (
-    <form onSubmit={(e) => handleSubmit(e)} className="space-y-4">
+    <form
+      onSubmit={(e) => handleSubmit(e)}
+      onKeyDown={(e) => {
+        // Enter in een los invoerveld (bv. Hoeveelheid) mag het hele
+        // formulier niet versturen — dat stuurt je terug naar het
+        // overzicht en verliest alle ingevulde regels. Alleen een
+        // expliciete klik op "Opslaan" mag opslaan.
+        const target = e.target as HTMLElement;
+        if (e.key === "Enter" && target.tagName === "INPUT") {
+          e.preventDefault();
+        }
+      }}
+      className="space-y-4"
+    >
       {recipeKind === "halfproduct" ? (
         <>
           {/* Het volledige recept (ingrediënten + kostprijs) linksboven,

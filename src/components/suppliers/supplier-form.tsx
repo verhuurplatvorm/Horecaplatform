@@ -139,7 +139,15 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      onKeyDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (e.key === "Enter" && target.tagName === "INPUT") {
+          e.preventDefault();
+        }
+      }}
+      className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>

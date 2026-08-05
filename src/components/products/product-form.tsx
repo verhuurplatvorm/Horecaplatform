@@ -463,7 +463,15 @@ export function ProductForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      onKeyDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (e.key === "Enter" && target.tagName === "INPUT") {
+          e.preventDefault();
+        }
+      }}
+      className="space-y-4">
       {visibleDuplicates.length > 0 && (
         <div className="flex items-start gap-2 rounded-md border border-copper/40 bg-copper/10 px-4 py-3 text-sm text-copper">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />

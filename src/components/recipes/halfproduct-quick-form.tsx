@@ -85,7 +85,15 @@ export function HalfproductQuickForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form
+      onSubmit={handleSubmit}
+      onKeyDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (e.key === "Enter" && target.tagName === "INPUT") {
+          e.preventDefault();
+        }
+      }}
+      className="space-y-3">
       <p className="text-xs text-muted">
         Leg hier alleen de basis vast. De ingrediënten van dit halfproduct
         voeg je zo meteen toe door het straks te openen en te bewerken, net
