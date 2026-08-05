@@ -19,16 +19,15 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
 
     // Volgorde van betrouwbaarheid: 1) expliciete verpakkingstekst van
     // Claude, 2) verpakking die in de artikelomschrijving zelf verwerkt
-    // zit (bv. "MOSSELEN SUPER SELECT 2 KG" → 2 kg), 3) pas als laatste
-    // terugval aantal+eenheid — dat is namelijk vaak "aantal besteld",
-    // niet "inhoud per verpakking", en geeft dus regelmatig een
-    // misleidend correcte match (bv. "10 stuks besteld" i.p.v. de
-    // werkelijke inhoud van 2 kg per stuk).
-    const candidateTexts = [
-      line.packagingDescription,
-      line.description,
-      line.quantity && line.unit ? `${line.quantity} ${line.unit}` : null,
-    ].filter(Boolean) as string[];
+    // zit (bv. "MOSSELEN SUPER SELECT 2 KG" → 2 kg). Het AANTAL besteld
+    // (bv. "40 stuks") wordt hier bewust NOOIT als verpakkingsgrootte
+    // gebruikt — dat is een ander getal met een andere betekenis, en
+    // door ze te verwarren ontstaat precies de fout waarbij "40 stuks
+    // besteld à €1,25/stuk" verkeerd wordt gelezen als "1 verpakking van
+    // 40 stuks voor €1,25", wat de prijs 40x te laag maakt.
+    const candidateTexts = [line.packagingDescription, line.description].filter(
+      Boolean
+    ) as string[];
 
     for (const text of candidateTexts) {
       const parsed = parsePackagingText(text);
@@ -41,18 +40,31 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       }
     }
 
+    // Geen verpakking gevonden: veiligste aanname is dat de prijs al per
+    // losse eenheid is (bv. "€ 1,25 per stuk", "€ 17,50 per kg") — dat is
+    // verreweg het meest voorkomende factuurpatroon. "1 {eenheid}" i.p.v.
+    // "{aantal} {eenheid}" voorkomt dat het bestelde aantal per ongeluk
+    // als verpakkingsgrootte wordt gebruikt.
     if (packagingUnitCount === null && line.unit) {
-      const unCefact = UN_CEFACT_TO_BASE[line.unit.toUpperCase()];
-      if (unCefact) {
-        packagingUnitCount = unCefact.factor;
-        packagingUnitKey = unCefact.baseUnitKey;
-        matchedPackagingText = `${line.quantity ?? 1} ${line.unit}`;
+      const parsedSingle = parsePackagingText(`1 ${line.unit}`);
+      if (parsedSingle) {
+        const baseUnit = UNIT_TO_BASE_FACTOR[parsedSingle.unit];
+        packagingUnitCount = parsedSingle.totalQuantity * (baseUnit?.factor ?? 1);
+        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+        matchedPackagingText = `1 ${line.unit}`;
+      } else {
+        const unCefact = UN_CEFACT_TO_BASE[line.unit.toUpperCase()];
+        if (unCefact) {
+          packagingUnitCount = unCefact.factor;
+          packagingUnitKey = unCefact.baseUnitKey;
+          matchedPackagingText = `1 ${line.unit}`;
+        }
       }
     }
 
     if (packagingUnitCount === null) {
       console.warn(
-        `[invoice-import] Regel ${line.lineNumber} ("${line.description}"): geen verpakkingshoeveelheid herkend uit "${line.packagingDescription ?? "—"}" / "${line.description}" / "${line.quantity} ${line.unit}".`
+        `[invoice-import] Regel ${line.lineNumber} ("${line.description}"): geen verpakkingshoeveelheid herkend uit "${line.packagingDescription ?? "—"}" / "${line.description}" / eenheid "${line.unit}".`
       );
     }
 
@@ -64,9 +76,7 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       description: line.description,
       brand: null,
       packagingDescription:
-        matchedPackagingText ??
-        line.packagingDescription ??
-        (line.unit ? `${line.quantity ?? 1} ${line.unit}` : null),
+        matchedPackagingText ?? line.packagingDescription ?? (line.unit ? `1 ${line.unit}` : null),
       packagingUnitCount,
       packagingUnitKey,
       purchasePrice: line.unitPrice,
