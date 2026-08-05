@@ -74,5 +74,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
+  // Onthoud deze koppeling voor de volgende keer dat er van deze
+  // leverancier wordt geïmporteerd (spec §4/§19) — de gebruiker heeft 'm
+  // hier net zelf bevestigd, dus dit is een betrouwbare koppeling.
+  const { error: templateError } = await supabase.from("supplier_import_templates").upsert({
+    supplier_id: supplierId,
+    column_mapping: mapping,
+    updated_at: new Date().toISOString(),
+  });
+  if (templateError) {
+    console.error(
+      `[price-import] Kan kolomsjabloon niet opslaan voor leverancier ${supplierId}:`,
+      templateError.message
+    );
+    // Geen harde fout — de import zelf is al gelukt, alleen het
+    // onthouden van de koppeling voor de volgende keer is mislukt.
+  }
+
   return NextResponse.json({ batchId: result.batchId });
 }

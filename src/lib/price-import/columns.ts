@@ -264,6 +264,19 @@ export function normalizeRow(
           ? `${packagingDescription} · ${combinedPackagingText}`
           : combinedPackagingText;
       }
+    } else if (description) {
+      // Laatste terugval: de verpakking staat vaak gewoon IN de
+      // artikelnaam zelf (bv. "KERSEN ZONDER PIT 1x1,5kg #9264#"), ook
+      // wanneer die kolom als gewone "Artikelnaam" gekoppeld is i.p.v.
+      // als "Artikelregel". Zo hangt herkenning niet af van welke van
+      // de twee de gebruiker koos bij het koppelscherm.
+      const fromDescription = parsePackagingText(description);
+      if (fromDescription) {
+        const baseUnit = UNIT_TO_BASE_FACTOR[fromDescription.unit];
+        packagingUnitCount = fromDescription.totalQuantity * (baseUnit?.factor ?? 1);
+        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+        effectivePackagingDescription = fromDescription.explanation;
+      }
     }
   }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, ClipboardPaste, ArrowRight, TriangleAlert } from "lucide-react";
+import { Upload, ClipboardPaste, ArrowRight, TriangleAlert, CheckCircle2 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ interface PreviewData {
   headers: string[];
   rows: { rowNumber: number; raw: Record<string, unknown> }[];
   suggestedMapping: Record<string, string>;
+  savedMapping?: Record<string, string> | null;
+  savedMappingSupplierName?: string | null;
 }
 
 export default function ImporterenPage() {
@@ -34,6 +36,29 @@ export default function ImporterenPage() {
 
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [usedSavedMapping, setUsedSavedMapping] = useState<string | null>(null);
+  const [hasKnownTemplate, setHasKnownTemplate] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!supplierId) {
+        if (!cancelled) setHasKnownTemplate(false);
+        return;
+      }
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("supplier_import_templates")
+        .select("supplier_id")
+        .eq("supplier_id", supplierId)
+        .maybeSingle();
+      if (!cancelled) setHasKnownTemplate(Boolean(data));
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [supplierId]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -73,10 +98,11 @@ export default function ImporterenPage() {
 
     const formData = new FormData();
     formData.append("file", toSend);
+    formData.append("supplierId", supplierId);
 
     try {
       const res = await fetch("/api/price-imports", { method: "POST", body: formData });
-      let body: PreviewData & { error?: string; suggestedMapping?: Record<string, string> };
+      let body: PreviewData & { error?: string };
       try {
         body = await res.json();
       } catch {
@@ -91,7 +117,13 @@ export default function ImporterenPage() {
       }
 
       setPreview(body);
-      setMapping(body.suggestedMapping ?? {});
+      if (body.savedMapping) {
+        setMapping(body.savedMapping);
+        setUsedSavedMapping(body.savedMappingSupplierName ?? null);
+      } else {
+        setMapping(body.suggestedMapping ?? {});
+        setUsedSavedMapping(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Er ging iets mis bij het uploaden.");
     } finally {
@@ -176,11 +208,19 @@ export default function ImporterenPage() {
               <CardTitle>{preview.originalFilename} — {preview.rows.length} regels</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted">
-                Geef per kolom aan wat erin staat. We hebben alvast een gok
-                gedaan — controleer en pas aan waar nodig. Minimaal één kolom
-                moet EAN-code of Artikelnummer zijn, en één kolom Prijs.
-              </p>
+              {usedSavedMapping ? (
+                <p className="flex items-center gap-1.5 text-sm text-success">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Bekende kolomindeling voor <strong>{usedSavedMapping}</strong> automatisch
+                  toegepast — controleer of het nog klopt en pas aan waar nodig.
+                </p>
+              ) : (
+                <p className="text-sm text-muted">
+                  Geef per kolom aan wat erin staat. We hebben alvast een gok
+                  gedaan — controleer en pas aan waar nodig. Minimaal één kolom
+                  moet EAN-code of Artikelnummer zijn, en één kolom Prijs.
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -292,6 +332,12 @@ export default function ImporterenPage() {
                       Maak er eerst één aan
                     </a>{" "}
                     — zonder leverancier kan er niet geïmporteerd worden.
+                  </p>
+                )}
+                {hasKnownTemplate && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-success">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Bekende kolomindeling gevonden — wordt automatisch toegepast.
                   </p>
                 )}
               </div>

@@ -442,6 +442,13 @@ export type PriceImportRowStatus =
   | "fout";
 export type PriceMatchMethod = "ean" | "artikelnummer" | "handmatig" | "automatisch_aangemaakt";
 
+export type SupplierImportTemplate = {
+  supplier_id: string;
+  column_mapping: Record<string, string>;
+  decimal_separator: string;
+  updated_at: string;
+}
+
 export type SupplierPriceSource = {
   id: string;
   supplier_id: string;
@@ -502,12 +509,6 @@ export type PriceImportRow = {
   match_confidence: string | null;
   suggested_product_ids: string[];
 }
-
-export type SupplierImportTemplate = {
-  supplier_id: string;
-  column_mapping: Record<string, string>;
-  decimal_separator: string;
-};
 
 /**
  * Minimale Database-typedefinitie in het formaat dat @supabase/ssr en
@@ -617,6 +618,12 @@ export type Database = {
         Update: Partial<PriceImportRow>;
         Relationships: [];
       };
+      supplier_import_templates: {
+        Row: SupplierImportTemplate;
+        Insert: Partial<SupplierImportTemplate>;
+        Update: Partial<SupplierImportTemplate>;
+        Relationships: [];
+      };
       units: {
         Row: Unit;
         Insert: Partial<Unit>;
@@ -669,12 +676,6 @@ export type Database = {
         Row: ProductionLabel;
         Insert: Partial<ProductionLabel>;
         Update: Partial<ProductionLabel>;
-        Relationships: [];
-      };
-      supplier_import_templates: {
-        Row: SupplierImportTemplate;
-        Insert: Partial<SupplierImportTemplate>;
-        Update: Partial<SupplierImportTemplate>;
         Relationships: [];
       };
       menu_cards: {
