@@ -1,6 +1,5 @@
 import { Workbook, type CellValue } from "exceljs";
 import Papa from "papaparse";
-import { PDFParse } from "pdf-parse";
 import { buildHeaderMap, buildHeaderMapFromMapping, normalizeRow, type ParsedPriceRow } from "./columns";
 
 export interface RawTable {
@@ -177,6 +176,20 @@ export function applyMapping(
  * gesimuleerd.
  */
 async function parsePdfRaw(buffer: Buffer): Promise<RawTable> {
+  // Bewust een dynamische import i.p.v. bovenaan het bestand: pdf-parse
+  // (via pdfjs-dist) verwacht een paar browser-only globals die op de
+  // server niet bestaan. Als dit statisch bovenaan stond, crashte ZELFS
+  // een Excel- of CSV-import — dit bestand werd dan al bij het laden
+  // onbruikbaar, voor alle bestandstypen. Nu wordt pdf-parse pas geladen
+  // op het moment dat er daadwerkelijk een PDF verwerkt wordt.
+  if (typeof (globalThis as Record<string, unknown>).DOMMatrix === "undefined") {
+    // Minimale polyfill — pdfjs-dist gebruikt dit alleen voor
+    // paginatransformaties bij het lezen van tekst/tabellen, niet voor
+    // daadwerkelijk renderen, dus een lege constructor volstaat hier.
+    (globalThis as Record<string, unknown>).DOMMatrix = class DOMMatrix {};
+  }
+
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: buffer });
   try {
     const tableResult = await parser.getTable();
