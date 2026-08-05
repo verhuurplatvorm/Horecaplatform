@@ -826,6 +826,17 @@ export function RecipeForm({
               kostprijzen te zien tijdens het invoeren.
             </p>
           )}
+          {rows.length > 0 && (
+            <div className="hidden grid-cols-2 gap-2 px-3 text-xs font-medium uppercase tracking-wide text-muted sm:grid sm:grid-cols-7">
+              <span>Hoeveelheid</span>
+              <span>Eenheid</span>
+              <span>Verlies %</span>
+              <span>Optioneel</span>
+              <span>Opmerking</span>
+              <span className="text-right">Prijs/eenheid</span>
+              <span className="text-right">Totale kostprijs</span>
+            </div>
+          )}
           {rows.map((row, i) => (
             <IngredientLine
               key={i}
@@ -1318,6 +1329,11 @@ function IngredientLine({
   onMoveDown: () => void;
   onPick: (picked: PickedIngredient) => void;
 }) {
+  const qty = parseFloat(row.quantity);
+  const pricePerUnit =
+    cost !== null && Number.isFinite(qty) && qty > 0 ? cost / qty : null;
+  const unitName = units.find((u) => u.id === row.unitId)?.name ?? null;
+
   return (
     <div
       className={`rounded-md border p-3 ${
@@ -1373,7 +1389,7 @@ function IngredientLine({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-7">
         <input
           type="number"
           step="any"
@@ -1420,6 +1436,11 @@ function IngredientLine({
           onChange={(e) => onChange({ note: e.target.value })}
           className="h-8 rounded-md border border-border bg-surface px-2 text-xs sm:col-span-1"
         />
+        <div className="tabular flex h-8 items-center justify-end text-xs text-muted">
+          {cost !== null && pricePerUnit !== null
+            ? `€ ${pricePerUnit.toFixed(4)} / ${unitName ?? "eenh."}`
+            : "—"}
+        </div>
         <div
           className={`tabular flex h-8 items-center justify-end gap-1 text-xs font-medium ${
             isIncomplete ? "text-copper" : "text-foreground"
