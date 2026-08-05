@@ -150,7 +150,7 @@ export function IngredientSearch({
                     onPick({
                       type: r.type,
                       id: r.id,
-                      name: r.name,
+                      name: (r.type === "product" && r.customName?.trim()) || r.name,
                       baseUnitId: r.baseUnitId,
                       yieldQuantity: r.yieldQuantity,
                       yieldUnit: r.yieldUnit,
@@ -165,10 +165,12 @@ export function IngredientSearch({
                       ) : (
                         <SoupIcon className="h-3.5 w-3.5 shrink-0 text-copper" />
                       )}
-                      <span className="truncate">{r.name}</span>
+                      <span className="truncate">
+                        {(r.type === "product" && r.customName?.trim()) || r.name}
+                      </span>
                     </span>
-                    {r.customName && r.customName !== r.name && (
-                      <span className="ml-5 truncate text-xs text-muted">{r.customName}</span>
+                    {r.type === "product" && r.customName?.trim() && r.customName !== r.name && (
+                      <span className="ml-5 truncate text-xs text-muted">{r.name}</span>
                     )}
                   </span>
                   <span className="flex shrink-0 items-center gap-2 text-xs text-muted">

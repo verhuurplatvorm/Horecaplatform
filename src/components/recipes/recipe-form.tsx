@@ -194,7 +194,10 @@ export function RecipeForm({
 
       const [{ data: products }, { data: halfproducts }] = await Promise.all([
         productIds.length
-          ? supabase.from("products").select("id, name, base_unit_id").in("id", productIds)
+          ? supabase
+              .from("products")
+              .select("id, name, custom_name, base_unit_id")
+              .in("id", productIds)
           : Promise.resolve({ data: [] }),
         halfproductIds.length
           ? supabase
@@ -212,7 +215,7 @@ export function RecipeForm({
         prev.map((row) => {
           if (row.type === "product" && row.refId && productMap.has(row.refId)) {
             const p = productMap.get(row.refId)!;
-            return { ...row, refName: p.name, baseUnitId: p.base_unit_id };
+            return { ...row, refName: p.custom_name?.trim() || p.name, baseUnitId: p.base_unit_id };
           }
           if (row.type === "halfproduct" && row.refId && halfproductMap.has(row.refId)) {
             const r = halfproductMap.get(row.refId)!;

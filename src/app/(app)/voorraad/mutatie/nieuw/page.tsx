@@ -64,12 +64,12 @@ export default function NieuweVoorraadmutatiePage() {
         await Promise.all([
           supabase
             .from("products")
-            .select("id, name, base_unit_id")
+            .select("id, name, custom_name, base_unit_id")
             .ilike("name", `%${query}%`)
             .limit(8),
           supabase
             .from("products")
-            .select("id, name, base_unit_id")
+            .select("id, name, custom_name, base_unit_id")
             .ilike("custom_name", `%${query}%`)
             .limit(8),
           supabase
@@ -80,7 +80,10 @@ export default function NieuweVoorraadmutatiePage() {
             .limit(8),
         ]);
       if (cancelled) return;
-      const productsById = new Map<string, { id: string; name: string; base_unit_id: string | null }>();
+      const productsById = new Map<
+        string,
+        { id: string; name: string; custom_name: string | null; base_unit_id: string | null }
+      >();
       for (const p of [...(byName ?? []), ...(byCustomName ?? [])]) {
         productsById.set(p.id, p);
       }
@@ -88,7 +91,7 @@ export default function NieuweVoorraadmutatiePage() {
         ...[...productsById.values()].map((p) => ({
           type: "product" as const,
           id: p.id,
-          name: p.name,
+          name: p.custom_name?.trim() || p.name,
           baseUnitId: p.base_unit_id,
         })),
         ...(halfproducts ?? []).map((r) => ({
