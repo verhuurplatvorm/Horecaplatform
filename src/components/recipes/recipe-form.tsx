@@ -379,6 +379,44 @@ export function RecipeForm({
     recipeKind === "halfproduct" && yieldQuantityNum > 0 ? totalCost / yieldQuantityNum : null;
   const baseUnitName = baseUnitId ? unitsById.get(baseUnitId)?.name ?? null : null;
 
+  // Som van de ingrediënten in de eigen basiseenheid van dit recept —
+  // alleen regels met dezelfde dimensie (bv. allemaal inhoud, of
+  // allemaal gewicht) tellen mee, net als bij de "Totale hoeveelheid"
+  // hierboven. Gebruikt om "Opbrengst" automatisch voor te stellen.
+  const computedYieldFromIngredients = useMemo(() => {
+    if (!baseUnitId) return null;
+    const targetUnit = unitsById.get(baseUnitId);
+    if (!targetUnit) return null;
+    let sum = 0;
+    let matchedAny = false;
+    for (const row of rows) {
+      if (!row.unitId || !row.quantity) continue;
+      const qty = parseFloat(row.quantity);
+      if (!Number.isFinite(qty)) continue;
+      const rowUnit = unitsById.get(row.unitId);
+      if (!rowUnit || rowUnit.dimension !== targetUnit.dimension) continue;
+      sum += (qty * rowUnit.factor_to_base) / targetUnit.factor_to_base;
+      matchedAny = true;
+    }
+    return matchedAny ? sum : null;
+  }, [rows, baseUnitId, unitsById]);
+
+  // Vult Opbrengst automatisch als die nog leeg is, zodra er genoeg
+  // ingrediënten met een bruikbare eenheid zijn ingevuld. Overschrijft
+  // nooit een waarde die de gebruiker zelf al heeft ingevoerd.
+  useEffect(() => {
+    if (
+      recipeKind === "halfproduct" &&
+      !yieldQuantity &&
+      computedYieldFromIngredients !== null &&
+      computedYieldFromIngredients > 0
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setYieldQuantity(computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, ""));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computedYieldFromIngredients, recipeKind]);
+
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
     const traces = new Set<string>();
@@ -782,14 +820,39 @@ export function RecipeForm({
                 </select>
               </Field>
               <Field label="Opbrengst" required>
-                <input
-                  required
-                  type="number"
-                  step="any"
-                  value={yieldQuantity}
-                  onChange={(e) => setYieldQuantity(e.target.value)}
-                  className="input"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    value={yieldQuantity}
+                    onChange={(e) => setYieldQuantity(e.target.value)}
+                    className="input"
+                  />
+                  {computedYieldFromIngredients !== null && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        setYieldQuantity(
+                          computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, "")
+                        )
+                      }
+                    >
+                      Herbereken
+                    </Button>
+                  )}
+                </div>
+                {computedYieldFromIngredients !== null && (
+                  <p className="mt-1 text-xs text-muted">
+                    Som van ingrediënten:{" "}
+                    {computedYieldFromIngredients.toLocaleString("nl-NL", {
+                      maximumFractionDigits: 3,
+                    })}{" "}
+                    {baseUnitName ?? ""}
+                  </p>
+                )}
               </Field>
               <Field label="Houdbaarheid (dagen)">
                 <input
