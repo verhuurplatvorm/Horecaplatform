@@ -820,20 +820,21 @@ export function RecipeForm({
                 </select>
               </Field>
               <Field label="Opbrengst" required>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <input
                     required
                     type="number"
                     step="any"
                     value={yieldQuantity}
                     onChange={(e) => setYieldQuantity(e.target.value)}
-                    className="input"
+                    className="input min-w-0 flex-1"
                   />
                   {computedYieldFromIngredients !== null && (
                     <Button
                       type="button"
                       variant="secondary"
                       size="sm"
+                      className="shrink-0"
                       onClick={() =>
                         setYieldQuantity(
                           computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, "")
