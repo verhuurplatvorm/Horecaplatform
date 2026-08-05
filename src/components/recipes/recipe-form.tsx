@@ -374,6 +374,11 @@ export function RecipeForm({
   const marginFreeCostsNum = Number(marginFreeCosts) || 0;
   const totalCost = costBeforeMarginFree + marginFreeCostsNum;
 
+  const yieldQuantityNum = Number(yieldQuantity) || 0;
+  const costPerBaseUnit =
+    recipeKind === "halfproduct" && yieldQuantityNum > 0 ? totalCost / yieldQuantityNum : null;
+  const baseUnitName = baseUnitId ? unitsById.get(baseUnitId)?.name ?? null : null;
+
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
     const traces = new Set<string>();
@@ -941,41 +946,53 @@ export function RecipeForm({
 
           <div className="grid grid-cols-1 gap-4 border-t border-border pt-3 sm:grid-cols-3">
             <Stat label="Totale kostprijs" value={`€ ${totalCost.toFixed(4)}`} emphasis />
-            <div>
-              <p className="text-sm text-muted">Gewenst foodcost%</p>
-              <input
-                type="number"
-                step="0.1"
-                value={targetFoodCostPct}
-                onChange={(e) => setTargetFoodCostPct(e.target.value)}
-                className="input h-8 w-20"
+            {recipeKind === "gerecht" ? (
+              <>
+                <div>
+                  <p className="text-sm text-muted">Gewenst foodcost%</p>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={targetFoodCostPct}
+                    onChange={(e) => setTargetFoodCostPct(e.target.value)}
+                    className="input h-8 w-20"
+                  />
+                </div>
+                <Stat
+                  label="Adviesverkoopprijs (incl. btw)"
+                  value={
+                    advisedPriceInclVat !== null
+                      ? `€ ${advisedPriceInclVat.toFixed(2)}`
+                      : "—"
+                  }
+                  emphasis
+                />
+              </>
+            ) : (
+              <Stat
+                label={`Prijs per ${baseUnitName ?? "basiseenheid"}`}
+                value={costPerBaseUnit !== null ? `€ ${costPerBaseUnit.toFixed(4)}` : "—"}
+                emphasis
+              />
+            )}
+          </div>
+          {recipeKind === "gerecht" && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Stat
+                label="Verkoopprijs (incl. btw)"
+                value={salesPrice ? `€ ${Number(salesPrice).toFixed(2)}` : "—"}
+              />
+              <Stat
+                label="Foodcost%"
+                value={foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
+                tone={foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
+              />
+              <Stat
+                label="Brutomarge (excl. btw)"
+                value={marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
               />
             </div>
-            <Stat
-              label="Adviesverkoopprijs (incl. btw)"
-              value={
-                advisedPriceInclVat !== null
-                  ? `€ ${advisedPriceInclVat.toFixed(2)}`
-                  : "—"
-              }
-              emphasis
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Stat
-              label="Verkoopprijs (incl. btw)"
-              value={salesPrice ? `€ ${Number(salesPrice).toFixed(2)}` : "—"}
-            />
-            <Stat
-              label="Foodcost%"
-              value={foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
-              tone={foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
-            />
-            <Stat
-              label="Brutomarge (excl. btw)"
-              value={marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
-            />
-          </div>
+          )}
           {incompleteLineIndexes.length > 0 && (
             <p className="flex items-center gap-1 text-xs text-copper">
               <TriangleAlert className="h-3.5 w-3.5" />
