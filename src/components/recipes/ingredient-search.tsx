@@ -150,7 +150,7 @@ export function IngredientSearch({
                     onPick({
                       type: r.type,
                       id: r.id,
-                      name: (r.type === "product" && r.customName?.trim()) || r.name,
+                      name: r.name,
                       baseUnitId: r.baseUnitId,
                       yieldQuantity: r.yieldQuantity,
                       yieldUnit: r.yieldUnit,

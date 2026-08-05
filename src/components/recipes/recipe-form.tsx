@@ -215,7 +215,7 @@ export function RecipeForm({
         prev.map((row) => {
           if (row.type === "product" && row.refId && productMap.has(row.refId)) {
             const p = productMap.get(row.refId)!;
-            return { ...row, refName: p.custom_name?.trim() || p.name, baseUnitId: p.base_unit_id };
+            return { ...row, refName: p.name, baseUnitId: p.base_unit_id };
           }
           if (row.type === "halfproduct" && row.refId && halfproductMap.has(row.refId)) {
             const r = halfproductMap.get(row.refId)!;
