@@ -21,6 +21,7 @@ interface BreakdownLine {
   quantity: number;
   unit_name: string | null;
   line_cost: number | null;
+  quantity_in_recipe_unit: number | null;
 }
 
 /**
@@ -82,6 +83,13 @@ export function HalfproductIngredientenModule({
     [breakdown, scale]
   );
 
+  const linesWithConvertedQty = breakdown.filter((l) => l.quantity_in_recipe_unit !== null);
+  const totalScaledQuantity = useMemo(
+    () =>
+      linesWithConvertedQty.reduce((sum, l) => sum + (l.quantity_in_recipe_unit ?? 0) * scale, 0),
+    [linesWithConvertedQty, scale]
+  );
+
   const producedByName = users.find((u) => u.id === producedByUserId)?.full_name ?? "";
 
   const stickerHref = `/halfproducten/${recipeId}/sticker/nieuw?quantity=${quantity}&producedBy=${encodeURIComponent(
@@ -112,6 +120,14 @@ export function HalfproductIngredientenModule({
               Standaard {standardYield ?? "—"} {unitName ?? ""}. Ingrediënten en kostprijs
               herberekenen automatisch evenredig.
             </p>
+            {!standardYield && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-copper">
+                <TriangleAlert className="h-3.5 w-3.5" />
+                Er is nog geen &quot;Opbrengst&quot; ingevuld bij Basisgegevens hieronder —
+                zonder dat kan er niet geschaald worden en blijven de hoeveelheden
+                hierboven altijd gelijk aan het basisrecept.
+              </p>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">
@@ -176,6 +192,18 @@ export function HalfproductIngredientenModule({
         {breakdown.length > 0 && (
           <div className="flex items-center justify-between border-t border-border pt-3">
             <div className="text-sm">
+              <span className="text-muted">Totale hoeveelheid:&nbsp;</span>
+              <span className="font-semibold text-foreground">
+                {totalScaledQuantity.toLocaleString("nl-NL", { maximumFractionDigits: 3 })}{" "}
+                {unitName ?? ""}
+              </span>
+              {linesWithConvertedQty.length < breakdown.length && (
+                <span className="ml-1 text-xs text-muted">
+                  ({breakdown.length - linesWithConvertedQty.length} ingrediënt(en) met
+                  afwijkende eenheid niet meegeteld)
+                </span>
+              )}
+              <span className="mx-2 text-muted">·</span>
               <span className="text-muted">Totale kostprijs:&nbsp;</span>
               <span className="font-semibold text-foreground">€ {totalScaledCost.toFixed(2)}</span>
               {scale !== 1 && <span className="ml-1 text-muted">(×{scale.toFixed(2)})</span>}

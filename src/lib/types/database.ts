@@ -809,6 +809,7 @@ export type Database = {
           quantity: number;
           unit_name: string | null;
           line_cost: number | null;
+          quantity_in_recipe_unit: number | null;
         }[];
       };
       get_recipe_usage: {
