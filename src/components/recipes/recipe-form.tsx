@@ -144,6 +144,8 @@ export function RecipeForm({
         traces: string[];
         nutritionPer100: Record<string, number> | null;
         priceDirection: "up" | "down" | null;
+        purchasePrice: number | null;
+        packagingDescription: string | null;
       }
     >
   >(new Map());
@@ -239,27 +241,36 @@ export function RecipeForm({
   async function loadProductPrice(productId: string) {
     if (!referenceCompanyId) return;
     const supabase = createClient();
-    const [{ data: cost }, { data: product }, { data: history }] = await Promise.all([
-      supabase
-        .from("current_product_cost")
-        .select("price_per_base_unit")
-        .eq("product_id", productId)
-        .eq("company_id", referenceCompanyId)
-        .maybeSingle(),
-      supabase
-        .from("products")
-        .select("base_unit_id, allergens, contains_traces, nutrition_per_100")
-        .eq("id", productId)
-        .single(),
-      supabase
-        .from("price_change_history")
-        .select("old_price_per_base_unit, new_price_per_base_unit")
-        .eq("product_id", productId)
-        .eq("company_id", referenceCompanyId)
-        .not("old_price_per_base_unit", "is", null)
-        .order("valid_from", { ascending: false })
-        .limit(1),
-    ]);
+    const [{ data: cost }, { data: product }, { data: history }, { data: activeSupplierPrice }] =
+      await Promise.all([
+        supabase
+          .from("current_product_cost")
+          .select("price_per_base_unit")
+          .eq("product_id", productId)
+          .eq("company_id", referenceCompanyId)
+          .maybeSingle(),
+        supabase
+          .from("products")
+          .select("base_unit_id, allergens, contains_traces, nutrition_per_100")
+          .eq("id", productId)
+          .single(),
+        supabase
+          .from("price_change_history")
+          .select("old_price_per_base_unit, new_price_per_base_unit")
+          .eq("product_id", productId)
+          .eq("company_id", referenceCompanyId)
+          .not("old_price_per_base_unit", "is", null)
+          .order("valid_from", { ascending: false })
+          .limit(1),
+        supabase
+          .from("supplier_products")
+          .select("purchase_price, packaging_description")
+          .eq("product_id", productId)
+          .is("valid_to", null)
+          .order("valid_from", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
     const latestChange = history?.[0];
     const priceDirection: "up" | "down" | null =
       latestChange?.new_price_per_base_unit != null && latestChange?.old_price_per_base_unit != null
@@ -277,6 +288,8 @@ export function RecipeForm({
         traces: product?.contains_traces ?? [],
         nutritionPer100: product?.nutrition_per_100 ?? null,
         priceDirection,
+        purchasePrice: activeSupplierPrice?.purchase_price ?? null,
+        packagingDescription: activeSupplierPrice?.packaging_description ?? null,
       })
     );
   }
@@ -848,6 +861,16 @@ export function RecipeForm({
                   ? productPrices.get(row.refId)?.priceDirection ?? null
                   : null
               }
+              purchasePrice={
+                row.type === "product" && row.refId
+                  ? productPrices.get(row.refId)?.purchasePrice ?? null
+                  : null
+              }
+              packagingDescription={
+                row.type === "product" && row.refId
+                  ? productPrices.get(row.refId)?.packagingDescription ?? null
+                  : null
+              }
               isDuplicate={duplicateIndexes.has(i)}
               isIncomplete={incompleteLineIndexes.includes(i)}
               companyId={referenceCompanyId}
@@ -1305,6 +1328,8 @@ function IngredientLine({
   units,
   cost,
   priceDirection,
+  purchasePrice,
+  packagingDescription,
   isDuplicate,
   isIncomplete,
   companyId,
@@ -1319,6 +1344,8 @@ function IngredientLine({
   units: Unit[];
   cost: number | null;
   priceDirection?: "up" | "down" | null;
+  purchasePrice?: number | null;
+  packagingDescription?: string | null;
   isDuplicate: boolean;
   isIncomplete: boolean;
   companyId: string | null;
@@ -1352,23 +1379,31 @@ function IngredientLine({
 
         <div className="flex-1">
           {row.refId ? (
-            <span className="flex items-center gap-2 text-sm text-foreground">
-              {row.type === "product" ? (
-                <Package className="h-3.5 w-3.5 text-teal" />
-              ) : (
-                <SoupIcon className="h-3.5 w-3.5 text-copper" />
+            <div>
+              <span className="flex items-center gap-2 text-sm text-foreground">
+                {row.type === "product" ? (
+                  <Package className="h-3.5 w-3.5 text-teal" />
+                ) : (
+                  <SoupIcon className="h-3.5 w-3.5 text-copper" />
+                )}
+                {row.refName}
+                {row.type === "halfproduct" && (
+                  <Link
+                    href={`/halfproducten/${row.refId}/bewerken`}
+                    target="_blank"
+                    className="text-xs text-teal hover:underline"
+                  >
+                    Halfproduct openen →
+                  </Link>
+                )}
+              </span>
+              {row.type === "product" && (purchasePrice != null || packagingDescription) && (
+                <p className="ml-5 text-xs text-muted">
+                  {packagingDescription ?? "onbekende verpakking"}
+                  {purchasePrice != null && ` · € ${purchasePrice.toFixed(2)} inkoop`}
+                </p>
               )}
-              {row.refName}
-              {row.type === "halfproduct" && (
-                <Link
-                  href={`/halfproducten/${row.refId}/bewerken`}
-                  target="_blank"
-                  className="text-xs text-teal hover:underline"
-                >
-                  Halfproduct openen →
-                </Link>
-              )}
-            </span>
+            </div>
           ) : (
             <IngredientSearch companyId={companyId} onPick={onPick} />
           )}
