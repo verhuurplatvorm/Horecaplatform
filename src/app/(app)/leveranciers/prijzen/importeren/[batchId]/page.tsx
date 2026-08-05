@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { ProductForm } from "@/components/products/product-form";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
@@ -37,7 +38,8 @@ export default function ImportReviewPage({
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
-  const [onlyChanges, setOnlyChanges] = useState(true);
+  const [view, setView] = useState<"all" | "changes" | "missing">("changes");
+  const [autoFocusedMissing, setAutoFocusedMissing] = useState(false);
   const [creatingForRow, setCreatingForRow] = useState<PriceImportRow | null>(
     null
   );
@@ -66,6 +68,11 @@ export default function ImportReviewPage({
       setBatch(batchRow);
       const rowList = (rowsData as PriceImportRow[]) ?? [];
       setRows(rowList);
+      if (!autoFocusedMissing) {
+        const hasMissing = rowList.some((r) => r.matched_product_id && !r.packaging_unit_count);
+        if (hasMissing) setView("missing");
+        setAutoFocusedMissing(true);
+      }
 
       const productIds = [
         ...new Set(
@@ -119,6 +126,7 @@ export default function ImportReviewPage({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, reloadToken]);
 
   function reload() {
@@ -360,24 +368,27 @@ export default function ImportReviewPage({
   }
 
   const unmatchedCount = rows.filter((r) => !r.matched_product_id).length;
+  const missingPackagingCount = rows.filter(
+    (r) => r.matched_product_id && !r.packaging_unit_count
+  ).length;
   const applyableCount = rows.filter(
     (r) =>
       r.matched_product_id &&
       r.packaging_unit_count &&
       r.status !== "toegepast"
   ).length;
-  const missingPackagingCount = rows.filter(
-    (r) => r.matched_product_id && !r.packaging_unit_count
-  ).length;
 
-  const displayRows = onlyChanges
-    ? rows.filter((r) => {
-        if (!r.matched_product_id) return true; // niet-gematcht altijd tonen
-        const prev = existing.get(r.matched_product_id);
-        if (!prev) return true; // nieuw artikel voor deze leverancier
-        return prev.price !== r.purchase_price;
-      })
-    : rows;
+  const displayRows =
+    view === "missing"
+      ? rows.filter((r) => r.matched_product_id && !r.packaging_unit_count)
+      : view === "changes"
+      ? rows.filter((r) => {
+          if (!r.matched_product_id) return true; // niet-gematcht altijd tonen
+          const prev = existing.get(r.matched_product_id);
+          if (!prev) return true; // nieuw artikel voor deze leverancier
+          return prev.price !== r.purchase_price;
+        })
+      : rows;
 
   return (
     <>
@@ -454,7 +465,12 @@ export default function ImportReviewPage({
               )}
               <Button
                 onClick={handleApply}
-                disabled={applying || applyableCount === 0}
+                disabled={applying || applyableCount === 0 || missingPackagingCount > 0}
+                title={
+                  missingPackagingCount > 0
+                    ? "Vul eerst alle ontbrekende verpakkingshoeveelheden in"
+                    : undefined
+                }
               >
                 {applying
                   ? "Bezig…"
@@ -477,22 +493,51 @@ export default function ImportReviewPage({
             </CardContent>
           )}
           {missingPackagingCount > 0 && (
-            <CardContent className="flex items-center gap-1 pt-0 text-sm text-copper">
-              <TriangleAlert className="h-4 w-4" />
-              {missingPackagingCount} regel(s) hebben een gekoppeld product maar
-              missen een verpakkingshoeveelheid — vul deze in voordat je ze
-              doorvoert, anders wordt de prijs verkeerd geïnterpreteerd.
+            <CardContent className="pt-0">
+              <button
+                onClick={() => setView("missing")}
+                className="flex w-full items-center gap-1 rounded-md bg-copper/10 p-2 text-left text-sm text-copper hover:bg-copper/20"
+              >
+                <TriangleAlert className="h-4 w-4 shrink-0" />
+                {missingPackagingCount} regel(s) hebben een gekoppeld product maar
+                missen een verpakkingshoeveelheid — vul deze eerst in, anders wordt
+                de prijs verkeerd geïnterpreteerd en kan er niet doorgevoerd worden.
+                <span className="ml-auto shrink-0 underline">Bekijk deze regels →</span>
+              </button>
             </CardContent>
           )}
-          <CardContent className="pt-0">
-            <label className="flex items-center gap-1.5 text-sm text-muted">
-              <input
-                type="checkbox"
-                checked={onlyChanges}
-                onChange={(e) => setOnlyChanges(e.target.checked)}
-              />
-              Toon alleen wijzigingen ({displayRows.length} van {rows.length})
-            </label>
+          <CardContent className="flex flex-wrap items-center gap-2 pt-0 text-sm">
+            <button
+              onClick={() => setView("all")}
+              className={cn(
+                "rounded-full px-3 py-1",
+                view === "all" ? "bg-teal text-white" : "bg-background text-muted hover:text-foreground"
+              )}
+            >
+              Alle regels ({rows.length})
+            </button>
+            <button
+              onClick={() => setView("changes")}
+              className={cn(
+                "rounded-full px-3 py-1",
+                view === "changes" ? "bg-teal text-white" : "bg-background text-muted hover:text-foreground"
+              )}
+            >
+              Wijzigingen
+            </button>
+            {missingPackagingCount > 0 && (
+              <button
+                onClick={() => setView("missing")}
+                className={cn(
+                  "rounded-full px-3 py-1",
+                  view === "missing"
+                    ? "bg-copper text-white"
+                    : "bg-copper/10 text-copper hover:bg-copper/20"
+                )}
+              >
+                Ontbrekende verpakking ({missingPackagingCount})
+              </button>
+            )}
           </CardContent>
         </Card>
 
