@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createImportBatch } from "@/lib/price-import/create-batch";
 import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
 import { extractInvoiceWithClaude, isClaudeOcrSupported } from "@/lib/invoice-import/claude-ocr";
+import { identifySupplierFromPdfText } from "@/lib/invoice-import/identify-supplier";
 import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
 export async function POST(request: Request) {
@@ -64,8 +65,28 @@ export async function POST(request: Request) {
   // --- PDF/foto: proberen via Claude (vision), als er een sleutel is ingesteld. ---
   if (isClaudeOcrSupported(file.type, file.name)) {
     try {
+      // Goedkope, tekst-gebaseerde poging om de leverancier al vóór de
+      // Claude-aanroep te herkennen — als die leverancier al eerder is
+      // geïmporteerd en er bekende aanwijzingen over hun factuuropmaak
+      // zijn vastgelegd, geven we die meteen mee in dezelfde aanroep.
+      let supplierHint: { supplierName: string; fieldNotes: string } | null = null;
+      if (file.type === "application/pdf") {
+        const identified = await identifySupplierFromPdfText(buffer, profile.group_id, supabase);
+        if (identified) {
+          console.log(`[invoice-import] Leverancier vooraf herkend via platte tekst: ${identified.supplierName}`);
+          const { data: template } = await supabase
+            .from("supplier_invoice_templates")
+            .select("field_notes")
+            .eq("supplier_id", identified.supplierId)
+            .maybeSingle();
+          if (template?.field_notes?.trim()) {
+            supplierHint = { supplierName: identified.supplierName, fieldNotes: template.field_notes };
+          }
+        }
+      }
+
       console.log(`[invoice-import] Start Claude OCR voor "${file.name}" (${file.type || "onbekend type"})`);
-      const parsed = await extractInvoiceWithClaude(buffer, file.type || "application/pdf");
+      const parsed = await extractInvoiceWithClaude(buffer, file.type || "application/pdf", supplierHint);
       if (parsed.lines.length > 0) {
         return finalizeParsed(
           supabase,

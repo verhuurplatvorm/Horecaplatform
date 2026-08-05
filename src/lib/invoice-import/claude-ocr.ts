@@ -50,7 +50,8 @@ Belangrijk:
  */
 export async function extractInvoiceWithClaude(
   buffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  supplierHint?: { supplierName: string; fieldNotes: string } | null
 ): Promise<ParsedInvoice> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -61,17 +62,24 @@ export async function extractInvoiceWithClaude(
   }
 
   console.log(
-    `[invoice-import] Claude OCR gestart — ${buffer.length} bytes, type ${mimeType}`
+    `[invoice-import] Claude OCR gestart — ${buffer.length} bytes, type ${mimeType}${
+      supplierHint ? ` — bekende leverancier: ${supplierHint.supplierName}` : ""
+    }`
   );
 
   const base64 = buffer.toString("base64");
   const isPdf = mimeType === "application/pdf";
 
+  const promptText =
+    supplierHint && supplierHint.fieldNotes.trim()
+      ? `${EXTRACTION_PROMPT}\n\nExtra aanwijzingen speciaal voor deze leverancier (${supplierHint.supplierName}), gebaseerd op eerder gecorrigeerde facturen — houd hier nadrukkelijk rekening mee:\n${supplierHint.fieldNotes.trim()}`
+      : EXTRACTION_PROMPT;
+
   const content = [
     isPdf
       ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
       : { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } },
-    { type: "text", text: EXTRACTION_PROMPT },
+    { type: "text", text: promptText },
   ];
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {

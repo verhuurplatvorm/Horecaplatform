@@ -422,6 +422,9 @@ export default function ImportReviewPage({
             </CardContent>
           </Card>
         )}
+        {batch.source_kind === "factuur" && batch.supplier_id && (
+          <SupplierInvoiceNotes supplierId={batch.supplier_id} />
+        )}
         <Card>
           <CardHeader>
             <CardTitle>
@@ -860,5 +863,82 @@ function ProductPicker({ onPick }: { onPick: (productId: string) => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+function SupplierInvoiceNotes({ supplierId }: { supplierId: string }) {
+  const [notes, setNotes] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("supplier_invoice_templates")
+      .select("field_notes")
+      .eq("supplier_id", supplierId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setNotes(data?.field_notes ?? "");
+        setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supplierId]);
+
+  async function handleSave() {
+    setSaving(true);
+    const supabase = createClient();
+    await supabase.from("supplier_invoice_templates").upsert({
+      supplier_id: supplierId,
+      field_notes: notes,
+      updated_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    setEditing(false);
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <Card>
+      <CardContent className="space-y-2 py-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted">
+          Aanwijzingen voor deze leverancier
+        </p>
+        {editing ? (
+          <>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Bv. 'Kolom Aantal: een S erachter betekent stuks, een kaal getal betekent kilo.' Deze tekst wordt bij een volgende factuur van deze leverancier automatisch meegegeven aan het uitlezen."
+              className="w-full rounded-md border border-border bg-surface p-2 text-sm"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? "Opslaan…" : "Opslaan"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>
+                Annuleren
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm text-muted">
+              {notes.trim() || "Nog geen aanwijzingen vastgelegd — wordt gebruikt om het uitlezen van toekomstige facturen van deze leverancier te verbeteren."}
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+              Bewerken
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

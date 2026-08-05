@@ -451,6 +451,12 @@ export type SupplierImportTemplate = {
   updated_at: string;
 }
 
+export type SupplierInvoiceTemplate = {
+  supplier_id: string;
+  field_notes: string;
+  updated_at: string;
+}
+
 export type SupplierPriceSource = {
   id: string;
   supplier_id: string;
@@ -624,6 +630,12 @@ export type Database = {
         Row: SupplierImportTemplate;
         Insert: Partial<SupplierImportTemplate>;
         Update: Partial<SupplierImportTemplate>;
+        Relationships: [];
+      };
+      supplier_invoice_templates: {
+        Row: SupplierInvoiceTemplate;
+        Insert: Partial<SupplierInvoiceTemplate>;
+        Update: Partial<SupplierInvoiceTemplate>;
         Relationships: [];
       };
       units: {
