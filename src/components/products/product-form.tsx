@@ -97,6 +97,10 @@ export function ProductForm({
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   const [name, setName] = useState(initialProduct?.name ?? prefillName ?? "");
+  const [customName, setCustomName] = useState(
+    initialProduct?.custom_name ?? initialProduct?.name ?? prefillName ?? ""
+  );
+  const [customNameTouched, setCustomNameTouched] = useState(Boolean(initialProduct));
   const [brand, setBrand] = useState(initialProduct?.brand ?? prefillBrand ?? "");
   const [description, setDescription] = useState(
     initialProduct?.description ?? ""
@@ -302,6 +306,7 @@ export function ProductForm({
 
     const payload = {
       name: name.trim(),
+      custom_name: customName.trim() || name.trim(),
       brand: brand.trim() || null,
       description: description.trim() || null,
       kind,
@@ -455,7 +460,23 @@ export function ProductForm({
             <input
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (!customNameTouched) setCustomName(e.target.value);
+              }}
+              className="input"
+            />
+          </Field>
+          <Field
+            label="Eigen productnaam"
+            hint="Standaard gelijk aan de naam, vrij aan te passen — wordt meegenomen in alle zoekfuncties."
+          >
+            <input
+              value={customName}
+              onChange={(e) => {
+                setCustomName(e.target.value);
+                setCustomNameTouched(true);
+              }}
               className="input"
             />
           </Field>
@@ -792,11 +813,13 @@ function Field({
   label,
   required,
   span2,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
   span2?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -805,6 +828,7 @@ function Field({
         {label} {required && <span className="text-danger">*</span>}
       </label>
       {children}
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </div>
   );
 }

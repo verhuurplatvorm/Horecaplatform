@@ -64,7 +64,7 @@ export default function NieuweVoorraadmutatiePage() {
         supabase
           .from("products")
           .select("id, name, base_unit_id")
-          .ilike("name", `%${query}%`)
+          .or(`name.ilike.%${query}%,custom_name.ilike.%${query}%`)
           .limit(8),
         supabase
           .from("recipes")

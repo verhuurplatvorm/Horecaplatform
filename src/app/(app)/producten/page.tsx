@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 interface ProductRow {
   id: string;
   name: string;
+  customName: string | null;
   base_unit: string;
   article_number: string | null;
   ean_code: string | null;
@@ -45,7 +46,7 @@ export default function ProductenPage() {
       const supabase = createClient();
       const { data: products, error: fetchError } = await supabase
         .from("products")
-        .select("id, name, base_unit, article_number, ean_code, is_active")
+        .select("id, name, custom_name, base_unit, article_number, ean_code, is_active")
         .order("name")
         .limit(200);
 
@@ -102,6 +103,7 @@ export default function ProductenPage() {
             return {
               id: p.id,
               name: p.name,
+              customName: p.custom_name,
               base_unit: p.base_unit,
               article_number: p.article_number,
               ean_code: p.ean_code,
@@ -130,7 +132,7 @@ export default function ProductenPage() {
   const q = query.trim().toLowerCase();
   const filteredRows = q
     ? rows.filter((r) =>
-        [r.name, r.supplierName, r.article_number, r.ean_code]
+        [r.name, r.customName, r.supplierName, r.article_number, r.ean_code]
           .filter(Boolean)
           .some((field) => field!.toLowerCase().includes(q))
       )
@@ -246,6 +248,9 @@ export default function ProductenPage() {
                       >
                         {p.name}
                       </Link>
+                      {p.customName && p.customName !== p.name && (
+                        <p className="text-xs text-muted">Eigen naam: {p.customName}</p>
+                      )}
                       {p.article_number && (
                         <p className="text-xs text-muted">Art.nr. {p.article_number}</p>
                       )}

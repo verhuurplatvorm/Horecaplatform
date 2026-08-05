@@ -94,6 +94,7 @@ export type Product = {
   id: string;
   group_id: string;
   name: string;
+  custom_name: string | null;
   brand: string | null;
   description: string | null;
   kind: "inkoopartikel" | "verkoopartikel" | "beide";

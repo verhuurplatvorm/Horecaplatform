@@ -21,6 +21,7 @@ interface SearchResult {
   type: "product" | "halfproduct";
   id: string;
   name: string;
+  customName?: string | null;
   baseUnitId: string | null;
   category: string | null;
   yieldQuantity?: number | null;
@@ -51,8 +52,8 @@ export function IngredientSearch({
       const [{ data: products }, { data: halfproducts }] = await Promise.all([
         supabase
           .from("products")
-          .select("id, name, base_unit_id, product_group")
-          .ilike("name", `%${query}%`)
+          .select("id, name, custom_name, base_unit_id, product_group")
+          .or(`name.ilike.%${query}%,custom_name.ilike.%${query}%`)
           .limit(8),
         supabase
           .from("recipes")
@@ -69,6 +70,7 @@ export function IngredientSearch({
             type: "product" as const,
             id: p.id,
             name: p.name,
+            customName: p.custom_name,
             baseUnitId: p.base_unit_id,
             category: p.product_group,
           })
@@ -144,13 +146,18 @@ export function IngredientSearch({
                   }
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-background"
                 >
-                  <span className="flex min-w-0 items-center gap-2">
-                    {r.type === "product" ? (
-                      <Package className="h-3.5 w-3.5 shrink-0 text-teal" />
-                    ) : (
-                      <SoupIcon className="h-3.5 w-3.5 shrink-0 text-copper" />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="flex items-center gap-2">
+                      {r.type === "product" ? (
+                        <Package className="h-3.5 w-3.5 shrink-0 text-teal" />
+                      ) : (
+                        <SoupIcon className="h-3.5 w-3.5 shrink-0 text-copper" />
+                      )}
+                      <span className="truncate">{r.name}</span>
+                    </span>
+                    {r.customName && r.customName !== r.name && (
+                      <span className="ml-5 truncate text-xs text-muted">{r.customName}</span>
                     )}
-                    <span className="truncate">{r.name}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2 text-xs text-muted">
                     <span
