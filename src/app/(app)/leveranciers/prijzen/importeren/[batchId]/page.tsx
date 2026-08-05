@@ -437,7 +437,7 @@ export default function ImportReviewPage({
               <span>{batch.error_message}</span>
             </CardContent>
           )}
-          <CardContent className="flex items-center justify-between">
+          <CardContent className="flex items-center justify-between pb-0">
             <p className="text-sm text-muted">
               {rows.length - unmatchedCount} automatisch gematcht,{" "}
               {unmatchedCount} nog te koppelen. Status:{" "}
@@ -484,6 +484,13 @@ export default function ImportReviewPage({
                 {deletingBatch ? "Bezig…" : "Factuur verwijderen"}
               </Button>
             </div>
+          </CardContent>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted">
+              Dit scherm gaat uitsluitend om de inkoopprijs per basiseenheid (stuk,
+              kilo, liter) — bestel- of voorraadhoeveelheden worden niet
+              geïmporteerd of bewaard.
+            </p>
           </CardContent>
           {applyResult && (
             <CardContent className="pt-0 text-sm text-success">
@@ -553,9 +560,9 @@ export default function ImportReviewPage({
                   <th className="px-5 py-3 font-medium">Bron: omschrijving</th>
                   <th className="px-5 py-3 font-medium">Merk</th>
                   <th className="px-5 py-3 font-medium">EAN / artikelnr.</th>
-                  <th className="px-5 py-3 font-medium">Prijs</th>
+                  <th className="px-5 py-3 font-medium">Prijs (inkoop)</th>
                   <th className="px-5 py-3 font-medium">Verpakking</th>
-                  <th className="px-5 py-3 font-medium">Aantal</th>
+                  <th className="px-5 py-3 font-medium">Stuks in verpakking</th>
                   <th className="px-5 py-3 font-medium">Inhoud per stuk</th>
                   <th className="px-5 py-3 font-medium">Gekoppeld product</th>
                   <th className="px-5 py-3 font-medium">Status</th>
