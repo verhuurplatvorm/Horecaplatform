@@ -17,6 +17,8 @@ interface ProductRow {
   ean_code: string | null;
   is_active: boolean;
   pricePerBaseUnit: number | null;
+  purchasePrice: number | null;
+  packagingDescription: string | null;
   supplierName: string | null;
   validFrom: string | null;
 }
@@ -59,7 +61,7 @@ export default function ProductenPage() {
         ? await supabase
             .from("supplier_products")
             .select(
-              "product_id, purchase_price, packaging_unit_count, valid_from, suppliers(name)"
+              "product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, suppliers(name)"
             )
             .in("product_id", productIds)
             .is("valid_to", null)
@@ -68,7 +70,13 @@ export default function ProductenPage() {
 
       const priceByProduct = new Map<
         string,
-        { pricePerBaseUnit: number; supplierName: string; validFrom: string }
+        {
+          pricePerBaseUnit: number;
+          purchasePrice: number;
+          packagingDescription: string | null;
+          supplierName: string;
+          validFrom: string;
+        }
       >();
       for (const row of currentPrices ?? []) {
         if (priceByProduct.has(row.product_id)) continue;
@@ -80,6 +88,8 @@ export default function ProductenPage() {
         const supplierName: string = row.suppliers?.name ?? "onbekende leverancier";
         priceByProduct.set(row.product_id, {
           pricePerBaseUnit,
+          purchasePrice: row.purchase_price,
+          packagingDescription: row.packaging_description,
           supplierName,
           validFrom: row.valid_from,
         });
@@ -97,6 +107,8 @@ export default function ProductenPage() {
               ean_code: p.ean_code,
               is_active: p.is_active,
               pricePerBaseUnit: price?.pricePerBaseUnit ?? null,
+              purchasePrice: price?.purchasePrice ?? null,
+              packagingDescription: price?.packagingDescription ?? null,
               supplierName: price?.supplierName ?? null,
               validFrom: price?.validFrom ?? null,
             };
@@ -210,6 +222,8 @@ export default function ProductenPage() {
                   <th className="px-5 py-3 font-medium">Artikel</th>
                   <th className="px-5 py-3 font-medium">Leverancier</th>
                   <th className="px-5 py-3 font-medium">Eenheid</th>
+                  <th className="px-5 py-3 font-medium">Verpakkingseenheid</th>
+                  <th className="px-5 py-3 font-medium">Aankoopprijs</th>
                   <th className="px-5 py-3 font-medium">Actuele inkoopprijs</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                 </tr>
@@ -238,6 +252,10 @@ export default function ProductenPage() {
                     </td>
                     <td className="px-5 py-3 text-muted">{p.supplierName ?? "—"}</td>
                     <td className="px-5 py-3 text-muted">{p.base_unit}</td>
+                    <td className="px-5 py-3 text-muted">{p.packagingDescription ?? "—"}</td>
+                    <td className="px-5 py-3 tabular">
+                      {p.purchasePrice !== null ? `€ ${p.purchasePrice.toFixed(2)}` : "—"}
+                    </td>
                     <td className="px-5 py-3 tabular">
                       {p.pricePerBaseUnit !== null ? (
                         <div>
@@ -269,7 +287,7 @@ export default function ProductenPage() {
                 ))}
                 {filteredRows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan producten niet laden — controleer de Supabase-koppeling."
                         : q
