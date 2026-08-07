@@ -140,6 +140,7 @@ export type SupplierProduct = {
   supplier_id: string;
   product_id: string;
   company_id: string | null;
+  supplier_article_code: string | null;
   packaging_description: string | null;
   packaging_unit_count: number;
   purchase_price: number;
@@ -779,6 +780,10 @@ export type Database = {
       match_product_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { product_id: string; product_name: string; similarity_score: number }[];
+      };
+      match_supplier_by_name: {
+        Args: { p_group_id: string; p_name: string };
+        Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };

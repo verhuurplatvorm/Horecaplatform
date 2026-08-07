@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, Search, TriangleAlert, Trash2 } from "lucide-react";
+import { Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -208,6 +208,12 @@ export default function ProductenPage() {
               className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
             />
           </div>
+          <Link href="/producten/importeren">
+            <Button variant="secondary">
+              <Upload className="h-4 w-4" />
+              Importeren (Excel)
+            </Button>
+          </Link>
           <Link href="/producten/nieuw">
             <Button>
               <Plus className="h-4 w-4" />
