@@ -3,20 +3,25 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export interface MatchResult {
   type: "product" | "halfproduct" | "unmatched";
   id: string | null;
-  matchMethod: "artikelnummer" | "receptnaam" | "naam_gelijkenis" | "geen";
+  matchMethod: "artikelnummer" | "receptnaam" | "geen";
 }
 
 /**
- * Bepaalt waar een geïmporteerd ingrediënt aan gekoppeld moet worden, in
- * volgorde van betrouwbaarheid:
+ * Bepaalt waar een geïmporteerd ingrediënt aan gekoppeld moet worden —
+ * uitsluitend op basis van EXACTE, betrouwbare kenmerken. Er wordt
+ * bewust NOOIT op naamgelijkenis gegokt: als er geen zekere match is,
+ * blijft de regel leeg en gemarkeerd voor handmatige controle, in
+ * plaats van een mogelijk verkeerde koppeling automatisch door te
+ * voeren.
+ *
+ * Volgorde van betrouwbaarheid:
  * 1. Een recept/halfproduct met exact dezelfde naam (ook net in deze
  *    import aangemaakt) — bv. "Aioli" als ingrediënt van "Tomaten aioli"
  *    hoort aan het halfproduct Aioli te verwijzen, niet aan een los
  *    product met die naam.
- * 2. Een product met hetzelfde leverancier-artikelnummer — de meest
- *    betrouwbare match, want dat nummer is uniek per artikel.
- * 3. Een product met een sterk gelijkende naam.
- * 4. Geen van bovenstaande: blijft ongekoppeld, voor handmatige controle.
+ * 2. Een product met hetzelfde leverancier-artikelnummer — uniek per
+ *    artikel, dus betrouwbaar.
+ * 3. Geen van bovenstaande: blijft ongekoppeld, voor handmatige controle.
  */
 export async function matchIngredient(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,15 +49,6 @@ export async function matchIngredient(
     if (byArticleNumber) {
       return { type: "product", id: byArticleNumber.id, matchMethod: "artikelnummer" };
     }
-  }
-
-  const { data: candidates } = await supabase.rpc("match_product_by_name", {
-    p_group_id: groupId,
-    p_name: ingredientName,
-  });
-  const best = candidates?.[0];
-  if (best && best.similarity_score > 0.55) {
-    return { type: "product", id: best.product_id, matchMethod: "naam_gelijkenis" };
   }
 
   return { type: "unmatched", id: null, matchMethod: "geen" };

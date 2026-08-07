@@ -140,6 +140,7 @@ export async function POST(request: Request) {
         product_id: match.type === "product" ? match.id : null,
         sub_recipe_id: match.type === "halfproduct" ? match.id : null,
         unmatched_name: match.type === "unmatched" ? ing.name : null,
+        unmatched_article_number: match.type === "unmatched" ? ing.supplierArticleNumber : null,
         quantity: ing.quantity,
         unit_id: unitId,
         unit: "",

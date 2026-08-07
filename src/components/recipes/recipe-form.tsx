@@ -34,6 +34,7 @@ interface IngredientRow {
   refId: string | null;
   refName: string | null;
   unmatchedName: string | null;
+  unmatchedArticleNumber: string | null;
   baseUnitId: string | null;
   yieldQuantity: number | null;
   quantity: string;
@@ -125,6 +126,7 @@ export function RecipeForm({
           refId: ri.product_id ?? ri.sub_recipe_id,
           refName: null,
           unmatchedName: ri.unmatched_name,
+          unmatchedArticleNumber: ri.unmatched_article_number,
           baseUnitId: null,
           yieldQuantity: null,
           quantity: String(ri.quantity),
@@ -539,12 +541,92 @@ export function RecipeForm({
     });
   }
 
+  const [rematching, setRematching] = useState(false);
+  const [rematchMessage, setRematchMessage] = useState<string | null>(null);
+
+  async function handleRematch() {
+    setRematching(true);
+    setRematchMessage(null);
+    const supabase = createClient();
+    const updated = [...rows];
+    let resolvedCount = 0;
+
+    for (let i = 0; i < updated.length; i++) {
+      const row = updated[i];
+      if (row.refId || !row.unmatchedName) continue;
+
+      let match: { id: string; name: string; base_unit_id: string | null } | null = null;
+
+      // Eerst op leverancier-artikelnummer proberen (betrouwbaarst),
+      // pas als terugval op een exacte naam — nooit op gelijkenis, om
+      // dezelfde reden als bij het importeren zelf: geen gok, alleen
+      // zekere koppelingen.
+      if (row.unmatchedArticleNumber) {
+        const { data } = await supabase
+          .from("products")
+          .select("id, name, base_unit_id")
+          .eq("article_number", row.unmatchedArticleNumber)
+          .limit(1)
+          .maybeSingle();
+        if (data) match = data;
+      }
+      if (!match) {
+        const { data } = await supabase
+          .from("products")
+          .select("id, name, base_unit_id")
+          .ilike("name", row.unmatchedName)
+          .limit(1)
+          .maybeSingle();
+        if (data) match = data;
+      }
+
+      if (match) {
+        updated[i] = {
+          ...row,
+          type: "product",
+          refId: match.id,
+          refName: match.name,
+          unmatchedName: null,
+          unmatchedArticleNumber: null,
+          baseUnitId: match.base_unit_id,
+          unitId: row.unitId ?? match.base_unit_id,
+        };
+        resolvedCount++;
+
+        // Meteen bewaren als deze regel al eerder is opgeslagen — niet
+        // wachten tot de gebruiker op "Opslaan" klikt, anders raakt de
+        // koppeling kwijt als het scherm zonder opslaan verlaten wordt.
+        if (row.id) {
+          await supabase
+            .from("recipe_ingredients")
+            .update({
+              product_id: match.id,
+              sub_recipe_id: null,
+              unmatched_name: null,
+              unmatched_article_number: null,
+              unit_id: row.unitId ?? match.base_unit_id,
+            })
+            .eq("id", row.id);
+        }
+      }
+    }
+
+    setRows(updated);
+    setRematching(false);
+    setRematchMessage(
+      resolvedCount > 0
+        ? `${resolvedCount} ingrediënt(en) gekoppeld.`
+        : "Geen nieuwe koppelingen gevonden."
+    );
+  }
+
   function handlePick(index: number, picked: PickedIngredient) {
     updateRow(index, {
       type: picked.type,
       refId: picked.id,
       refName: picked.name,
       unmatchedName: null,
+      unmatchedArticleNumber: null,
       baseUnitId: picked.baseUnitId,
       yieldQuantity: picked.yieldQuantity ?? null,
       unitId: picked.baseUnitId,
@@ -901,12 +983,28 @@ export function RecipeForm({
       </Card>
   );
 
+  const unmatchedCount = rows.filter((r) => !r.refId && r.unmatchedName).length;
+
   const ingredientenCard = (
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>
             {recipeKind === "gerecht" ? "Ingrediënten & halfproducten" : "Ingrediënten"}
           </CardTitle>
+          {unmatchedCount > 0 && (
+            <div className="flex items-center gap-2">
+              {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleRematch}
+                disabled={rematching}
+              >
+                {rematching ? "Bezig…" : "Opnieuw zoeken in Producten"}
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
           {!referenceCompanyId && (
@@ -1276,6 +1374,7 @@ function emptyRow(): IngredientRow {
     refId: null,
     refName: null,
     unmatchedName: null,
+    unmatchedArticleNumber: null,
     baseUnitId: null,
     yieldQuantity: null,
     quantity: "",

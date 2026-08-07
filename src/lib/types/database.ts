@@ -189,6 +189,7 @@ export type RecipeIngredient = {
   product_id: string | null;
   sub_recipe_id: string | null;
   unmatched_name: string | null;
+  unmatched_article_number: string | null;
   quantity: number;
   unit: string;
   unit_id: string | null;
