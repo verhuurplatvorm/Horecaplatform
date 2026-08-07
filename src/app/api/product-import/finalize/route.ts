@@ -92,9 +92,11 @@ export async function POST(request: Request) {
 
   const productByArticleNumber = new Map<string, (typeof existingProducts)[number]>();
   const productByNormalizedName = new Map<string, (typeof existingProducts)[number]>();
+  const productById = new Map<string, (typeof existingProducts)[number]>();
   for (const p of existingProducts) {
     if (p.article_number) productByArticleNumber.set(p.article_number, p);
     productByNormalizedName.set(normalizeName(p.name), p);
+    productById.set(p.id, p);
   }
 
   // Nieuw aan te maken producten verzamelen (dedupliceren binnen dit
@@ -149,7 +151,7 @@ export async function POST(request: Request) {
           is_active: row.isAvailable,
         }))
       )
-      .select("id, name");
+      .select("id, name, article_number, base_unit_id");
 
     if (insertError) {
       console.error("[product-import] Kan producten niet aanmaken:", insertError.message);
@@ -157,6 +159,7 @@ export async function POST(request: Request) {
     }
     for (const p of inserted ?? []) {
       newlyCreatedByNormalizedName.set(normalizeName(p.name), p.id);
+      productById.set(p.id, p);
       productsCreated++;
     }
   }
@@ -188,7 +191,7 @@ export async function POST(request: Request) {
     const productId = resolveExistingProductId(row);
     if (!productId) continue;
 
-    const product = existingProducts.find((p) => p.id === productId);
+    const product = productById.get(productId);
     let finalCount = row.packagingUnitCount;
 
     if (product?.base_unit_id && row.packagingUnitKey) {
@@ -228,13 +231,31 @@ export async function POST(request: Request) {
   }
 
   let pricesInserted = 0;
-  for (const batch of chunk(supplierProductsToInsert, 500)) {
-    const { error: priceError } = await supabase.from("supplier_products").insert(batch);
+  const priceBatches = chunk(supplierProductsToInsert, 500);
+  console.log(
+    `[product-import] ${supplierProductsToInsert.length} leveranciersprijzen te verwerken in ${priceBatches.length} batch(es).`
+  );
+  for (let i = 0; i < priceBatches.length; i++) {
+    const batch = priceBatches[i];
+    const { data: insertedPrices, error: priceError } = await supabase
+      .from("supplier_products")
+      .insert(batch)
+      .select("id");
     if (priceError) {
-      console.error("[product-import] Kan leveranciersprijzen niet opslaan:", priceError.message);
+      console.error(
+        `[product-import] Batch ${i + 1}/${priceBatches.length}: kan leveranciersprijzen niet opslaan:`,
+        priceError.message
+      );
       continue;
     }
-    pricesInserted += batch.length;
+    const inserted = insertedPrices?.length ?? 0;
+    if (inserted < batch.length) {
+      console.warn(
+        `[product-import] Batch ${i + 1}/${priceBatches.length}: slechts ${inserted} van ${batch.length} prijzen daadwerkelijk opgeslagen (mogelijk rechten-probleem).`
+      );
+    }
+    pricesInserted += inserted;
+    console.log(`[product-import] Batch ${i + 1}/${priceBatches.length} klaar (${pricesInserted} totaal tot nu toe).`);
   }
 
   console.log(
