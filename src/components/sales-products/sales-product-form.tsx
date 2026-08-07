@@ -226,7 +226,7 @@ export function SalesProductForm({
       .insert(
         validRows.map((r, i) => ({
           sales_product_id: salesProductId,
-          recipe_id: r.recipeId,
+          recipe_id: r.recipeId!,
           quantity: Number(r.quantity),
           sort_order: i,
         }))

@@ -33,6 +33,7 @@ interface IngredientRow {
   type: "product" | "halfproduct";
   refId: string | null;
   refName: string | null;
+  unmatchedName: string | null;
   baseUnitId: string | null;
   yieldQuantity: number | null;
   quantity: string;
@@ -123,6 +124,7 @@ export function RecipeForm({
           type: ri.sub_recipe_id ? "halfproduct" : "product",
           refId: ri.product_id ?? ri.sub_recipe_id,
           refName: null,
+          unmatchedName: ri.unmatched_name,
           baseUnitId: null,
           yieldQuantity: null,
           quantity: String(ri.quantity),
@@ -542,6 +544,7 @@ export function RecipeForm({
       type: picked.type,
       refId: picked.id,
       refName: picked.name,
+      unmatchedName: null,
       baseUnitId: picked.baseUnitId,
       yieldQuantity: picked.yieldQuantity ?? null,
       unitId: picked.baseUnitId,
@@ -555,7 +558,7 @@ export function RecipeForm({
     setError(null);
 
     const finalStatus = publishStatus ?? status;
-    const validRows = rows.filter((r) => r.refId && r.quantity.trim());
+    const validRows = rows.filter((r) => (r.refId || r.unmatchedName) && r.quantity.trim());
 
     if (validRows.length === 0) {
       setError("Voeg minimaal één ingrediënt of halfproduct toe.");
@@ -633,6 +636,7 @@ export function RecipeForm({
         recipe_id: recipeId,
         product_id: r.type === "product" ? r.refId : null,
         sub_recipe_id: r.type === "halfproduct" ? r.refId : null,
+        unmatched_name: !r.refId ? r.unmatchedName : null,
         quantity: Number(r.quantity),
         unit_id: r.unitId,
         unit: "",
@@ -1271,6 +1275,7 @@ function emptyRow(): IngredientRow {
     type: "product",
     refId: null,
     refName: null,
+    unmatchedName: null,
     baseUnitId: null,
     yieldQuantity: null,
     quantity: "",
@@ -1458,10 +1463,16 @@ function IngredientLine({
     cost !== null && Number.isFinite(qty) && qty > 0 ? cost / qty : null;
   const unitName = units.find((u) => u.id === row.unitId)?.name ?? null;
 
+  const isUnmatched = !row.refId && !!row.unmatchedName;
+
   return (
     <div
       className={`rounded-md border p-3 ${
-        isDuplicate ? "border-copper/50 bg-copper/5" : "border-border"
+        isUnmatched
+          ? "border-danger/50 bg-danger/5"
+          : isDuplicate
+          ? "border-copper/50 bg-copper/5"
+          : "border-border"
       }`}
     >
       <div className="mb-2 flex items-center gap-2">
@@ -1500,6 +1511,21 @@ function IngredientLine({
                   {purchasePrice != null && ` · € ${purchasePrice.toFixed(2)} inkoop`}
                 </p>
               )}
+            </div>
+          ) : row.unmatchedName ? (
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-2 text-sm font-medium text-danger">
+                <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                &quot;{row.unmatchedName}&quot; — nog niet gekoppeld
+              </span>
+              <IngredientSearch companyId={companyId} onPick={onPick} />
+              <Link
+                href={`/producten/nieuw?naam=${encodeURIComponent(row.unmatchedName)}`}
+                target="_blank"
+                className="text-xs text-teal hover:underline"
+              >
+                Of maak &quot;{row.unmatchedName}&quot; als nieuw product aan →
+              </Link>
             </div>
           ) : (
             <IngredientSearch companyId={companyId} onPick={onPick} />

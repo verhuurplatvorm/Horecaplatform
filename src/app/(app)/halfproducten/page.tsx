@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, Search, Star, Archive, Copy, Download } from "lucide-react";
+import { Plus, Search, Star, Archive, Copy, Download, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -287,6 +287,12 @@ export default function HalfproductenPage() {
             <Download className="h-4 w-4" />
             Exporteren
           </Button>
+          <Link href="/halfproducten/importeren">
+            <Button variant="secondary">
+              <Upload className="h-4 w-4" />
+              Importeren (Excel)
+            </Button>
+          </Link>
           <Link href="/halfproducten/nieuw">
             <Button>
               <Plus className="h-4 w-4" />

@@ -186,6 +186,7 @@ export type RecipeIngredient = {
   recipe_id: string;
   product_id: string | null;
   sub_recipe_id: string | null;
+  unmatched_name: string | null;
   quantity: number;
   unit: string;
   unit_id: string | null;
@@ -774,6 +775,10 @@ export type Database = {
       match_recipe_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { recipe_id: string; recipe_name: string; similarity_score: number }[];
+      };
+      match_product_by_name: {
+        Args: { p_group_id: string; p_name: string };
+        Returns: { product_id: string; product_name: string; similarity_score: number }[];
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
