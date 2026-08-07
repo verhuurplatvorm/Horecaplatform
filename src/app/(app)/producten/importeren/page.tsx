@@ -24,6 +24,7 @@ interface SupplierGroup {
 
 interface ParsedRow {
   supplierNameRaw: string;
+  flaggedBySource?: boolean;
   [key: string]: unknown;
 }
 
@@ -44,6 +45,7 @@ export default function ProductenImporterenPage() {
     totalRows: number;
     productsCreated: number;
     pricesInserted: number;
+    flaggedBySourceCount: number;
     skippedNoSupplier: number;
     flaggedForReview: number;
   } | null>(null);
@@ -136,6 +138,13 @@ export default function ProductenImporterenPage() {
                 <li>{result.totalRows} productregels in het bestand</li>
                 <li>{result.productsCreated} nieuwe producten aangemaakt</li>
                 <li>{result.pricesInserted} leveranciersprijzen opgeslagen</li>
+                {result.flaggedBySourceCount > 0 && (
+                  <li className="text-copper">
+                    {result.flaggedBySourceCount} daarvan komt uit een regel die het bronbestand
+                    zelf al als onzeker markeerde — gewoon meegeïmporteerd, niet geblokkeerd, maar
+                    gemarkeerd voor als je er later aan toe bent.
+                  </li>
+                )}
                 {result.skippedNoSupplier > 0 && (
                   <li className="text-copper">
                     {result.skippedNoSupplier} regel(s) overgeslagen — leverancier niet gekoppeld
@@ -150,7 +159,14 @@ export default function ProductenImporterenPage() {
               </ul>
             </CardContent>
           </Card>
-          <Button onClick={() => router.push("/producten")}>Naar productoverzicht</Button>
+          <div className="flex gap-2">
+            <Button onClick={() => router.push("/producten")}>Naar productoverzicht</Button>
+            {result.flaggedBySourceCount > 0 && (
+              <Button variant="secondary" onClick={() => router.push("/producten/opschonen")}>
+                {result.flaggedBySourceCount} te controleren bekijken
+              </Button>
+            )}
+          </div>
         </main>
       </>
     );
@@ -167,6 +183,14 @@ export default function ProductenImporterenPage() {
             konden worden, worden <strong>niet</strong> aangemaakt — koppel ze hieronder handmatig
             aan een bestaande leverancier, of laat ze op &quot;overslaan&quot; staan.
           </p>
+          {rows.some((r) => r.flaggedBySource) && (
+            <p className="text-sm text-copper">
+              {rows.filter((r) => r.flaggedBySource).length} regel(s) waren in het bronbestand al
+              gemarkeerd als onzeker — dat blokkeert niets, ze worden gewoon meegeïmporteerd en
+              blijven daarna gemarkeerd onder &quot;Producten opschonen&quot; zodat je ze op je
+              eigen moment kunt nalopen.
+            </p>
+          )}
 
           {error && <p className="text-sm text-danger">{error}</p>}
 

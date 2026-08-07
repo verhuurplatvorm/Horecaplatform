@@ -147,6 +147,7 @@ export type SupplierProduct = {
   price_per_base_unit: number | null;
   is_contract_price: boolean;
   change_reason: string | null;
+  flagged_for_review: boolean;
   valid_from: string;
   valid_to: string | null;
 }

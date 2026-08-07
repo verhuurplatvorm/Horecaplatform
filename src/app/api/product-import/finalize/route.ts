@@ -174,9 +174,11 @@ export async function POST(request: Request) {
     packaging_unit_count: number;
     purchase_price: number;
     is_contract_price: boolean;
+    flagged_for_review: boolean;
     valid_from: string;
   }[] = [];
 
+  let flaggedBySourceCount = 0;
   let flaggedForReview = 0;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -205,6 +207,8 @@ export async function POST(request: Request) {
       }
     }
 
+    if (row.flaggedBySource) flaggedBySourceCount++;
+
     supplierProductsToInsert.push({
       supplier_id: supplierResolution[row.supplierNameRaw]!,
       product_id: productId,
@@ -214,6 +218,11 @@ export async function POST(request: Request) {
       packaging_unit_count: finalCount,
       purchase_price: row.purchasePrice,
       is_contract_price: false,
+      // Rijen die het bronbestand zelf al als onzeker markeerde (bv. de
+      // "Niet herkend"-kolom) blokkeren de import niet — ze worden
+      // gewoon meegenomen, maar blijven gemarkeerd zodat je ze later in
+      // je eigen tempo kunt doorlopen via "Producten opschonen".
+      flagged_for_review: row.flaggedBySource,
       valid_from: today,
     });
   }
@@ -229,13 +238,14 @@ export async function POST(request: Request) {
   }
 
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen, ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen.`
+    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen.`
   );
 
   return NextResponse.json({
     totalRows: rows.length,
     productsCreated,
     pricesInserted,
+    flaggedBySourceCount,
     skippedNoSupplier,
     flaggedForReview,
   });

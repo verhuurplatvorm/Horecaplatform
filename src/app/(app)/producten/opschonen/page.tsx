@@ -11,6 +11,7 @@ import type { Product, SupplierProduct, Unit } from "@/lib/types/database";
 
 interface SupplierPriceRow extends SupplierProduct {
   supplierName: string;
+  productName?: string;
 }
 
 interface Candidate {
@@ -26,6 +27,37 @@ export default function ProductenOpschonenPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
+  const [flaggedPrices, setFlaggedPrices] = useState<SupplierPriceRow[]>([]);
+  const [flaggedLoading, setFlaggedLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("supplier_products")
+        .select("*, suppliers(name), products(name)")
+        .eq("flagged_for_review", true)
+        .is("valid_to", null)
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+      setFlaggedPrices(
+        (data ?? []).map((p) => ({
+          ...p,
+          // @ts-expect-error -- geneste relatie, niet in het handmatige Database-type
+          supplierName: p.suppliers?.name ?? "onbekend",
+          // @ts-expect-error -- geneste relatie
+          productName: p.products?.name ?? "onbekend product",
+        }))
+      );
+      setFlaggedLoading(false);
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +142,47 @@ export default function ProductenOpschonenPage() {
     <>
       <Topbar title="Producten opschonen" />
       <main className="max-w-4xl space-y-4 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Nog te controleren (uit import)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted">
+              Prijzen die bij een bulk-import als onzeker waren gemarkeerd (bv. de
+              &quot;Niet herkend&quot;-kolom uit een externe export) — gewoon geïmporteerd, maar
+              hier verzameld zodat je ze in je eigen tempo kunt nalopen.
+            </p>
+            {flaggedLoading ? (
+              <p className="text-sm text-muted">Bezig met laden…</p>
+            ) : flaggedPrices.length === 0 ? (
+              <p className="text-sm text-muted">Niets meer te controleren.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                    <th className="py-2 font-medium">Product</th>
+                    <th className="py-2 font-medium">Leverancier</th>
+                    <th className="py-2 font-medium">Verpakking</th>
+                    <th className="py-2 font-medium">Prijs</th>
+                    <th className="py-2 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {flaggedPrices.map((p) => (
+                    <FlaggedPriceRow
+                      key={p.id}
+                      price={p}
+                      onResolved={() =>
+                        setFlaggedPrices((prev) => prev.filter((x) => x.id !== p.id))
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+
         <p className="text-sm text-muted">
           Producten waarvan de basiseenheid &quot;stuk&quot; is, terwijl de naam een gewicht of
           inhoud noemt (bv. &quot;... 2 KG&quot;) — vaak het gevolg van een eerdere onjuiste
@@ -257,5 +330,39 @@ function CandidateCard({
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+function FlaggedPriceRow({
+  price,
+  onResolved,
+}: {
+  price: SupplierPriceRow;
+  onResolved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  async function handleMarkReviewed() {
+    setSaving(true);
+    const supabase = createClient();
+    await supabase.from("supplier_products").update({ flagged_for_review: false }).eq("id", price.id);
+    setSaving(false);
+    onResolved();
+  }
+
+  return (
+    <tr className="border-t border-border">
+      <td className="py-2 font-medium">{price.productName}</td>
+      <td className="py-2 text-muted">{price.supplierName}</td>
+      <td className="py-2 text-muted">
+        {price.packaging_description ?? "—"} ({price.packaging_unit_count})
+      </td>
+      <td className="py-2 tabular">€ {price.purchase_price.toFixed(2)}</td>
+      <td className="py-2">
+        <Button size="sm" variant="secondary" onClick={handleMarkReviewed} disabled={saving}>
+          {saving ? "…" : "Gecontroleerd"}
+        </Button>
+      </td>
+    </tr>
   );
 }
