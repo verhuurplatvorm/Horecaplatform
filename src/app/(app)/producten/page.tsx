@@ -89,16 +89,37 @@ export default function ProductenPage() {
       }
 
       const productIds = products.map((p) => p.id);
-      const { data: currentPrices } = productIds.length
-        ? await supabase
-            .from("supplier_products")
-            .select(
-              "product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, suppliers(name)"
-            )
-            .in("product_id", productIds)
-            .is("valid_to", null)
-            .order("valid_from", { ascending: false })
-        : { data: [] };
+
+      // In batches ophalen — met 1600+ producten wordt één enkele
+      // .in()-zoekopdracht met alle product-ID's tientallen kilobytes
+      // groot, wat de zoekopdracht stil laat mislukken (geen leverancier,
+      // prijs of verpakking meer zichtbaar voor ELK product).
+      const PRICE_BATCH_SIZE = 200;
+      const currentPrices: {
+        product_id: string;
+        purchase_price: number;
+        packaging_unit_count: number | null;
+        packaging_description: string | null;
+        valid_from: string;
+        suppliers: { name: string } | null;
+      }[] = [];
+      for (let i = 0; i < productIds.length; i += PRICE_BATCH_SIZE) {
+        const batchIds = productIds.slice(i, i + PRICE_BATCH_SIZE);
+        const { data, error: priceError } = await supabase
+          .from("supplier_products")
+          .select(
+            "product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, suppliers(name)"
+          )
+          .in("product_id", batchIds)
+          .is("valid_to", null)
+          .order("valid_from", { ascending: false });
+        if (priceError) {
+          console.error("Kan leveranciersprijzen niet ophalen voor batch:", priceError.message);
+          continue;
+        }
+        // @ts-expect-error -- suppliers komt als geneste relatie terug, niet in het handmatige Database-type
+        currentPrices.push(...(data ?? []));
+      }
 
       const priceByProduct = new Map<
         string,
@@ -116,7 +137,6 @@ export default function ProductenPage() {
           row.packaging_unit_count && row.packaging_unit_count > 0
             ? row.purchase_price / row.packaging_unit_count
             : row.purchase_price;
-        // @ts-expect-error -- suppliers komt als geneste relatie terug, niet in het handmatige Database-type
         const supplierName: string = row.suppliers?.name ?? "onbekende leverancier";
         priceByProduct.set(row.product_id, {
           pricePerBaseUnit,
