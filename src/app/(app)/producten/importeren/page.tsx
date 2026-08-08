@@ -45,6 +45,7 @@ export default function ProductenImporterenPage() {
     totalRows: number;
     productsCreated: number;
     pricesInserted: number;
+    alreadyUpToDate: number;
     flaggedBySourceCount: number;
     skippedNoSupplier: number;
     flaggedForReview: number;
@@ -140,6 +141,12 @@ export default function ProductenImporterenPage() {
                 <li>{result.totalRows} productregels in het bestand</li>
                 <li>{result.productsCreated} nieuwe producten aangemaakt</li>
                 <li>{result.pricesInserted} leveranciersprijzen opgeslagen</li>
+                {result.alreadyUpToDate > 0 && (
+                  <li className="text-muted">
+                    {result.alreadyUpToDate} ongewijzigd — stonden al identiek in het systeem,
+                    niet opnieuw aangemaakt
+                  </li>
+                )}
                 {result.flaggedBySourceCount > 0 && (
                   <li className="text-copper">
                     {result.flaggedBySourceCount} daarvan komt uit een regel die het bronbestand
@@ -173,6 +180,7 @@ export default function ProductenImporterenPage() {
               </ul>
               <p className="pt-2 text-xs text-muted">
                 {result.pricesInserted +
+                  result.alreadyUpToDate +
                   result.skippedNoSupplier +
                   result.flaggedForReview +
                   result.skippedMissingPriceOrPackaging +

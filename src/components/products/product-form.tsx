@@ -101,6 +101,10 @@ export function ProductForm({
     initialProduct?.custom_name ?? initialProduct?.name ?? prefillName ?? ""
   );
   const [customNameTouched, setCustomNameTouched] = useState(Boolean(initialProduct));
+  const [initialSupplierId, setInitialSupplierId] = useState("");
+  const [initialPackagingDescription, setInitialPackagingDescription] = useState("");
+  const [initialPackagingUnitCount, setInitialPackagingUnitCount] = useState("");
+  const [initialPurchasePrice, setInitialPurchasePrice] = useState("");
   const [brand, setBrand] = useState(initialProduct?.brand ?? prefillBrand ?? "");
   const [description, setDescription] = useState(
     initialProduct?.description ?? ""
@@ -397,6 +401,25 @@ export function ProductForm({
         return;
       }
       productId = created.id;
+
+      // Meteen een eerste leveranciersprijs vastleggen als de gebruiker
+      // die erbij heeft ingevuld — anders moest je na het aanmaken altijd
+      // nog apart naar het product terug om een prijs toe te voegen.
+      if (initialSupplierId && initialPurchasePrice && initialPackagingUnitCount) {
+        const { error: priceError } = await supabase.from("supplier_products").insert({
+          supplier_id: initialSupplierId,
+          product_id: productId,
+          company_id: null,
+          packaging_description: initialPackagingDescription.trim() || null,
+          packaging_unit_count: Number(initialPackagingUnitCount),
+          purchase_price: Number(initialPurchasePrice),
+          is_contract_price: false,
+          valid_from: new Date().toISOString().slice(0, 10),
+        });
+        if (priceError) {
+          console.error("Kan initiële leveranciersprijs niet opslaan:", priceError.message);
+        }
+      }
     }
 
     if (validPackagings.length > 0 && productId) {
@@ -652,6 +675,67 @@ export function ProductForm({
           </div>
         </CardContent>
       </Card>
+
+      {!isEdit && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Inkoopprijs (optioneel)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted">
+              Meteen een leveranciersprijs vastleggen bij het aanmaken — kan ook later nog via het
+              product zelf.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Leverancier">
+                <select
+                  value={initialSupplierId}
+                  onChange={(e) => setInitialSupplierId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">Geen (later toevoegen)</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Inkoopprijs (per verpakking)">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={initialPurchasePrice}
+                  onChange={(e) => setInitialPurchasePrice(e.target.value)}
+                  className="input"
+                />
+              </Field>
+              <Field label="Verpakking (omschrijving)">
+                <input
+                  value={initialPackagingDescription}
+                  onChange={(e) => setInitialPackagingDescription(e.target.value)}
+                  placeholder="bv. 1 x 700 ml"
+                  className="input"
+                />
+              </Field>
+              <Field label="Inhoud (in basiseenheid)">
+                <input
+                  type="number"
+                  step="any"
+                  value={initialPackagingUnitCount}
+                  onChange={(e) => setInitialPackagingUnitCount(e.target.value)}
+                  className="input"
+                />
+              </Field>
+            </div>
+            {initialSupplierId && (!initialPurchasePrice || !initialPackagingUnitCount) && (
+              <p className="text-xs text-copper">
+                Vul ook prijs én inhoud in om de leveranciersprijs op te slaan.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

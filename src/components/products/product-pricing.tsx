@@ -198,6 +198,8 @@ function PriceChangeForm({
   onCancel: () => void;
 }) {
   const [newPrice, setNewPrice] = useState(row.purchasePrice.toString());
+  const [packagingDescription, setPackagingDescription] = useState(row.packagingDescription ?? "");
+  const [packagingUnitCount, setPackagingUnitCount] = useState(row.packagingUnitCount.toString());
   const [validFrom, setValidFrom] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -206,8 +208,11 @@ function PriceChangeForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const effectivePackagingUnitCount = Number(packagingUnitCount) || row.packagingUnitCount;
   const newPricePerBaseUnit =
-    Number(newPrice) > 0 ? Number(newPrice) / row.packagingUnitCount : 0;
+    Number(newPrice) > 0 && effectivePackagingUnitCount > 0
+      ? Number(newPrice) / effectivePackagingUnitCount
+      : 0;
   const diff = newPricePerBaseUnit - row.pricePerBaseUnit;
   const diffPct = row.pricePerBaseUnit > 0 ? (diff / row.pricePerBaseUnit) * 100 : 0;
   const hasValidPrice = Boolean(referenceCompanyId) && Number(newPrice) > 0;
@@ -260,8 +265,8 @@ function PriceChangeForm({
       supplier_id: existing?.supplier_id,
       product_id: productId,
       company_id: row.companyId,
-      packaging_description: row.packagingDescription,
-      packaging_unit_count: row.packagingUnitCount,
+      packaging_description: packagingDescription.trim() || null,
+      packaging_unit_count: effectivePackagingUnitCount,
       purchase_price: Number(newPrice),
       is_contract_price: row.isContractPrice,
       valid_from: validFrom,
@@ -285,7 +290,7 @@ function PriceChangeForm({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-sm font-medium text-foreground">
-            Nieuwe prijs (per {row.packagingDescription ?? "verpakking"})
+            Nieuwe prijs (per verpakking)
           </label>
           <input
             type="number"
@@ -305,6 +310,35 @@ function PriceChangeForm({
             onChange={(e) => setValidFrom(e.target.value)}
             className="input"
           />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-foreground">
+            Verpakking (omschrijving)
+          </label>
+          <input
+            value={packagingDescription}
+            onChange={(e) => setPackagingDescription(e.target.value)}
+            placeholder="bv. 1 x 700 ml"
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-foreground">
+            Inhoud (in {baseUnitName ?? "basiseenheid"})
+          </label>
+          <input
+            type="number"
+            step="any"
+            value={packagingUnitCount}
+            onChange={(e) => setPackagingUnitCount(e.target.value)}
+            className="input"
+          />
+          <p className="mt-1 text-xs text-muted">
+            Klopt de verpakking niet (bv. verkeerd geïmporteerd)? Pas &apos;m hier direct aan.
+          </p>
         </div>
       </div>
 

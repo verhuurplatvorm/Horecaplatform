@@ -164,6 +164,27 @@ export async function POST(request: Request) {
     }
   }
 
+  // Bestaande actieve leveranciersprijzen vooraf ophalen — nodig om
+  // exacte duplicaten te herkennen (dezelfde leverancier, product,
+  // verpakking én prijs opnieuw importeren mag niets toevoegen) en om
+  // bij een echte prijswijziging de oude regel netjes af te sluiten
+  // i.p.v. een tweede "actieve" prijs ernaast te laten bestaan.
+  const relevantSupplierIds = [...new Set(Object.values(supplierResolution).filter(Boolean))] as string[];
+  const existingActivePrices = new Map<
+    string,
+    { id: string; purchase_price: number; packaging_unit_count: number }
+  >();
+  for (const supplierIdBatch of chunk(relevantSupplierIds, 50)) {
+    const { data } = await supabase
+      .from("supplier_products")
+      .select("id, supplier_id, product_id, company_id, purchase_price, packaging_unit_count")
+      .in("supplier_id", supplierIdBatch)
+      .is("valid_to", null);
+    for (const row of data ?? []) {
+      existingActivePrices.set(`${row.supplier_id}:${row.product_id}:${row.company_id ?? "null"}`, row);
+    }
+  }
+
   // Nu elke regel definitief aan een product koppelen en de prijs
   // vastleggen. Verpakkingshoeveelheid wordt omgerekend naar de
   // werkelijke basiseenheid van het gekoppelde product (kan afwijken
@@ -180,11 +201,13 @@ export async function POST(request: Request) {
     flagged_for_review: boolean;
     valid_from: string;
   }[] = [];
+  const idsToClose: string[] = [];
 
   let flaggedBySourceCount = 0;
   let flaggedForReview = 0;
   let skippedMissingPriceOrPackaging = 0;
   let skippedNoProductMatch = 0;
+  let alreadyUpToDate = 0;
   const today = new Date().toISOString().slice(0, 10);
 
   for (const row of included) {
@@ -223,10 +246,29 @@ export async function POST(request: Request) {
       }
     }
 
+    const supplierId = supplierResolution[row.supplierNameRaw]!;
+    const dedupKey = `${supplierId}:${productId}:${companyId || "null"}`;
+    const existing = existingActivePrices.get(dedupKey);
+
+    if (existing) {
+      const samePrice = Math.abs(existing.purchase_price - row.purchasePrice) < 0.0001;
+      const samePackaging = Math.abs(existing.packaging_unit_count - finalCount) < 0.0001;
+      if (samePrice && samePackaging) {
+        // Exact dezelfde prijs staat al actief — niets te doen, geen
+        // duplicaat aanmaken.
+        alreadyUpToDate++;
+        continue;
+      }
+      // Prijs of verpakking is gewijzigd: oude regel afsluiten, nieuwe
+      // erbij — zelfde patroon als een gewone prijswijziging, i.p.v.
+      // een tweede "actieve" prijs ernaast te laten bestaan.
+      idsToClose.push(existing.id);
+    }
+
     if (row.flaggedBySource) flaggedBySourceCount++;
 
     supplierProductsToInsert.push({
-      supplier_id: supplierResolution[row.supplierNameRaw]!,
+      supplier_id: supplierId,
       product_id: productId,
       company_id: companyId || null,
       supplier_article_code: row.supplierArticleNumber,
@@ -241,6 +283,23 @@ export async function POST(request: Request) {
       flagged_for_review: row.flaggedBySource,
       valid_from: today,
     });
+  }
+
+  // Overschreven prijzen eerst netjes afsluiten (valid_to gisteren) —
+  // vóór het invoegen van de nieuwe, zodat er nooit twee "actieve"
+  // prijzen voor dezelfde leverancier+product naast elkaar blijven staan.
+  if (idsToClose.length > 0) {
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    for (const idBatch of chunk(idsToClose, 500)) {
+      const { error: closeError } = await supabase
+        .from("supplier_products")
+        .update({ valid_to: yesterday })
+        .in("id", idBatch);
+      if (closeError) {
+        console.error("[product-import] Kan oude prijzen niet afsluiten:", closeError.message);
+      }
+    }
+    console.log(`[product-import] ${idsToClose.length} verouderde prijs(en) afgesloten.`);
   }
 
   let pricesInserted = 0;
@@ -273,12 +332,13 @@ export async function POST(request: Request) {
 
   const accountedFor =
     pricesInserted +
+    alreadyUpToDate +
     skippedNoSupplier +
     flaggedForReview +
     skippedMissingPriceOrPackaging +
     skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
+    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
   if (accountedFor !== rows.length) {
     console.error(
@@ -290,6 +350,7 @@ export async function POST(request: Request) {
     totalRows: rows.length,
     productsCreated,
     pricesInserted,
+    alreadyUpToDate,
     flaggedBySourceCount,
     skippedNoSupplier,
     flaggedForReview,

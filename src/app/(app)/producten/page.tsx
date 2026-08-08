@@ -17,8 +17,10 @@ interface ProductRow {
   article_number: string | null;
   ean_code: string | null;
   is_active: boolean;
+  priceRowId: string | null;
   pricePerBaseUnit: number | null;
   purchasePrice: number | null;
+  packagingUnitCount: number | null;
   packagingDescription: string | null;
   supplierName: string | null;
   validFrom: string | null;
@@ -37,6 +39,7 @@ export default function ProductenPage() {
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deletingRow, setDeletingRow] = useState<ProductRow | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -96,6 +99,7 @@ export default function ProductenPage() {
       // prijs of verpakking meer zichtbaar voor ELK product).
       const PRICE_BATCH_SIZE = 200;
       const currentPrices: {
+        id: string;
         product_id: string;
         purchase_price: number;
         packaging_unit_count: number | null;
@@ -108,7 +112,7 @@ export default function ProductenPage() {
         const { data, error: priceError } = await supabase
           .from("supplier_products")
           .select(
-            "product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, suppliers(name)"
+            "id, product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, suppliers(name)"
           )
           .in("product_id", batchIds)
           .is("valid_to", null)
@@ -124,8 +128,10 @@ export default function ProductenPage() {
       const priceByProduct = new Map<
         string,
         {
+          priceRowId: string;
           pricePerBaseUnit: number;
           purchasePrice: number;
+          packagingUnitCount: number | null;
           packagingDescription: string | null;
           supplierName: string;
           validFrom: string;
@@ -139,8 +145,10 @@ export default function ProductenPage() {
             : row.purchase_price;
         const supplierName: string = row.suppliers?.name ?? "onbekende leverancier";
         priceByProduct.set(row.product_id, {
+          priceRowId: row.id,
           pricePerBaseUnit,
           purchasePrice: row.purchase_price,
+          packagingUnitCount: row.packaging_unit_count,
           packagingDescription: row.packaging_description,
           supplierName,
           validFrom: row.valid_from,
@@ -159,8 +167,10 @@ export default function ProductenPage() {
               article_number: p.article_number,
               ean_code: p.ean_code,
               is_active: p.is_active,
+              priceRowId: price?.priceRowId ?? null,
               pricePerBaseUnit: price?.pricePerBaseUnit ?? null,
               purchasePrice: price?.purchasePrice ?? null,
+              packagingUnitCount: price?.packagingUnitCount ?? null,
               packagingDescription: price?.packagingDescription ?? null,
               supplierName: price?.supplierName ?? null,
               validFrom: price?.validFrom ?? null,
@@ -178,6 +188,63 @@ export default function ProductenPage() {
 
   function reload() {
     setReloadToken((t) => t + 1);
+  }
+
+  async function updatePriceField(
+    priceRowId: string | null,
+    patch: { purchase_price?: number; packaging_unit_count?: number; packaging_description?: string | null }
+  ) {
+    if (!priceRowId) return;
+    const supabase = createClient();
+    const { error: updateError } = await supabase
+      .from("supplier_products")
+      .update(patch)
+      .eq("id", priceRowId);
+    if (updateError) {
+      window.alert("Opslaan mislukt: " + updateError.message);
+      return;
+    }
+    // Meteen lokaal bijwerken i.p.v. de hele lijst opnieuw op te halen —
+    // rekent ook de prijs per basiseenheid opnieuw uit als dat nodig is.
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.priceRowId !== priceRowId) return r;
+        const purchasePrice = patch.purchase_price !== undefined ? patch.purchase_price : r.purchasePrice;
+        const packagingUnitCount =
+          patch.packaging_unit_count !== undefined ? patch.packaging_unit_count : r.packagingUnitCount;
+        const pricePerBaseUnit =
+          purchasePrice !== null && packagingUnitCount && packagingUnitCount > 0
+            ? purchasePrice / packagingUnitCount
+            : purchasePrice;
+        return {
+          ...r,
+          purchasePrice,
+          packagingUnitCount,
+          packagingDescription:
+            patch.packaging_description !== undefined ? patch.packaging_description : r.packagingDescription,
+          pricePerBaseUnit,
+        };
+      })
+    );
+  }
+
+  async function handleDeleteProduct() {
+    if (!deletingRow) return;
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", deletingRow.id);
+    if (deleteError) {
+      window.alert(
+        "Verwijderen mislukt: " +
+          deleteError.message +
+          " — mogelijk is dit product nog gekoppeld aan een recept of halfproduct."
+      );
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.id !== deletingRow.id));
+    setDeletingRow(null);
   }
 
   const q = query.trim().toLowerCase();
@@ -294,6 +361,7 @@ export default function ProductenPage() {
                   <th className="px-5 py-3 font-medium">Aankoopprijs</th>
                   <th className="px-5 py-3 font-medium">Actuele inkoopprijs</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -323,9 +391,34 @@ export default function ProductenPage() {
                     </td>
                     <td className="px-5 py-3 text-muted">{p.supplierName ?? "—"}</td>
                     <td className="px-5 py-3 text-muted">{p.base_unit}</td>
-                    <td className="px-5 py-3 text-muted">{p.packagingDescription ?? "—"}</td>
-                    <td className="px-5 py-3 tabular">
-                      {p.purchasePrice !== null ? `€ ${p.purchasePrice.toFixed(2)}` : "—"}
+                    <td className="px-5 py-3">
+                      <InlineEditCell
+                        value={p.packagingUnitCount !== null ? String(p.packagingUnitCount) : null}
+                        placeholder="—"
+                        suffix={` ${p.base_unit}`}
+                        hint={p.packagingDescription ?? undefined}
+                        type="number"
+                        disabled={!p.priceRowId}
+                        onSave={(value) => {
+                          const num = Number(value);
+                          if (!value || !Number.isFinite(num) || num <= 0) return;
+                          updatePriceField(p.priceRowId, { packaging_unit_count: num });
+                        }}
+                      />
+                    </td>
+                    <td className="px-5 py-3">
+                      <InlineEditCell
+                        value={p.purchasePrice !== null ? p.purchasePrice.toFixed(2) : null}
+                        placeholder="—"
+                        prefix="€ "
+                        type="number"
+                        disabled={!p.priceRowId}
+                        onSave={(value) => {
+                          const num = Number(value);
+                          if (!value || !Number.isFinite(num) || num <= 0) return;
+                          updatePriceField(p.priceRowId, { purchase_price: num });
+                        }}
+                      />
                     </td>
                     <td className="px-5 py-3 tabular">
                       {p.pricePerBaseUnit !== null ? (
@@ -354,11 +447,20 @@ export default function ProductenPage() {
                         {p.is_active ? "Actief" : "Inactief"}
                       </span>
                     </td>
+                    <td className="px-5 py-3">
+                      <button
+                        onClick={() => setDeletingRow(p)}
+                        title="Product verwijderen"
+                        className="text-muted hover:text-danger"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {filteredRows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan producten niet laden — controleer de Supabase-koppeling."
                         : q
@@ -384,6 +486,25 @@ export default function ProductenPage() {
             reload();
           }}
         />
+      )}
+      {deletingRow && (
+        <Modal title="Product verwijderen" onClose={() => setDeletingRow(null)}>
+          <div className="space-y-4">
+            <p className="text-sm text-foreground">
+              Weet je zeker dat je &quot;{deletingRow.name}&quot; wilt verwijderen? Dit kan niet
+              ongedaan gemaakt worden. Is dit product nog gekoppeld aan een recept of
+              halfproduct, dan wordt het verwijderen geblokkeerd.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="danger" onClick={handleDeleteProduct}>
+                Definitief verwijderen
+              </Button>
+              <Button variant="secondary" onClick={() => setDeletingRow(null)}>
+                Annuleren
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </>
   );
@@ -576,5 +697,85 @@ function BulkDeleteModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function InlineEditCell({
+  value,
+  placeholder,
+  prefix,
+  suffix,
+  hint,
+  type = "text",
+  disabled,
+  onSave,
+}: {
+  value: string | null;
+  placeholder: string;
+  prefix?: string;
+  suffix?: string;
+  hint?: string;
+  type?: "text" | "number";
+  disabled?: boolean;
+  onSave: (value: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+
+  if (disabled) {
+    return <span className="text-muted">{value ?? placeholder}</span>;
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(value ?? "");
+          setEditing(true);
+        }}
+        className="rounded px-1 py-0.5 text-left hover:bg-background hover:underline"
+        title="Klik om te bewerken"
+      >
+        {value !== null && value !== "" ? (
+          <>
+            {prefix}
+            {value}
+            {suffix}
+          </>
+        ) : (
+          <span className="text-muted">{placeholder}</span>
+        )}
+        {hint && <span className="ml-1 text-xs text-muted">({hint})</span>}
+      </button>
+    );
+  }
+
+  async function commit() {
+    setSaving(true);
+    await onSave(draft);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  return (
+    <input
+      autoFocus
+      type={type}
+      step={type === "number" ? "any" : undefined}
+      value={draft}
+      disabled={saving}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        }
+        if (e.key === "Escape") setEditing(false);
+      }}
+      className="h-8 w-28 rounded-md border border-teal bg-surface px-2 text-sm"
+    />
   );
 }
