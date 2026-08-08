@@ -48,6 +48,8 @@ export default function ProductenImporterenPage() {
     flaggedBySourceCount: number;
     skippedNoSupplier: number;
     flaggedForReview: number;
+    skippedMissingPriceOrPackaging: number;
+    skippedNoProductMatch: number;
   } | null>(null);
 
   async function handleUpload(e: React.FormEvent) {
@@ -150,6 +152,18 @@ export default function ProductenImporterenPage() {
                     {result.skippedNoSupplier} regel(s) overgeslagen — leverancier niet gekoppeld
                   </li>
                 )}
+                {result.skippedMissingPriceOrPackaging > 0 && (
+                  <li className="text-copper">
+                    {result.skippedMissingPriceOrPackaging} regel(s) overgeslagen — geen prijs of
+                    verpakkingsinfo in het bestand
+                  </li>
+                )}
+                {result.skippedNoProductMatch > 0 && (
+                  <li className="text-copper">
+                    {result.skippedNoProductMatch} regel(s) overgeslagen — kon geen product
+                    koppelen (nieuw aanmaken is mislukt)
+                  </li>
+                )}
                 {result.flaggedForReview > 0 && (
                   <li className="text-danger">
                     {result.flaggedForReview} regel(s) overgeslagen — verpakkingseenheid past niet
@@ -157,6 +171,14 @@ export default function ProductenImporterenPage() {
                   </li>
                 )}
               </ul>
+              <p className="pt-2 text-xs text-muted">
+                {result.pricesInserted +
+                  result.skippedNoSupplier +
+                  result.flaggedForReview +
+                  result.skippedMissingPriceOrPackaging +
+                  result.skippedNoProductMatch}{" "}
+                van {result.totalRows} regels verantwoord.
+              </p>
             </CardContent>
           </Card>
           <div className="flex gap-2">

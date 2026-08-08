@@ -183,13 +183,26 @@ export async function POST(request: Request) {
 
   let flaggedBySourceCount = 0;
   let flaggedForReview = 0;
+  let skippedMissingPriceOrPackaging = 0;
+  let skippedNoProductMatch = 0;
   const today = new Date().toISOString().slice(0, 10);
 
   for (const row of included) {
-    if (row.purchasePrice === null || row.packagingUnitCount === null) continue;
+    if (row.purchasePrice === null || row.packagingUnitCount === null) {
+      skippedMissingPriceOrPackaging++;
+      if (skippedMissingPriceOrPackaging <= 5) {
+        console.warn(
+          `[product-import] Regel ${row.rowNumber} ("${row.name}") overgeslagen: prijs=${row.purchasePrice}, verpakking=${row.packagingUnitCount}.`
+        );
+      }
+      continue;
+    }
 
     const productId = resolveExistingProductId(row);
-    if (!productId) continue;
+    if (!productId) {
+      skippedNoProductMatch++;
+      continue;
+    }
 
     const product = productById.get(productId);
     let finalCount = row.packagingUnitCount;
@@ -258,9 +271,20 @@ export async function POST(request: Request) {
     console.log(`[product-import] Batch ${i + 1}/${priceBatches.length} klaar (${pricesInserted} totaal tot nu toe).`);
   }
 
+  const accountedFor =
+    pricesInserted +
+    skippedNoSupplier +
+    flaggedForReview +
+    skippedMissingPriceOrPackaging +
+    skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen.`
+    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
+  if (accountedFor !== rows.length) {
+    console.error(
+      `[product-import] LET OP: ${rows.length - accountedFor} regel(s) zijn nergens in geteld — dit duidt op een nog niet afgevangen situatie.`
+    );
+  }
 
   return NextResponse.json({
     totalRows: rows.length,
@@ -269,5 +293,7 @@ export async function POST(request: Request) {
     flaggedBySourceCount,
     skippedNoSupplier,
     flaggedForReview,
+    skippedMissingPriceOrPackaging,
+    skippedNoProductMatch,
   });
 }
