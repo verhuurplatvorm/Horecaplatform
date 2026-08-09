@@ -220,12 +220,19 @@ export async function POST(request: Request) {
   const relevantSupplierIds = [...new Set(Object.values(supplierResolution).filter(Boolean))] as string[];
   const existingActivePrices = new Map<
     string,
-    { id: string; purchase_price: number; packaging_unit_count: number }
+    {
+      id: string;
+      purchase_price: number;
+      packaging_unit_count: number;
+      packaging_description: string | null;
+    }
   >();
   for (const supplierIdBatch of chunk(relevantSupplierIds, 50)) {
     const { data } = await supabase
       .from("supplier_products")
-      .select("id, supplier_id, product_id, company_id, purchase_price, packaging_unit_count")
+      .select(
+        "id, supplier_id, product_id, company_id, purchase_price, packaging_unit_count, packaging_description"
+      )
       .in("supplier_id", supplierIdBatch)
       .is("valid_to", null);
     for (const row of data ?? []) {
@@ -253,6 +260,7 @@ export async function POST(request: Request) {
 
   let flaggedBySourceCount = 0;
   let contentDerivedCount = 0;
+  let packagingReusedCount = 0;
   let flaggedForReview = 0;
   let skippedMissingPriceOrPackaging = 0;
   let skippedNoProductMatch = 0;
@@ -278,6 +286,12 @@ export async function POST(request: Request) {
 
     const product = productById.get(productId);
     let finalCount = row.packagingUnitCount;
+    let finalDescription: string | null = row.packagingDescription;
+    let packagingReusedFromExisting = false;
+
+    const supplierId = supplierResolution[row.supplierNameRaw]!;
+    const dedupKey = `${supplierId}:${productId}:${companyId || "null"}`;
+    const existing = existingActivePrices.get(dedupKey);
 
     if (product?.base_unit_id && row.packagingUnitKey) {
       const packagingUnit = unitByKey.get(row.packagingUnitKey);
@@ -285,19 +299,28 @@ export async function POST(request: Request) {
       if (packagingUnit && productUnit) {
         if (packagingUnit.dimension === productUnit.dimension) {
           finalCount = (row.packagingUnitCount * packagingUnit.factor_to_base) / productUnit.factor_to_base;
+        } else if (existing) {
+          // Dimensie klopt niet (bv. het bestand levert weer "1 stuk"
+          // terwijl het product — al dan niet handmatig gecorrigeerd —
+          // in ml rekent), maar er bestaat al een actieve prijs met een
+          // kloppende verpakkingseenheid voor dezelfde leverancier +
+          // product. Aanname: het gaat om dezelfde verpakking. We nemen
+          // de nieuwe PRIJS over en behouden de bestaande
+          // verpakkingseenheid en -omschrijving — zo blijft een
+          // handmatige eenheidscorrectie ook bij elke volgende
+          // prijslijst gewoon staan. Gemarkeerd als "Te controleren".
+          finalCount = existing.packaging_unit_count;
+          finalDescription = existing.packaging_description;
+          packagingReusedFromExisting = true;
         } else {
-          // Dimensie klopt niet (bv. gewicht bij een product met een
-          // inhoudseenheid) — niet gokken, deze regel overslaan voor
+          // Dimensie klopt niet én er is geen bestaande prijs om op
+          // terug te vallen — niet gokken, deze regel overslaan voor
           // handmatige controle i.p.v. een verkeerde prijs op te slaan.
           flaggedForReview++;
           continue;
         }
       }
     }
-
-    const supplierId = supplierResolution[row.supplierNameRaw]!;
-    const dedupKey = `${supplierId}:${productId}:${companyId || "null"}`;
-    const existing = existingActivePrices.get(dedupKey);
 
     if (existing) {
       const samePrice = Math.abs(existing.purchase_price - row.purchasePrice) < 0.0001;
@@ -316,13 +339,14 @@ export async function POST(request: Request) {
 
     if (row.flaggedBySource) flaggedBySourceCount++;
     if (row.contentDerivedFromName) contentDerivedCount++;
+    if (packagingReusedFromExisting) packagingReusedCount++;
 
     supplierProductsToInsert.push({
       supplier_id: supplierId,
       product_id: productId,
       company_id: companyId || null,
       supplier_article_code: row.supplierArticleNumber,
-      packaging_description: row.packagingDescription,
+      packaging_description: finalDescription,
       packaging_unit_count: finalCount,
       purchase_price: row.purchasePrice,
       is_contract_price: false,
@@ -331,8 +355,13 @@ export async function POST(request: Request) {
       // gewoon meegenomen, maar blijven gemarkeerd zodat je ze later in
       // je eigen tempo kunt doorlopen via "Producten opschonen". Datzelfde
       // geldt voor regels waar de inhoud uit de productnaam is afgeleid
-      // (bv. "2x5l") — een goede gok, maar wel eentje om na te lopen.
-      flagged_for_review: row.flaggedBySource || row.contentDerivedFromName === true,
+      // (bv. "2x5l") of waar de bestaande verpakkingseenheid is
+      // hergebruikt omdat het bestand een niet-passende eenheid gaf —
+      // goede aannames, maar wel om na te lopen.
+      flagged_for_review:
+        row.flaggedBySource ||
+        row.contentDerivedFromName === true ||
+        packagingReusedFromExisting,
       valid_from: today,
     });
   }
@@ -390,7 +419,7 @@ export async function POST(request: Request) {
     skippedMissingPriceOrPackaging +
     skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle en ${contentDerivedCount} met inhoud uit de productnaam afgeleid), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
+    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle, ${contentDerivedCount} met inhoud uit de productnaam afgeleid en ${packagingReusedCount} met hergebruikte bestaande verpakkingseenheid), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
   if (accountedFor !== rows.length) {
     console.error(
@@ -406,6 +435,7 @@ export async function POST(request: Request) {
     alreadyUpToDate,
     flaggedBySourceCount,
     contentDerivedCount,
+    packagingReusedCount,
     skippedNoSupplier,
     flaggedForReview,
     skippedMissingPriceOrPackaging,

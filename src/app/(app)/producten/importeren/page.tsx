@@ -49,6 +49,7 @@ export default function ProductenImporterenPage() {
     alreadyUpToDate: number;
     flaggedBySourceCount: number;
     contentDerivedCount?: number;
+    packagingReusedCount?: number;
     skippedNoSupplier: number;
     flaggedForReview: number;
     skippedMissingPriceOrPackaging: number;
@@ -168,6 +169,14 @@ export default function ProductenImporterenPage() {
                     {result.contentDerivedCount} daarvan had geen inhoud/eenheid in het bestand —
                     de inhoud is uit de productnaam afgeleid (bv. &quot;2x5l&quot; → 10.000 ml).
                     Meegeïmporteerd en gemarkeerd onder &quot;Te controleren&quot;.
+                  </li>
+                )}
+                {(result.packagingReusedCount ?? 0) > 0 && (
+                  <li className="text-copper">
+                    {result.packagingReusedCount} daarvan gaf een eenheid die niet past bij het
+                    product (bv. &quot;stuk&quot; terwijl het product in ml rekent) — de nieuwe prijs
+                    is overgenomen met behoud van de bestaande verpakkingseenheid. Gemarkeerd
+                    onder &quot;Te controleren&quot;.
                   </li>
                 )}
                 {result.skippedNoSupplier > 0 && (
