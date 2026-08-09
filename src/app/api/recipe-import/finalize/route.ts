@@ -56,6 +56,25 @@ export async function POST(request: Request) {
 
   const toImport = recipes.filter((r) => !r.skip);
 
+  // Basiseenheid afleiden uit de overheersende dimensie van de
+  // ingrediënten (inhoud → ml, gewicht → g, anders stuk). Zonder
+  // basiseenheid kan een halfproduct niet schalen, geen prijs per
+  // eenheid tonen en geen opbrengst automatisch berekenen.
+  function inferBaseUnitKey(ingredients: FinalizeIngredient[]): string {
+    let volume = 0;
+    let weight = 0;
+    let pieces = 0;
+    for (const ing of ingredients) {
+      const key = normalizeUnitKey(ing.unitRaw);
+      if (key === "ml" || key === "cl" || key === "dl" || key === "l") volume++;
+      else if (key === "g" || key === "kg") weight++;
+      else pieces++;
+    }
+    if (volume >= weight && volume >= pieces && volume > 0) return "ml";
+    if (weight >= pieces && weight > 0) return "g";
+    return "stuk";
+  }
+
   // Fase 1: alle recepten aanmaken (of koppelen aan een gekozen
   // bestaand recept), zodat namen die als ingrediënt van elkaar
   // gebruikt worden (bv. "Aioli" in "Tomaten aioli") in fase 2 correct
@@ -82,6 +101,7 @@ export async function POST(request: Request) {
         name: recipe.name,
         recipe_kind: recipeKind,
         status: "concept" as const,
+        base_unit_id: unitIdByKey.get(inferBaseUnitKey(recipe.ingredients)) ?? null,
         created_by: user.id,
       })
       .select("id")
