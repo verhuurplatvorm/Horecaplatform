@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     id: string;
     name: string;
     article_number: string | null;
+    ean_code: string | null;
     base_unit_id: string | null;
   }[] = [];
   {
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     while (true) {
       const { data } = await supabase
         .from("products")
-        .select("id, name, article_number, base_unit_id")
+        .select("id, name, article_number, ean_code, base_unit_id")
         .eq("group_id", groupId)
         .range(from, from + PAGE_SIZE - 1);
       if (!data || data.length === 0) break;
@@ -91,24 +92,35 @@ export async function POST(request: Request) {
   }
 
   const productByArticleNumber = new Map<string, (typeof existingProducts)[number]>();
+  const productByEan = new Map<string, (typeof existingProducts)[number]>();
   const productByNormalizedName = new Map<string, (typeof existingProducts)[number]>();
   const productById = new Map<string, (typeof existingProducts)[number]>();
   for (const p of existingProducts) {
     if (p.article_number) productByArticleNumber.set(p.article_number, p);
+    if (p.ean_code) productByEan.set(p.ean_code, p);
     productByNormalizedName.set(normalizeName(p.name), p);
     productById.set(p.id, p);
   }
 
   // Nieuw aan te maken producten verzamelen (dedupliceren binnen dit
-  // bestand zelf: dezelfde naam bij meerdere leveranciers wordt niet
-  // meerdere keren aangemaakt).
+  // bestand zelf: dezelfde naam óf dezelfde EAN-code bij meerdere
+  // leveranciers wordt niet meerdere keren aangemaakt — een dubbele
+  // EAN in één invoegopdracht zou anders de unieke-EAN-check schenden
+  // en de HELE batch van tot wel 500 producten laten mislukken).
   const newlyCreatedByNormalizedName = new Map<string, string>(); // naam -> product_id
+  const newlyCreatedByEan = new Map<string, string>(); // ean -> product_id
   const rowsNeedingNewProduct: ParsedProductRow[] = [];
 
   function resolveExistingProductId(row: ParsedProductRow): string | null {
     if (row.supplierArticleNumber) {
       const byArticle = productByArticleNumber.get(row.supplierArticleNumber);
       if (byArticle) return byArticle.id;
+    }
+    if (row.eanCode) {
+      const byEan = productByEan.get(row.eanCode);
+      if (byEan) return byEan.id;
+      const createdEan = newlyCreatedByEan.get(row.eanCode);
+      if (createdEan) return createdEan;
     }
     const byName = productByNormalizedName.get(normalizeName(row.name));
     if (byName) return byName.id;
@@ -123,19 +135,14 @@ export async function POST(request: Request) {
     }
   }
 
-  // Nieuwe producten in batches aanmaken.
+  // Nieuwe producten in batches aanmaken. Faalt een hele batch (bv.
+  // door één rij die alsnog een unieke-index schendt), dan wordt die
+  // batch regel voor regel opnieuw geprobeerd — zodat één foute rij
+  // nooit honderden goede rijen meesleurt in de mislukking.
   let productsCreated = 0;
-  for (const batch of chunk(rowsNeedingNewProduct, 500)) {
-    // Binnen deze batch ook dedupliceren op naam vóór het invoegen.
-    const seen = new Set<string>();
-    const toInsert = batch.filter((row) => {
-      const key = normalizeName(row.name);
-      if (newlyCreatedByNormalizedName.has(key) || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    if (toInsert.length === 0) continue;
+  let productCreationFailures = 0;
 
+  async function insertProductRows(toInsert: ParsedProductRow[]) {
     const { data: inserted, error: insertError } = await supabase
       .from("products")
       .insert(
@@ -151,14 +158,55 @@ export async function POST(request: Request) {
           is_active: row.isAvailable,
         }))
       )
-      .select("id, name, article_number, base_unit_id");
+      .select("id, name, article_number, base_unit_id, ean_code");
+    return { inserted, insertError };
+  }
 
-    if (insertError) {
-      console.error("[product-import] Kan producten niet aanmaken:", insertError.message);
+  for (const batch of chunk(rowsNeedingNewProduct, 500)) {
+    // Binnen deze batch dedupliceren op naam én EAN vóór het invoegen —
+    // de meest voorkomende oorzaak van een volledig mislukte batch.
+    const seenNames = new Set<string>();
+    const seenEans = new Set<string>();
+    const toInsert = batch.filter((row) => {
+      const nameKey = normalizeName(row.name);
+      if (newlyCreatedByNormalizedName.has(nameKey) || seenNames.has(nameKey)) return false;
+      if (row.eanCode && (newlyCreatedByEan.has(row.eanCode) || seenEans.has(row.eanCode))) return false;
+      seenNames.add(nameKey);
+      if (row.eanCode) seenEans.add(row.eanCode);
+      return true;
+    });
+    if (toInsert.length === 0) continue;
+
+    const { inserted, insertError } = await insertProductRows(toInsert);
+
+    if (!insertError) {
+      for (const p of inserted ?? []) {
+        newlyCreatedByNormalizedName.set(normalizeName(p.name), p.id);
+        if (p.ean_code) newlyCreatedByEan.set(p.ean_code, p.id);
+        productById.set(p.id, p);
+        productsCreated++;
+      }
       continue;
     }
-    for (const p of inserted ?? []) {
+
+    // Batch als geheel mislukt — per rij opnieuw proberen, zodat alleen
+    // de daadwerkelijk foute rij(en) sneuvelen.
+    console.warn(
+      `[product-import] Batch van ${toInsert.length} nieuwe producten mislukt (${insertError.message}) — probeer regel voor regel opnieuw.`
+    );
+    for (const row of toInsert) {
+      const { inserted: single, insertError: singleError } = await insertProductRows([row]);
+      if (singleError || !single?.[0]) {
+        productCreationFailures++;
+        console.error(
+          `[product-import] Kan product "${row.name}" (regel ${row.rowNumber}) niet aanmaken:`,
+          singleError?.message
+        );
+        continue;
+      }
+      const p = single[0];
       newlyCreatedByNormalizedName.set(normalizeName(p.name), p.id);
+      if (p.ean_code) newlyCreatedByEan.set(p.ean_code, p.id);
       productById.set(p.id, p);
       productsCreated++;
     }
@@ -338,7 +386,7 @@ export async function POST(request: Request) {
     skippedMissingPriceOrPackaging +
     skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
+    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
   if (accountedFor !== rows.length) {
     console.error(
@@ -349,6 +397,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     totalRows: rows.length,
     productsCreated,
+    productCreationFailures,
     pricesInserted,
     alreadyUpToDate,
     flaggedBySourceCount,

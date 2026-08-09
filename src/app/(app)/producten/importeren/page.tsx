@@ -44,6 +44,7 @@ export default function ProductenImporterenPage() {
   const [result, setResult] = useState<{
     totalRows: number;
     productsCreated: number;
+    productCreationFailures: number;
     pricesInserted: number;
     alreadyUpToDate: number;
     flaggedBySourceCount: number;
@@ -140,6 +141,13 @@ export default function ProductenImporterenPage() {
               <ul className="space-y-1 text-sm text-muted">
                 <li>{result.totalRows} productregels in het bestand</li>
                 <li>{result.productsCreated} nieuwe producten aangemaakt</li>
+                {result.productCreationFailures > 0 && (
+                  <li className="text-danger">
+                    {result.productCreationFailures} product(en) konden ondanks een nieuwe poging
+                    per regel nog steeds niet aangemaakt worden (zie de servermeldingen voor de
+                    precieze reden)
+                  </li>
+                )}
                 <li>{result.pricesInserted} leveranciersprijzen opgeslagen</li>
                 {result.alreadyUpToDate > 0 && (
                   <li className="text-muted">
