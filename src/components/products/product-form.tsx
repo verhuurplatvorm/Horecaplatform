@@ -58,11 +58,11 @@ interface PackagingRow {
 }
 
 export interface ProductFormProps {
-  /** Bij bewerken: het bestaande product. Leeg = nieuw product. */
+  /** Bij bewerken: het bestaande ingrediënt. Leeg = nieuw ingrediënt. */
   initialProduct?: Product;
   initialPackagings?: ProductPackaging[];
-  /** Voorinvulling bij een nieuw product (bv. vanuit een niet-gematchte
-   * prijsimportregel — spec: producten worden primair via de prijslijst
+  /** Voorinvulling bij een nieuw ingrediënt (bv. vanuit een niet-gematchte
+   * prijsimportregel — spec: ingrediënten worden primair via de prijslijst
    * van leveranciers aangemaakt, niet via handmatige invoer als eerste
    * stap). Wordt genegeerd zodra initialProduct is gezet. */
   prefillName?: string;
@@ -71,7 +71,7 @@ export interface ProductFormProps {
   prefillPackagingName?: string;
   prefillBrand?: string;
   /** 'page' toont een terugknop en navigeert na opslaan; 'dialog' geeft
-   * het opgeslagen product terug aan de aanroeper (voor snelinvoer vanuit
+   * het opgeslagen ingrediënt terug aan de aanroeper (voor snelinvoer vanuit
    * een receptregel of, zoals hier, vanuit de prijsimport). */
   mode?: "page" | "dialog";
   onSaved?: (product: Product) => void;
@@ -213,7 +213,7 @@ export function ProductForm({
       const supabase = createClient();
 
       // Bewust drie losse queries i.p.v. één samengestelde .or()-filter:
-      // een productnaam kan tekens bevatten die de queryformaat-syntax
+      // een ingrediëntnaam kan tekens bevatten die de queryformaat-syntax
       // van Supabase/PostgREST verstoren (bv. haakjes, komma's), wat tot
       // een kapotte filter en willekeurige resultaten leidt.
       const queries = [];
@@ -413,7 +413,7 @@ export function ProductForm({
 
       // Meteen een eerste leveranciersprijs vastleggen als de gebruiker
       // die erbij heeft ingevuld — anders moest je na het aanmaken altijd
-      // nog apart naar het product terug om een prijs toe te voegen.
+      // nog apart naar het ingrediënt terug om een prijs toe te voegen.
       if (initialSupplierId && initialPurchasePrice && initialPackagingUnitCount) {
         const { error: priceError } = await supabase.from("supplier_products").insert({
           supplier_id: initialSupplierId,
@@ -444,7 +444,7 @@ export function ProductForm({
           }))
         );
       if (packagingError) {
-        setError("Product opgeslagen, maar verpakkingen niet: " + packagingError.message);
+        setError("Ingrediënt opgeslagen, maar verpakkingen niet: " + packagingError.message);
         setSaving(false);
         return;
       }
@@ -486,7 +486,7 @@ export function ProductForm({
     if (deleteErr) {
       setDeleteError(
         deleteErr.code === "23503"
-          ? "Dit product wordt gebruikt in een receptuur of prijshistorie en kan daarom niet verwijderd worden. Zet het op \"inactief\" in plaats daarvan."
+          ? "Dit ingrediënt wordt gebruikt in een receptuur of prijshistorie en kan daarom niet verwijderd worden. Zet het op \"inactief\" in plaats daarvan."
           : "Verwijderen mislukt: " + deleteErr.message
       );
       return;
@@ -540,7 +540,7 @@ export function ProductForm({
             />
           </Field>
           <Field
-            label="Eigen productnaam"
+            label="Eigen ingrediëntnaam"
             hint="Standaard gelijk aan de naam, vrij aan te passen — wordt meegenomen in alle zoekfuncties."
           >
             <input
@@ -559,7 +559,7 @@ export function ProductForm({
               className="input"
             />
           </Field>
-          <Field label="Productgroep">
+          <Field label="Ingrediëntgroep">
             <input
               value={productGroup}
               onChange={(e) => setProductGroup(e.target.value)}
@@ -643,7 +643,7 @@ export function ProductForm({
               className="input max-w-xs"
             />
             <p className="mt-1 text-xs text-muted">
-              Voor producten zonder leverancier, zoals kraanwater. €0,00 is
+              Voor ingrediënten zonder leverancier, zoals kraanwater. €0,00 is
               toegestaan en telt dan expliciet als gratis mee in de
               receptkostprijs. Een actieve leveranciersprijs gaat altijd voor.
             </p>
@@ -714,7 +714,7 @@ export function ProductForm({
           <CardContent className="space-y-3">
             <p className="text-xs text-muted">
               Meteen een leveranciersprijs vastleggen bij het aanmaken — kan ook later nog via het
-              product zelf.
+              ingrediënt zelf.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Leverancier">
@@ -921,7 +921,7 @@ export function ProductForm({
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
-          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Product aanmaken"}
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Ingrediënt aanmaken"}
         </Button>
         <Button
           type="button"

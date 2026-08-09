@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   const { rows, supplierResolution, companyId } = body;
 
   if (!Array.isArray(rows) || rows.length === 0) {
-    return NextResponse.json({ error: "Geen producten om te importeren." }, { status: 400 });
+    return NextResponse.json({ error: "Geen ingrediënten om te importeren." }, { status: 400 });
   }
 
   // Regels met een niet-opgeloste leverancier worden overgeslagen — nooit
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     `[product-import] Start import: ${included.length} regel(s) met leverancier, ${skippedNoSupplier} overgeslagen (leverancier niet gekoppeld).`
   );
 
-  // Eenheden ophalen (voor het aanmaken van nieuwe producten en het
+  // Eenheden ophalen (voor het aanmaken van nieuwe ingrediënten en het
   // correct omrekenen van verpakkingshoeveelheden naar de basiseenheid
   // van een al bestaand product).
   const { data: units } = await supabase
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   const unitByKey = new Map((units ?? []).map((u) => [u.key, u]));
   const unitById = new Map((units ?? []).map((u) => [u.id, u]));
 
-  // Alle bestaande producten van deze groep ophalen (gepagineerd, geen
+  // Alle bestaande ingrediënten van deze groep ophalen (gepagineerd, geen
   // stilzwijgende afkapping bij grote catalogi).
   const existingProducts: {
     id: string;
@@ -102,11 +102,11 @@ export async function POST(request: Request) {
     productById.set(p.id, p);
   }
 
-  // Nieuw aan te maken producten verzamelen (dedupliceren binnen dit
+  // Nieuw aan te maken ingrediënten verzamelen (dedupliceren binnen dit
   // bestand zelf: dezelfde naam óf dezelfde EAN-code bij meerdere
   // leveranciers wordt niet meerdere keren aangemaakt — een dubbele
   // EAN in één invoegopdracht zou anders de unieke-EAN-check schenden
-  // en de HELE batch van tot wel 500 producten laten mislukken).
+  // en de HELE batch van tot wel 500 ingrediënten laten mislukken).
   const newlyCreatedByNormalizedName = new Map<string, string>(); // naam -> product_id
   const newlyCreatedByEan = new Map<string, string>(); // ean -> product_id
   const rowsNeedingNewProduct: ParsedProductRow[] = [];
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // Nieuwe producten in batches aanmaken. Faalt een hele batch (bv.
+  // Nieuwe ingrediënten in batches aanmaken. Faalt een hele batch (bv.
   // door één rij die alsnog een unieke-index schendt), dan wordt die
   // batch regel voor regel opnieuw geprobeerd — zodat één foute rij
   // nooit honderden goede rijen meesleurt in de mislukking.
@@ -194,14 +194,14 @@ export async function POST(request: Request) {
     // Batch als geheel mislukt — per rij opnieuw proberen, zodat alleen
     // de daadwerkelijk foute rij(en) sneuvelen.
     console.warn(
-      `[product-import] Batch van ${toInsert.length} nieuwe producten mislukt (${insertError.message}) — probeer regel voor regel opnieuw.`
+      `[product-import] Batch van ${toInsert.length} nieuwe ingrediënten mislukt (${insertError.message}) — probeer regel voor regel opnieuw.`
     );
     for (const row of toInsert) {
       const { inserted: single, insertError: singleError } = await insertProductRows([row]);
       if (singleError || !single?.[0]) {
         productCreationFailures++;
         console.error(
-          `[product-import] Kan product "${row.name}" (regel ${row.rowNumber}) niet aanmaken:`,
+          `[product-import] Kan ingrediënt "${row.name}" (regel ${row.rowNumber}) niet aanmaken:`,
           singleError?.message
         );
         continue;
@@ -216,7 +216,7 @@ export async function POST(request: Request) {
   }
 
   // Bestaande actieve leveranciersprijzen vooraf ophalen — nodig om
-  // exacte duplicaten te herkennen (dezelfde leverancier, product,
+  // exacte duplicaten te herkennen (dezelfde leverancier, ingrediënt,
   // verpakking én prijs opnieuw importeren mag niets toevoegen) en om
   // bij een echte prijswijziging de oude regel netjes af te sluiten
   // i.p.v. een tweede "actieve" prijs ernaast te laten bestaan.
@@ -278,9 +278,9 @@ export async function POST(request: Request) {
     }
   }
 
-  // Nu elke regel definitief aan een product koppelen en de prijs
+  // Nu elke regel definitief aan een ingrediënt koppelen en de prijs
   // vastleggen. Verpakkingshoeveelheid wordt omgerekend naar de
-  // werkelijke basiseenheid van het gekoppelde product (kan afwijken
+  // werkelijke basiseenheid van het gekoppelde ingrediënt (kan afwijken
   // van de kleinste eenheid, zelfde correctie als bij facturen).
   const supplierProductsToInsert: {
     supplier_id: string;
@@ -339,7 +339,7 @@ export async function POST(request: Request) {
           finalCount = (row.packagingUnitCount * packagingUnit.factor_to_base) / productUnit.factor_to_base;
         } else if (existing) {
           // Dimensie klopt niet (bv. het bestand levert "1 stuk" terwijl
-          // het product in ml rekent), maar er bestaat al een actieve
+          // het ingrediënt in ml rekent), maar er bestaat al een actieve
           // prijs — verpakking hergebruiken, alleen de prijs telt.
           finalCount = existing.packaging_unit_count;
           finalDescription = existing.packaging_description;
@@ -411,8 +411,8 @@ export async function POST(request: Request) {
       // Rijen die het bronbestand zelf al als onzeker markeerde (bv. de
       // "Niet herkend"-kolom) blokkeren de import niet — ze worden
       // gewoon meegenomen, maar blijven gemarkeerd zodat je ze later in
-      // je eigen tempo kunt doorlopen via "Producten opschonen". Datzelfde
-      // geldt voor regels waar de inhoud uit de productnaam is afgeleid
+      // je eigen tempo kunt doorlopen via "Ingrediënten opschonen". Datzelfde
+      // geldt voor regels waar de inhoud uit de ingrediëntnaam is afgeleid
       // (bv. "2x5l") of waar de bestaande verpakkingseenheid is
       // hergebruikt omdat het bestand een niet-passende eenheid gaf —
       // goede aannames, maar wel om na te lopen.
@@ -426,7 +426,7 @@ export async function POST(request: Request) {
 
   // Overschreven prijzen eerst netjes afsluiten (valid_to gisteren) —
   // vóór het invoegen van de nieuwe, zodat er nooit twee "actieve"
-  // prijzen voor dezelfde leverancier+product naast elkaar blijven staan.
+  // prijzen voor dezelfde leverancier+ingrediënt naast elkaar blijven staan.
   if (idsToClose.length > 0) {
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     for (const idBatch of chunk(idsToClose, 500)) {
@@ -477,7 +477,7 @@ export async function POST(request: Request) {
     skippedMissingPriceOrPackaging +
     skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle, ${contentDerivedCount} met inhoud uit de productnaam afgeleid en ${packagingReusedCount} met hergebruikte bestaande verpakkingseenheid), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
+    `[product-import] Klaar: ${productsCreated} nieuwe ingrediënten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle, ${contentDerivedCount} met inhoud uit de ingrediëntnaam afgeleid en ${packagingReusedCount} met hergebruikte bestaande verpakkingseenheid), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder ingrediëntmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
   if (accountedFor !== rows.length) {
     console.error(

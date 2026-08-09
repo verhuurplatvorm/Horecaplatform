@@ -31,7 +31,7 @@ import type {
 
 interface IngredientRow {
   id?: string;
-  type: "product" | "halfproduct";
+  type: "ingrediënt" | "halfproduct";
   refId: string | null;
   refName: string | null;
   unmatchedName: string | null;
@@ -128,7 +128,7 @@ export function RecipeForm({
     initialIngredients.length > 0
       ? initialIngredients.map((ri) => ({
           id: ri.id,
-          type: ri.sub_recipe_id ? "halfproduct" : "product",
+          type: ri.sub_recipe_id ? "halfproduct" : "ingrediënt",
           refId: ri.product_id ?? ri.sub_recipe_id,
           refName: null,
           unmatchedName: ri.unmatched_name,
@@ -223,7 +223,7 @@ export function RecipeForm({
 
       setRows((prev) =>
         prev.map((row) => {
-          if (row.type === "product" && row.refId && productMap.has(row.refId)) {
+          if (row.type === "ingrediënt" && row.refId && productMap.has(row.refId)) {
             const p = productMap.get(row.refId)!;
             return { ...row, refName: p.name, baseUnitId: p.base_unit_id };
           }
@@ -350,7 +350,7 @@ export function RecipeForm({
       if (!Number.isFinite(qty) || !row.refId || !row.unitId) return null;
       const chosenUnit = unitsById.get(row.unitId);
 
-      if (row.type === "product") {
+      if (row.type === "ingrediënt") {
         const priceInfo = productPrices.get(row.refId);
         if (!priceInfo) return null;
         const baseUnit = priceInfo.baseUnitId ? unitsById.get(priceInfo.baseUnitId) : null;
@@ -370,7 +370,7 @@ export function RecipeForm({
   }, [rows, productPrices, halfproductCosts, unitsById]);
 
   const ingredientCost: number = rows.reduce<number>(
-    (sum, row, i) => (row.type === "product" && lineCosts[i] !== null ? sum + lineCosts[i]! : sum),
+    (sum, row, i) => (row.type === "ingrediënt" && lineCosts[i] !== null ? sum + lineCosts[i]! : sum),
     0
   );
   const halfproductCost: number = rows.reduce<number>(
@@ -432,7 +432,7 @@ export function RecipeForm({
     const traces = new Set<string>();
     for (const row of rows) {
       if (!row.refId) continue;
-      if (row.type === "product") {
+      if (row.type === "ingrediënt") {
         const info = productPrices.get(row.refId);
         info?.allergens.forEach((a) => contains.add(a));
         info?.traces.forEach((a) => traces.add(a));
@@ -455,7 +455,7 @@ export function RecipeForm({
       const chosenUnit = unitsById.get(row.unitId);
       if (!chosenUnit) return;
 
-      if (row.type === "product") {
+      if (row.type === "ingrediënt") {
         const info = productPrices.get(row.refId);
         if (!info?.nutritionPer100 || !info.baseUnitId) return;
         const baseUnit = unitsById.get(info.baseUnitId);
@@ -589,7 +589,7 @@ export function RecipeForm({
       if (match) {
         updated[i] = {
           ...row,
-          type: "product",
+          type: "ingrediënt",
           refId: match.id,
           refName: match.name,
           unmatchedName: null,
@@ -629,7 +629,7 @@ export function RecipeForm({
   function handlePick(index: number, picked: PickedIngredient) {
     const existingRowId = rows[index]?.id;
     // Eenheid alleen vervangen als de huidige eenheid een andere
-    // dimensie heeft dan het nieuwe product — bij het omwisselen van
+    // dimensie heeft dan het nieuwe ingrediënt — bij het omwisselen van
     // bv. de ene olie naar de andere blijft "100 milliliter" gewoon staan.
     const currentUnit = rows[index]?.unitId ? unitsById.get(rows[index].unitId!) : null;
     const newBaseUnit = picked.baseUnitId ? unitsById.get(picked.baseUnitId) : null;
@@ -647,17 +647,17 @@ export function RecipeForm({
       yieldQuantity: picked.yieldQuantity ?? null,
       unitId: nextUnitId,
     });
-    if (picked.type === "product") loadProductPrice(picked.id);
+    if (picked.type === "ingrediënt") loadProductPrice(picked.id);
     else loadHalfproductCost(picked.id);
 
     // Al eerder opgeslagen regel: wijziging meteen bewaren, niet pas
-    // bij "Opslaan" — zelfde patroon als "Opnieuw zoeken in Producten".
+    // bij "Opslaan" — zelfde patroon als "Opnieuw zoeken in Ingrediënten".
     if (existingRowId) {
       const supabase = createClient();
       supabase
         .from("recipe_ingredients")
         .update({
-          product_id: picked.type === "product" ? picked.id : null,
+          product_id: picked.type === "ingrediënt" ? picked.id : null,
           sub_recipe_id: picked.type === "halfproduct" ? picked.id : null,
           unmatched_name: null,
           unmatched_article_number: null,
@@ -753,7 +753,7 @@ export function RecipeForm({
     const { error: linesError } = await supabase.from("recipe_ingredients").insert(
       validRows.map((r, i) => ({
         recipe_id: recipeId,
-        product_id: r.type === "product" ? r.refId : null,
+        product_id: r.type === "ingrediënt" ? r.refId : null,
         sub_recipe_id: r.type === "halfproduct" ? r.refId : null,
         unmatched_name: !r.refId ? r.unmatchedName : null,
         quantity: Number(r.quantity),
@@ -1038,7 +1038,7 @@ export function RecipeForm({
                 onClick={handleRematch}
                 disabled={rematching}
               >
-                {rematching ? "Bezig…" : "Opnieuw zoeken in Producten"}
+                {rematching ? "Bezig…" : "Opnieuw zoeken in Ingrediënten"}
               </Button>
             </div>
           )}
@@ -1077,17 +1077,17 @@ export function RecipeForm({
               cost={lineCosts[i]}
               canViewFinancial={canViewFinancial}
               priceDirection={
-                row.type === "product" && row.refId
+                row.type === "ingrediënt" && row.refId
                   ? productPrices.get(row.refId)?.priceDirection ?? null
                   : null
               }
               purchasePrice={
-                row.type === "product" && row.refId
+                row.type === "ingrediënt" && row.refId
                   ? productPrices.get(row.refId)?.purchasePrice ?? null
                   : null
               }
               packagingDescription={
-                row.type === "product" && row.refId
+                row.type === "ingrediënt" && row.refId
                   ? productPrices.get(row.refId)?.packagingDescription ?? null
                   : null
               }
@@ -1440,7 +1440,7 @@ export function RecipeForm({
 
 function emptyRow(): IngredientRow {
   return {
-    type: "product",
+    type: "ingrediënt",
     refId: null,
     refName: null,
     unmatchedName: null,
@@ -1660,7 +1660,7 @@ function IngredientLine({
           {row.refId ? (
             <div>
               <span className="flex items-center gap-2 text-sm text-foreground">
-                {row.type === "product" ? (
+                {row.type === "ingrediënt" ? (
                   <Package className="h-3.5 w-3.5 text-teal" />
                 ) : (
                   <SoupIcon className="h-3.5 w-3.5 text-copper" />
@@ -1688,12 +1688,12 @@ function IngredientLine({
                     })
                   }
                   className="text-xs text-muted hover:text-teal hover:underline"
-                  title="Ander product koppelen"
+                  title="Ander ingrediënt koppelen"
                 >
                   wijzig
                 </button>
               </span>
-              {row.type === "product" && (purchasePrice != null || packagingDescription) && (
+              {row.type === "ingrediënt" && (purchasePrice != null || packagingDescription) && (
                 <p className="ml-5 text-xs text-muted">
                   {packagingDescription ?? "onbekende verpakking"}
                   {canViewFinancial &&
@@ -1714,7 +1714,7 @@ function IngredientLine({
                 target="_blank"
                 className="text-xs text-teal hover:underline"
               >
-                Of maak &quot;{row.unmatchedName}&quot; als nieuw product aan →
+                Of maak &quot;{row.unmatchedName}&quot; als nieuw ingrediënt aan →
               </Link>
             </div>
           ) : (
@@ -1758,7 +1758,7 @@ function IngredientLine({
             </option>
           ))}
         </select>
-        {row.type === "product" ? (
+        {row.type === "ingrediënt" ? (
           <input
             type="number"
             step="0.01"

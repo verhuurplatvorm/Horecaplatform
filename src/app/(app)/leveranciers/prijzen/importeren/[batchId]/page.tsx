@@ -212,7 +212,7 @@ export default function ImportReviewPage({
   async function handleDeleteBatch() {
     if (
       !window.confirm(
-        `Deze factuur/import definitief verwijderen? Alle regels verdwijnen mee. Al doorgevoerde prijzen op producten blijven gewoon staan — alleen de importgeschiedenis zelf verdwijnt. Dit kan niet ongedaan worden gemaakt.`
+        `Deze factuur/import definitief verwijderen? Alle regels verdwijnen mee. Al doorgevoerde prijzen op ingrediënten blijven gewoon staan — alleen de importgeschiedenis zelf verdwijnt. Dit kan niet ongedaan worden gemaakt.`
       )
     ) {
       return;
@@ -244,7 +244,7 @@ export default function ImportReviewPage({
     if (unmatched.length === 0) return;
     if (
       !window.confirm(
-        `${unmatched.length} nieuwe producten aanmaken op basis van deze regels? Controleer daarna zelf steekproefsgewijs of de herkenning klopt.`
+        `${unmatched.length} nieuwe ingrediënten aanmaken op basis van deze regels? Controleer daarna zelf steekproefsgewijs of de herkenning klopt.`
       )
     ) {
       return;
@@ -263,8 +263,8 @@ export default function ImportReviewPage({
     const { data: units } = await supabase.from("units").select("id, key");
     const unitIdByKey = new Map((units ?? []).map((u) => [u.key, u.id]));
 
-    // Voorkom dubbele producten binnen dezelfde import: dezelfde
-    // (genormaliseerde) naam hergebruikt hetzelfde nieuw aangemaakte product.
+    // Voorkom dubbele ingrediënten binnen dezelfde import: dezelfde
+    // (genormaliseerde) naam hergebruikt hetzelfde nieuw aangemaakte ingrediënt.
     const createdByName = new Map<string, string>();
     let created = 0;
     let linked = 0;
@@ -332,7 +332,7 @@ export default function ImportReviewPage({
 
     setBulkCreating(false);
     setBulkResult(
-      `${created} nieuwe producten aangemaakt, ${linked} regels gekoppeld` +
+      `${created} nieuwe ingrediënten aangemaakt, ${linked} regels gekoppeld` +
         (skipped > 0 ? `, ${skipped} overgeslagen (geen naam/eenheid herkend).` : ".")
     );
     reload();
@@ -341,7 +341,7 @@ export default function ImportReviewPage({
   async function handleDeleteRow(rowId: string) {
     if (
       !window.confirm(
-        "Deze regel verwijderen uit de import? Wordt niet als product of prijs verwerkt."
+        "Deze regel verwijderen uit de import? Wordt niet als ingrediënt of prijs verwerkt."
       )
     ) {
       return;
@@ -483,7 +483,7 @@ export default function ImportReviewPage({
                 >
                   {bulkCreating
                     ? "Bezig…"
-                    : `${unmatchedCount} niet-gekoppelde regels als nieuwe producten aanmaken`}
+                    : `${unmatchedCount} niet-gekoppelde regels als nieuwe ingrediënten aanmaken`}
                 </Button>
               )}
               <Button
@@ -529,7 +529,7 @@ export default function ImportReviewPage({
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="sticky top-0 bg-surface text-left text-muted">
-                          <th className="px-3 py-2 font-medium">Product</th>
+                          <th className="px-3 py-2 font-medium">Ingrediënt</th>
                           <th className="px-3 py-2 font-medium">Oude prijs</th>
                           <th className="px-3 py-2 font-medium">Nieuwe prijs</th>
                           <th className="px-3 py-2 font-medium">Ingangsdatum</th>
@@ -575,7 +575,7 @@ export default function ImportReviewPage({
                     {applyReport.priceChanges.filter((c) => c.oldPrice === null).length})
                   </p>
                   <p className="text-xs text-muted">
-                    Voor deze producten was er nog geen prijs van deze leverancier — geen
+                    Voor deze ingrediënten was er nog geen prijs van deze leverancier — geen
                     wijziging, maar een eerste vastlegging.
                   </p>
                 </div>
@@ -583,7 +583,7 @@ export default function ImportReviewPage({
               {applyReport.newProducts.length > 0 && (
                 <div className="mb-4">
                   <p className="mb-1 font-medium text-copper">
-                    Nieuw aangemaakte producten ({applyReport.newProducts.length})
+                    Nieuw aangemaakte ingrediënten ({applyReport.newProducts.length})
                   </p>
                   <div className="max-h-40 overflow-y-auto rounded-md border border-border px-3 py-2 text-xs">
                     {applyReport.newProducts.map((name, i) => (
@@ -625,7 +625,7 @@ export default function ImportReviewPage({
                 className="flex w-full items-center gap-1 rounded-md bg-copper/10 p-2 text-left text-sm text-copper hover:bg-copper/20"
               >
                 <TriangleAlert className="h-4 w-4 shrink-0" />
-                {missingPackagingCount} regel(s) hebben een gekoppeld product maar
+                {missingPackagingCount} regel(s) hebben een gekoppeld ingrediënt maar
                 missen een verpakkingshoeveelheid — vul deze eerst in, anders wordt
                 de prijs verkeerd geïnterpreteerd en kan er niet doorgevoerd worden.
                 <span className="ml-auto shrink-0 underline">
@@ -684,7 +684,7 @@ export default function ImportReviewPage({
                   <th className="px-5 py-3 font-medium">Verpakking</th>
                   <th className="px-5 py-3 font-medium">Stuks in verpakking</th>
                   <th className="px-5 py-3 font-medium">Inhoud per stuk</th>
-                  <th className="px-5 py-3 font-medium">Gekoppeld product</th>
+                  <th className="px-5 py-3 font-medium">Gekoppeld ingrediënt</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
@@ -724,7 +724,7 @@ export default function ImportReviewPage({
 
         {creatingForRow && (
           <Modal
-            title="Nieuw product aanmaken"
+            title="Nieuw ingrediënt aanmaken"
             onClose={() => setCreatingForRow(null)}
           >
             <ProductForm
@@ -872,14 +872,14 @@ function RowLine({
               className="flex items-center gap-1 text-xs text-teal hover:underline"
             >
               <Plus className="h-3.5 w-3.5" />
-              Nieuw product aanmaken
+              Nieuw ingrediënt aanmaken
             </button>
             <button
               onClick={() => setSearching(true)}
               className="flex items-center gap-1 text-xs text-muted hover:underline"
             >
               <Search className="h-3.5 w-3.5" />
-              Bestaand product koppelen
+              Bestaand ingrediënt koppelen
             </button>
           </div>
         )}
@@ -895,7 +895,7 @@ function RowLine({
             <CheckCircle2 className="h-3.5 w-3.5" />
             Gekoppeld
             {row.match_method === "handmatig" && " (handmatig)"}
-            {row.match_method === "automatisch_aangemaakt" && " (nieuw product aangemaakt)"}
+            {row.match_method === "automatisch_aangemaakt" && " (nieuw ingrediënt aangemaakt)"}
           </span>
         ) : (
           <ConfidenceBadge confidence={row.match_confidence} />
@@ -973,7 +973,7 @@ function ProductPicker({ onPick }: { onPick: (productId: string) => void }) {
         autoFocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Zoek product op naam…"
+        placeholder="Zoek ingrediënt op naam…"
         className="h-8 w-full rounded-md border border-border bg-surface px-2 text-xs"
       />
       {visibleResults.length > 0 && (

@@ -46,7 +46,7 @@ export const NAV_TABS: NavTab[] = [
     key: "inkoop",
     label: "Inkoop & Voorraad",
     items: [
-      { href: "/producten", label: "Producten", icon: Package, moduleKey: "producten" },
+      { href: "/producten", label: "Ingrediënten", icon: Package, moduleKey: "producten" },
       { href: "/leveranciers", label: "Leveranciers", icon: Truck, moduleKey: "leveranciers" },
       { href: "/verkoopproducten", label: "Verkoopproducten", icon: ShoppingCart, moduleKey: "verkoopproducten" },
     ],

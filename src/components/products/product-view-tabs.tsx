@@ -5,11 +5,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { href: "/producten", label: "Alle producten" },
+  { href: "/producten", label: "Alle ingrediënten" },
   { href: "/producten/opschonen", label: "Te controleren" },
 ];
 
-/** Kleine tabbalk die "Producten" en "Producten opschonen" als twee weergaven van hetzelfde overzicht laat aanvoelen, in plaats van losse bestemmingen. */
+/** Kleine tabbalk die "Ingrediënten" en "Ingrediënten opschonen" als twee weergaven van hetzelfde overzicht laat aanvoelen, in plaats van losse bestemmingen. */
 export function ProductViewTabs() {
   const pathname = usePathname() ?? "";
 

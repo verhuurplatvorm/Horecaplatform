@@ -203,7 +203,7 @@ export type RecipeIngredient = {
 export type CurrentProductCost = {
   product_id: string;
   company_id: string;
-  // null bij een eigen kostprijs op het product (zonder leverancier)
+  // null bij een eigen kostprijs op het ingrediënt (zonder leverancier)
   supplier_id: string | null;
   price_per_base_unit: number;
   is_contract_price: boolean;

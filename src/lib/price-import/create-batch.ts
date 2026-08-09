@@ -3,12 +3,12 @@ import type { ParsedPriceRow } from "./columns";
 import { matchRowsToProducts, type MatchedRow } from "./match";
 
 /**
- * Maakt automatisch een nieuw product aan voor factuurregels die zeker
+ * Maakt automatisch een nieuw ingrediënt aan voor factuurregels die zeker
  * geen match hebben (confidence 'nieuw' — geen EAN/artikelnummer-treffer
  * én geen sterk gelijkende naam). Regels met een 'waarschijnlijk'- of
  * 'mogelijk_dubbel'-signaal worden bewust NIET automatisch aangemaakt —
  * die vereisen een menselijke blik om te voorkomen dat een bestaand
- * product per ongeluk dubbel wordt aangemaakt onder een net iets andere
+ * ingrediënt per ongeluk dubbel wordt aangemaakt onder een net iets andere
  * naam of schrijfwijze.
  */
 async function autoCreateNewProducts(
@@ -55,7 +55,7 @@ async function autoCreateNewProducts(
 
       if (productError || !newProduct) {
         console.error(
-          `[invoice-import] Automatisch aanmaken van product "${row.description}" mislukt:`,
+          `[invoice-import] Automatisch aanmaken van ingrediënt "${row.description}" mislukt:`,
           productError?.message
         );
         result.push(row);
@@ -64,7 +64,7 @@ async function autoCreateNewProducts(
       productId = newProduct.id as string;
       createdByName.set(key, productId);
       console.log(
-        `[invoice-import] Nieuw product automatisch aangemaakt: "${row.description}" (basiseenheid ${baseUnitKey})`
+        `[invoice-import] Nieuw ingrediënt automatisch aangemaakt: "${row.description}" (basiseenheid ${baseUnitKey})`
       );
 
       if (row.packagingDescription && row.packagingUnitCount) {

@@ -153,8 +153,8 @@ export default function ProductenImporterenPage() {
                 Import voltooid.
               </p>
               <ul className="space-y-1 text-sm text-muted">
-                <li>{result.totalRows} productregels in het bestand</li>
-                <li>{result.productsCreated} nieuwe producten aangemaakt</li>
+                <li>{result.totalRows} ingrediëntregels in het bestand</li>
+                <li>{result.productsCreated} nieuwe ingrediënten aangemaakt</li>
                 {result.productCreationFailures > 0 && (
                   <li className="text-danger">
                     {result.productCreationFailures} product(en) konden ondanks een nieuwe poging
@@ -179,14 +179,14 @@ export default function ProductenImporterenPage() {
                 {(result.contentDerivedCount ?? 0) > 0 && (
                   <li className="text-copper">
                     {result.contentDerivedCount} daarvan had geen inhoud/eenheid in het bestand —
-                    de inhoud is uit de productnaam afgeleid (bv. &quot;2x5l&quot; → 10.000 ml).
+                    de inhoud is uit de ingrediëntnaam afgeleid (bv. &quot;2x5l&quot; → 10.000 ml).
                     Meegeïmporteerd en gemarkeerd onder &quot;Te controleren&quot;.
                   </li>
                 )}
                 {(result.packagingReusedCount ?? 0) > 0 && (
                   <li className="text-copper">
                     {result.packagingReusedCount} daarvan gaf een eenheid die niet past bij het
-                    product (bv. &quot;stuk&quot; terwijl het product in ml rekent) — de nieuwe prijs
+                    ingrediënt (bv. &quot;stuk&quot; terwijl het ingrediënt in ml rekent) — de nieuwe prijs
                     is overgenomen met behoud van de bestaande verpakkingseenheid. Gemarkeerd
                     onder &quot;Te controleren&quot;.
                   </li>
@@ -204,14 +204,14 @@ export default function ProductenImporterenPage() {
                 )}
                 {result.skippedNoProductMatch > 0 && (
                   <li className="text-copper">
-                    {result.skippedNoProductMatch} regel(s) overgeslagen — kon geen product
+                    {result.skippedNoProductMatch} regel(s) overgeslagen — kon geen ingrediënt
                     koppelen (nieuw aanmaken is mislukt)
                   </li>
                 )}
                 {result.flaggedForReview > 0 && (
                   <li className="text-danger">
                     {result.flaggedForReview} regel(s) overgeslagen — verpakkingseenheid past niet
-                    bij het gekoppelde product (controleer handmatig)
+                    bij het gekoppelde ingrediënt (controleer handmatig)
                   </li>
                 )}
               </ul>
@@ -235,7 +235,7 @@ export default function ProductenImporterenPage() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="sticky top-0 bg-surface text-left text-muted">
-                          <th className="px-3 py-2 font-medium">Product</th>
+                          <th className="px-3 py-2 font-medium">Ingrediënt</th>
                           <th className="px-3 py-2 font-medium">Leverancier</th>
                           <th className="px-3 py-2 font-medium">Oude prijs</th>
                           <th className="px-3 py-2 font-medium">Nieuwe prijs</th>
@@ -272,7 +272,7 @@ export default function ProductenImporterenPage() {
               {(result.newProducts?.length ?? 0) > 0 && (
                 <div className="pt-4">
                   <p className="mb-2 text-sm font-medium text-copper">
-                    Nieuw aangemaakte producten ({result.newProducts!.length}
+                    Nieuw aangemaakte ingrediënten ({result.newProducts!.length}
                     {result.newProductsTruncated ? "+" : ""})
                   </p>
                   <div className="max-h-40 overflow-y-auto rounded-md border border-border px-3 py-2 text-xs">
@@ -299,7 +299,7 @@ export default function ProductenImporterenPage() {
             </CardContent>
           </Card>
           <div className="flex gap-2">
-            <Button onClick={() => router.push("/producten")}>Naar productoverzicht</Button>
+            <Button onClick={() => router.push("/producten")}>Naar ingrediëntenoverzicht</Button>
             {result.flaggedBySourceCount > 0 && (
               <Button variant="secondary" onClick={() => router.push("/producten/opschonen")}>
                 {result.flaggedBySourceCount} te controleren bekijken
@@ -318,7 +318,7 @@ export default function ProductenImporterenPage() {
         <main className="max-w-4xl space-y-4 p-6">
           <p className="text-sm text-muted">
             {supplierGroups.length} leverancier(s) herkend in dit bestand,{" "}
-            {rows.length} productregels totaal. Leveranciers die niet automatisch gekoppeld
+            {rows.length} ingrediëntregels totaal. Leveranciers die niet automatisch gekoppeld
             konden worden, worden <strong>niet</strong> aangemaakt — koppel ze hieronder handmatig
             aan een bestaande leverancier, of laat ze op &quot;overslaan&quot; staan.
           </p>
@@ -326,7 +326,7 @@ export default function ProductenImporterenPage() {
             <p className="text-sm text-copper">
               {rows.filter((r) => r.flaggedBySource).length} regel(s) waren in het bronbestand al
               gemarkeerd als onzeker — dat blokkeert niets, ze worden gewoon meegeïmporteerd en
-              blijven daarna gemarkeerd onder &quot;Producten opschonen&quot; zodat je ze op je
+              blijven daarna gemarkeerd onder &quot;Ingrediënten opschonen&quot; zodat je ze op je
               eigen moment kunt nalopen.
             </p>
           )}
@@ -403,7 +403,7 @@ export default function ProductenImporterenPage() {
 
           <div className="flex items-center gap-2">
             <Button onClick={handleImport} disabled={saving || totalRowsResolved === 0}>
-              {saving ? "Bezig met importeren…" : `${totalRowsResolved} productregels importeren`}
+              {saving ? "Bezig met importeren…" : `${totalRowsResolved} ingrediëntregels importeren`}
             </Button>
             <Button variant="secondary" onClick={() => setStep("upload")}>
               Terug
@@ -422,7 +422,7 @@ export default function ProductenImporterenPage() {
 
   return (
     <>
-      <Topbar title="Producten importeren (Excel)" />
+      <Topbar title="Ingrediënten importeren (Excel)" />
       <main className="max-w-xl p-6">
         <Card>
           <CardHeader>
@@ -442,7 +442,7 @@ export default function ProductenImporterenPage() {
                   className="block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-teal file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-teal-light"
                 />
                 <p className="mt-1 text-xs text-muted">
-                  Eén rij per product, met een leverancier-kolom — meerdere leveranciers in één
+                  Eén rij per ingrediënt, met een leverancier-kolom — meerdere leveranciers in één
                   bestand worden automatisch herkend en gescheiden. Ontbrekende leveranciers
                   worden nooit automatisch aangemaakt.
                 </p>

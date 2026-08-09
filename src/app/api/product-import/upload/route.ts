@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
   if (rows.length === 0) {
     return NextResponse.json(
-      { error: "Geen productregels herkend in dit bestand." },
+      { error: "Geen ingrediëntregels herkend in dit bestand." },
       { status: 422 }
     );
   }

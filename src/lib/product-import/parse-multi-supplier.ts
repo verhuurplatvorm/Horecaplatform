@@ -15,7 +15,7 @@ export interface ParsedProductRow {
   eanCode: string | null;
   isAvailable: boolean;
   flaggedBySource: boolean; // "Niet herkend" kolom uit het bronbestand
-  contentDerivedFromName: boolean; // inhoud uit de productnaam afgeleid (bv. "2x5l") — controleren
+  contentDerivedFromName: boolean; // inhoud uit de ingrediëntnaam afgeleid (bv. "2x5l") — controleren
 }
 
 const HEADER_MAP: Record<string, string> = {
@@ -25,8 +25,8 @@ const HEADER_MAP: Record<string, string> = {
   merk: "brand",
   leverancier: "supplierNameRaw",
   categorie: "category",
-  "prijs per product": "purchasePrice",
-  "producten in pakket": "packagingCount",
+  "prijs per ingrediënt": "purchasePrice",
+  "ingrediënten in pakket": "packagingCount",
   "inhoud van prod.": "contentPerUnit",
   eenheid: "unitRaw",
   beschikbaar: "isAvailable",
@@ -62,7 +62,7 @@ function toBaseUnitKey(unitKey: string): string {
   return "ml"; // ml, cl, dl, l
 }
 
-// Eenheid-spellingen zoals ze in productnamen voorkomen, met hun factor
+// Eenheid-spellingen zoals ze in ingrediëntnamen voorkomen, met hun factor
 // naar de basiseenheid (ml of g) van hun dimensie.
 const NAME_UNIT_PATTERNS: { pattern: RegExp; baseKey: "ml" | "g"; factor: number }[] = [
   { pattern: /^(?:ml)$/i, baseKey: "ml", factor: 1 },
@@ -74,7 +74,7 @@ const NAME_UNIT_PATTERNS: { pattern: RegExp; baseKey: "ml" | "g"; factor: number
 ];
 
 /**
- * Probeert de inhoud uit een productnaam of -omschrijving af te leiden,
+ * Probeert de inhoud uit een ingrediëntnaam of -omschrijving af te leiden,
  * voor regels waar het bronbestand geen bruikbare inhoud/eenheid gaf en
  * die anders als "1 stuk" zouden binnenkomen (bv. een emmer van 10 liter
  * als € 22,50 "per stuk" — 10.000x te hoge prijs per basiseenheid).
@@ -155,7 +155,7 @@ export function parseMultiSupplierExcel(buffer: Buffer): ParsedProductRow[] {
     let contentDerivedFromName = false;
 
     // Bronbestand gaf geen bruikbare inhoud (eenheid "stuk" zonder echte
-    // inhoud per stuk) — probeer de maat uit de productnaam te halen,
+    // inhoud per stuk) — probeer de maat uit de ingrediëntnaam te halen,
     // zodat een "emmer 10 ltr" niet als 1 stuk van € 22,50 binnenkomt.
     if (packagingUnitKey === "stuk" && contentPerUnit === 1) {
       const derived = deriveContentFromName(name);

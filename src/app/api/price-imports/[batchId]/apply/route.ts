@@ -69,7 +69,7 @@ export async function POST(
 
   // ---------------------------------------------------------------------
   // Overzicht opbouwen: gewijzigde prijzen (oud → nieuw + ingangsdatum),
-  // nieuw aangemaakte producten, en regels zonder wijziging.
+  // nieuw aangemaakte ingrediënten, en regels zonder wijziging.
   // ---------------------------------------------------------------------
   const { data: reportRows } = await supabase
     .from("price_import_rows")
@@ -125,7 +125,7 @@ export async function POST(
     const name =
       (r.matched_product_id && productNameById.get(r.matched_product_id)) ||
       r.description ||
-      "onbekend product";
+      "onbekend ingrediënt";
 
     if (r.match_method === "automatisch_aangemaakt") {
       newProducts.push(name);

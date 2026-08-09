@@ -58,7 +58,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <KpiTile label="Bedrijven in beeld" value={String(scopedCompanies.length)} />
           <KpiTile
-            label="Centrale producten"
+            label="Centrale ingrediënten"
             value={counts ? String(counts.products) : "…"}
           />
           <KpiTile
@@ -148,7 +148,7 @@ export default function DashboardPage() {
           />
           <ShortcutCard
             icon={Package}
-            title="Centrale productdatabase"
+            title="Centrale ingrediëntendatabase"
             description="Beheer ingrediënten en artikelen die door meerdere bedrijven worden gebruikt."
             href="/producten"
           />

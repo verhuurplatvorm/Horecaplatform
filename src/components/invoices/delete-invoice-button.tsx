@@ -19,7 +19,7 @@ export function DeleteInvoiceButton({
   async function handleDelete() {
     if (
       !window.confirm(
-        `Factuur "${filename}" definitief verwijderen? Dit verwijdert ook alle regels van deze factuur en kan niet ongedaan worden gemaakt. Al toegepaste prijzen op producten blijven wel gewoon staan.`
+        `Factuur "${filename}" definitief verwijderen? Dit verwijdert ook alle regels van deze factuur en kan niet ongedaan worden gemaakt. Al toegepaste prijzen op ingrediënten blijven wel gewoon staan.`
       )
     ) {
       return;

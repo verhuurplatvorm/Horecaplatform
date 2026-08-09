@@ -67,7 +67,7 @@ export default function ProductenPage() {
     async function run() {
       const supabase = createClient();
 
-      // Haalt ALLE producten op in batches van 1000 i.p.v. een harde
+      // Haalt ALLE ingrediënten op in batches van 1000 i.p.v. een harde
       // limiet van 200 — bij grotere catalogi (zoals Horesca Horecavo
       // met 400+ artikelen) werd de lijst eerder stilzwijgend afgekapt
       // zonder enige melding.
@@ -116,7 +116,7 @@ export default function ProductenPage() {
 
       const productIds = products.map((p) => p.id);
 
-      // In batches ophalen — met 1600+ producten wordt één enkele
+      // In batches ophalen — met 1600+ ingrediënten wordt één enkele
       // .in()-zoekopdracht met alle product-ID's tientallen kilobytes
       // groot, wat de zoekopdracht stil laat mislukken (geen leverancier,
       // prijs of verpakking meer zichtbaar voor ELK product).
@@ -183,7 +183,7 @@ export default function ProductenPage() {
           products.map((p) => {
             const price = priceByProduct.get(p.id);
             // Geen actieve leveranciersprijs, maar wél een eigen kostprijs
-            // op het product (bv. kraanwater à €0) → toon die als bron
+            // op het ingrediënt (bv. kraanwater à €0) → toon die als bron
             // "Eigen prijs". Een leveranciersprijs gaat altijd voor.
             const usesManualPrice =
               !price && p.manual_price_per_base_unit != null;
@@ -271,10 +271,10 @@ export default function ProductenPage() {
     // gemaakt worden. Binnen dezelfde dimensie (g → kg) geldt hetzelfde,
     // dus we waarschuwen altijd.
     const ok = window.confirm(
-      `Eenheid van "${row?.name ?? "dit product"}" wijzigen naar ${unit.name}?\n\n` +
+      `Eenheid van "${row?.name ?? "dit ingrediënt"}" wijzigen naar ${unit.name}?\n\n` +
         `Let op: hoeveelheden in recepten en de verpakkingseenheid worden ` +
         `niet automatisch omgerekend. Controleer daarna de verpakkingseenheid ` +
-        `(inhoud) en de recepten waarin dit product zit.`
+        `(inhoud) en de recepten waarin dit ingrediënt zit.`
     );
     if (!ok) return;
     const supabase = createClient();
@@ -308,7 +308,7 @@ export default function ProductenPage() {
       window.alert(
         "Verwijderen mislukt: " +
           deleteError.message +
-          " — mogelijk is dit product nog gekoppeld aan een recept of halfproduct."
+          " — mogelijk is dit ingrediënt nog gekoppeld aan een recept of halfproduct."
       );
       return;
     }
@@ -352,7 +352,7 @@ export default function ProductenPage() {
 
   return (
     <>
-      <Topbar title="Centrale productdatabase" />
+      <Topbar title="Centrale ingrediëntendatabase" />
       <main className="p-6 space-y-4">
         <ProductViewTabs />
         <div className="flex items-center justify-between gap-3">
@@ -374,7 +374,7 @@ export default function ProductenPage() {
           <Link href="/producten/nieuw">
             <Button>
               <Plus className="h-4 w-4" />
-              Nieuw product
+              Nieuw ingrediënt
             </Button>
           </Link>
         </div>
@@ -383,8 +383,8 @@ export default function ProductenPage() {
             {!loading && (
               <span className="text-xs text-muted">
                 {query.trim()
-                  ? `${filteredRows.length} van ${rows.length} producten`
-                  : `${rows.length} producten totaal`}
+                  ? `${filteredRows.length} van ${rows.length} ingrediënten`
+                  : `${rows.length} ingrediënten totaal`}
               </span>
             )}
           </div>
@@ -393,7 +393,7 @@ export default function ProductenPage() {
               <span className="text-sm text-foreground">{selectedIds.size} geselecteerd</span>
               <Button size="sm" variant="danger" onClick={() => setConfirming(true)}>
                 <Trash2 className="h-3.5 w-3.5" />
-                Geselecteerde producten verwijderen
+                Geselecteerde ingrediënten verwijderen
               </Button>
               <button
                 onClick={() => setSelectedIds(new Set())}
@@ -521,7 +521,7 @@ export default function ProductenPage() {
                     <td className="px-5 py-3">
                       <button
                         onClick={() => setDeletingRow(p)}
-                        title="Product verwijderen"
+                        title="Ingrediënt verwijderen"
                         className="text-muted hover:text-danger"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -533,10 +533,10 @@ export default function ProductenPage() {
                   <tr>
                     <td colSpan={9} className="px-5 py-6 text-center text-muted">
                       {error
-                        ? "Kan producten niet laden — controleer de Supabase-koppeling."
+                        ? "Kan ingrediënten niet laden — controleer de Supabase-koppeling."
                         : q
-                        ? "Geen producten gevonden voor deze zoekopdracht."
-                        : "Nog geen producten in de centrale database. Voeg het eerste artikel toe."}
+                        ? "Geen ingrediënten gevonden voor deze zoekopdracht."
+                        : "Nog geen ingrediënten in de centrale database. Voeg het eerste artikel toe."}
                     </td>
                   </tr>
                 )}
@@ -559,11 +559,11 @@ export default function ProductenPage() {
         />
       )}
       {deletingRow && (
-        <Modal title="Product verwijderen" onClose={() => setDeletingRow(null)}>
+        <Modal title="Ingrediënt verwijderen" onClose={() => setDeletingRow(null)}>
           <div className="space-y-4">
             <p className="text-sm text-foreground">
               Weet je zeker dat je &quot;{deletingRow.name}&quot; wilt verwijderen? Dit kan niet
-              ongedaan gemaakt worden. Is dit product nog gekoppeld aan een recept of
+              ongedaan gemaakt worden. Is dit ingrediënt nog gekoppeld aan een recept of
               halfproduct, dan wordt het verwijderen geblokkeerd.
             </p>
             <div className="flex gap-2">
@@ -681,7 +681,7 @@ function BulkDeleteModal({
   }
 
   return (
-    <Modal title="Geselecteerde producten verwijderen" onClose={onClose}>
+    <Modal title="Geselecteerde ingrediënten verwijderen" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm text-foreground">
           {selectedIds.length} product(en) geselecteerd om te verwijderen.

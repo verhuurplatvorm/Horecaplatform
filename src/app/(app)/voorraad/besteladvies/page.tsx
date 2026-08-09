@@ -148,7 +148,7 @@ export default function BesteladviesPage() {
               <Card>
                 <CardContent className="py-6 text-center text-sm text-muted">
                   Alles zit boven de minimale voorraad, of er is nog geen
-                  minimale voorraad ingesteld bij producten.
+                  minimale voorraad ingesteld bij ingrediënten.
                 </CardContent>
               </Card>
             )}

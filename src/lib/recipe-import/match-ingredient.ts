@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface MatchResult {
-  type: "product" | "halfproduct" | "unmatched";
+  type: "ingrediënt" | "halfproduct" | "unmatched";
   id: string | null;
   matchMethod: "artikelnummer" | "receptnaam" | "geen";
 }
@@ -18,8 +18,8 @@ export interface MatchResult {
  * 1. Een recept/halfproduct met exact dezelfde naam (ook net in deze
  *    import aangemaakt) — bv. "Aioli" als ingrediënt van "Tomaten aioli"
  *    hoort aan het halfproduct Aioli te verwijzen, niet aan een los
- *    product met die naam.
- * 2. Een product met hetzelfde leverancier-artikelnummer — uniek per
+ *    ingrediënt met die naam.
+ * 2. Een ingrediënt met hetzelfde leverancier-artikelnummer — uniek per
  *    artikel, dus betrouwbaar.
  * 3. Geen van bovenstaande: blijft ongekoppeld, voor handmatige controle.
  */
@@ -47,7 +47,7 @@ export async function matchIngredient(
       .limit(1)
       .maybeSingle();
     if (byArticleNumber) {
-      return { type: "product", id: byArticleNumber.id, matchMethod: "artikelnummer" };
+      return { type: "ingrediënt", id: byArticleNumber.id, matchMethod: "artikelnummer" };
     }
   }
 

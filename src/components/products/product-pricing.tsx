@@ -183,7 +183,7 @@ export function ProductPricing({
             {rows.length === 0 && !loading && manualPrice === null && (
               <tr>
                 <td colSpan={7} className="px-5 py-6 text-center text-muted">
-                  Nog geen leveranciersprijs bekend voor dit product.
+                  Nog geen leveranciersprijs bekend voor dit ingrediënt.
                 </td>
               </tr>
             )}
@@ -191,7 +191,7 @@ export function ProductPricing({
         </table>
         {rows.length > 0 && manualPrice !== null && (
           <p className="px-5 pb-4 pt-2 text-xs text-muted">
-            Dit product heeft ook een eigen kostprijs (€ {manualPrice.toFixed(4)} /{" "}
+            Dit ingrediënt heeft ook een eigen kostprijs (€ {manualPrice.toFixed(4)} /{" "}
             {baseUnitName ?? "basiseenheid"}), maar die is niet actief: een
             leveranciersprijs gaat altijd voor.
           </p>

@@ -1,5 +1,5 @@
 export const PERMISSION_MODULES: { key: string; label: string }[] = [
-  { key: "producten", label: "Producten" },
+  { key: "producten", label: "Ingrediënten" },
   { key: "leveranciers", label: "Leveranciers & prijzen" },
   { key: "halfproducten", label: "Halfproducten" },
   { key: "recepturen", label: "Recepten (gerechten)" },

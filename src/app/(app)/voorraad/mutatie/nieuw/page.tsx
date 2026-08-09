@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { StockMovementType, Unit } from "@/lib/types/database";
 
 interface SearchResult {
-  type: "product" | "halfproduct";
+  type: "ingrediënt" | "halfproduct";
   id: string;
   name: string;
   baseUnitId: string | null;
@@ -89,7 +89,7 @@ export default function NieuweVoorraadmutatiePage() {
       }
       setResults([
         ...[...productsById.values()].map((p) => ({
-          type: "product" as const,
+          type: "ingrediënt" as const,
           id: p.id,
           name: p.custom_name?.trim() || p.name,
           baseUnitId: p.base_unit_id,
@@ -144,7 +144,7 @@ export default function NieuweVoorraadmutatiePage() {
     const supabase = createClient();
     const { error: insertError } = await supabase.from("stock_movements").insert({
       company_id: companyId,
-      product_id: selected.type === "product" ? selected.id : null,
+      product_id: selected.type === "ingrediënt" ? selected.id : null,
       recipe_id: selected.type === "halfproduct" ? selected.id : null,
       movement_type: movementType,
       quantity_change: signedQty,
@@ -181,7 +181,7 @@ export default function NieuweVoorraadmutatiePage() {
                     <span>
                       {selected.name}{" "}
                       <span className="text-xs text-muted">
-                        ({selected.type === "product" ? "product" : "halfproduct"})
+                        ({selected.type === "ingrediënt" ? "ingrediënt" : "halfproduct"})
                       </span>
                     </span>
                     <button
@@ -201,7 +201,7 @@ export default function NieuweVoorraadmutatiePage() {
                     <input
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Zoek product of halfproduct…"
+                      placeholder="Zoek ingrediënt of halfproduct…"
                       className="input"
                     />
                     {selected === null && query.trim().length >= 2 && results.length > 0 && (
@@ -218,7 +218,7 @@ export default function NieuweVoorraadmutatiePage() {
                           >
                             {r.name}{" "}
                             <span className="text-xs text-muted">
-                              ({r.type === "product" ? "product" : "halfproduct"})
+                              ({r.type === "ingrediënt" ? "ingrediënt" : "halfproduct"})
                             </span>
                           </button>
                         ))}

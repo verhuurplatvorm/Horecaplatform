@@ -31,7 +31,7 @@ function nameSimilarity(a: string, b: string): number {
 }
 
 /**
- * Matcht geparste rijen tegen de centrale productdatabase van de groep,
+ * Matcht geparste rijen tegen de centrale ingrediëntendatabase van de groep,
  * eerst op EAN-code (het meest betrouwbaar), dan op artikelnummer. Rijen
  * zonder exacte match krijgen een vertrouwensniveau (spec §7): een
  * vergelijkbare naam wordt als suggestie getoond ("waarschijnlijk

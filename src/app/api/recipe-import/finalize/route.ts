@@ -121,7 +121,7 @@ export async function POST(request: Request) {
   // Fase 2: ingrediëntregels koppelen en opslaan. Elke regel wordt
   // altijd bewaard — ook als er geen product/halfproduct gevonden is —
   // zodat het volledige recept zichtbaar blijft en duidelijk is welke
-  // producten nog gekoppeld of aangemaakt moeten worden (rood
+  // ingrediënten nog gekoppeld of aangemaakt moeten worden (rood
   // gemarkeerd op de receptpagina zelf).
   const results: {
     recipeName: string;
@@ -157,7 +157,7 @@ export async function POST(request: Request) {
 
       const { error: lineError } = await supabase.from("recipe_ingredients").insert({
         recipe_id: recipeId,
-        product_id: match.type === "product" ? match.id : null,
+        product_id: match.type === "ingrediënt" ? match.id : null,
         sub_recipe_id: match.type === "halfproduct" ? match.id : null,
         unmatched_name: match.type === "unmatched" ? ing.name : null,
         unmatched_article_number: match.type === "unmatched" ? ing.supplierArticleNumber : null,

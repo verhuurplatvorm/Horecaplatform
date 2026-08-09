@@ -36,7 +36,7 @@ export async function PATCH(
     }
     update.packaging_unit_count = parsed;
     // Handmatig ingevoerd = al in de basiseenheid van het gekoppelde
-    // product, dus geen automatische omrekening meer nodig/gewenst.
+    // ingrediënt, dus geen automatische omrekening meer nodig/gewenst.
     update.packaging_unit_key = null;
   }
 

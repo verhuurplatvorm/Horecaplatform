@@ -49,7 +49,7 @@ export default function ProductenOpschonenPage() {
           // @ts-expect-error -- geneste relatie, niet in het handmatige Database-type
           supplierName: p.suppliers?.name ?? "onbekend",
           // @ts-expect-error -- geneste relatie
-          productName: p.products?.name ?? "onbekend product",
+          productName: p.products?.name ?? "onbekend ingrediënt",
         }))
       );
       setFlaggedLoading(false);
@@ -141,7 +141,7 @@ export default function ProductenOpschonenPage() {
 
   return (
     <>
-      <Topbar title="Producten — te controleren" />
+      <Topbar title="Ingrediënten — te controleren" />
       <main className="max-w-4xl space-y-4 p-6">
         <ProductViewTabs />
         <Card>
@@ -162,7 +162,7 @@ export default function ProductenOpschonenPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                    <th className="py-2 font-medium">Product</th>
+                    <th className="py-2 font-medium">Ingrediënt</th>
                     <th className="py-2 font-medium">Leverancier</th>
                     <th className="py-2 font-medium">Verpakking</th>
                     <th className="py-2 font-medium">Prijs</th>
@@ -186,7 +186,7 @@ export default function ProductenOpschonenPage() {
         </Card>
 
         <p className="text-sm text-muted">
-          Producten waarvan de basiseenheid &quot;stuk&quot; is, terwijl de naam een gewicht of
+          Ingrediënten waarvan de basiseenheid &quot;stuk&quot; is, terwijl de naam een gewicht of
           inhoud noemt (bv. &quot;... 2 KG&quot;) — vaak het gevolg van een eerdere onjuiste
           automatische herkenning. Corrigeer hier in één keer de basiseenheid én de bijbehorende
           leveranciersprijs.
@@ -197,7 +197,7 @@ export default function ProductenOpschonenPage() {
         {!loading && candidates.length === 0 && (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted">
-              Geen verdachte producten gevonden.
+              Geen verdachte ingrediënten gevonden.
             </CardContent>
           </Card>
         )}

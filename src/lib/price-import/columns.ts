@@ -18,7 +18,7 @@ export interface ParsedPriceRow {
   /** In welke eenheid packagingUnitCount is uitgedrukt (meestal 'g', 'ml'
    * of 'stuk' — de kleinste eenheid). Null = de waarde komt rechtstreeks
    * uit een kolom zonder herkenbare eenheid, en wordt bij toepassen
-   * beschouwd als al in de basiseenheid van het gekoppelde product. */
+   * beschouwd als al in de basiseenheid van het gekoppelde ingrediënt. */
   packagingUnitKey: string | null;
   purchasePrice: number | null;
 }
@@ -70,8 +70,8 @@ const HEADER_ALIASES: Record<string, string[]> = {
     "omschrijving_artikel",
     "description",
     "name",
-    "product",
-    "productnaam",
+    "ingrediënt",
+    "ingrediëntnaam",
     "itemdescription",
     "item_description",
   ],
@@ -243,8 +243,8 @@ export function normalizeRow(
   // omgerekend worden, anders wordt "1x2ltr" als "2" in plaats van 2000
   // (ml) opgeslagen. packagingUnitKey onthoudt in wélke eenheid dat is,
   // zodat later — bij toepassen — omgerekend kan worden naar de
-  // werkelijke basiseenheid van het gekoppelde product (die kan afwijken
-  // van de kleinste eenheid, bv. een product met "kg" als basiseenheid).
+  // werkelijke basiseenheid van het gekoppelde ingrediënt (die kan afwijken
+  // van de kleinste eenheid, bv. een ingrediënt met "kg" als basiseenheid).
   if (packagingUnitCount === null) {
     const fromExplicit = packagingDescription
       ? parsePackagingText(packagingDescription)

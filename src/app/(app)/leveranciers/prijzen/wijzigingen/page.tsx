@@ -60,7 +60,7 @@ export default function PrijswijzigingenPage() {
 
       const enriched: EnrichedChange[] = data.map((d) => ({
         ...d,
-        productName: productMap.get(d.product_id) ?? "onbekend product",
+        productName: productMap.get(d.product_id) ?? "onbekend ingrediënt",
         supplierName: supplierMap.get(d.supplier_id) ?? "onbekende leverancier",
         companyName: d.company_id ? companyMap.get(d.company_id) ?? null : null,
         deltaPct:
@@ -149,7 +149,7 @@ export default function PrijswijzigingenPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3 font-medium">Product</th>
+                  <th className="px-5 py-3 font-medium">Ingrediënt</th>
                   <th className="px-5 py-3 font-medium">Leverancier</th>
                   <th className="px-5 py-3 font-medium">Bedrijf</th>
                   <th className="px-5 py-3 font-medium">Oude prijs</th>

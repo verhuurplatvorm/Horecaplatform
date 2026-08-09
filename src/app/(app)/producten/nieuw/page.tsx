@@ -9,7 +9,7 @@ export default async function NieuwProductPage({
   const { naam } = await searchParams;
   return (
     <>
-      <Topbar title="Nieuw product" />
+      <Topbar title="Nieuw ingrediënt" />
       <main className="max-w-3xl p-6">
         <ProductForm prefillName={naam} />
       </main>

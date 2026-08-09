@@ -25,7 +25,7 @@ export interface ParsedArticleLine {
  *   → naam: "Creme fraiche 30%", verpakking: "1x1ltr", code: "25072"
  *
  * Haalt achtereenvolgens alle artikelcodes tussen #-tekens, en een
- * verpakkingsnotatie uit de tekst, en behandelt de rest als productnaam.
+ * verpakkingsnotatie uit de tekst, en behandelt de rest als ingrediëntnaam.
  */
 export function parseCombinedArticleLine(text: string): ParsedArticleLine {
   const original = text.trim();

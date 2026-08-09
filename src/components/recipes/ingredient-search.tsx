@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Product, Recipe } from "@/lib/types/database";
 
 export interface PickedIngredient {
-  type: "product" | "halfproduct";
+  type: "ingrediënt" | "halfproduct";
   id: string;
   name: string;
   baseUnitId: string | null;
@@ -18,7 +18,7 @@ export interface PickedIngredient {
 }
 
 interface SearchResult {
-  type: "product" | "halfproduct";
+  type: "ingrediënt" | "halfproduct";
   id: string;
   name: string;
   customName?: string | null;
@@ -79,7 +79,7 @@ export function IngredientSearch({
       const merged: SearchResult[] = [
         ...(products ?? []).map(
           (p) => ({
-            type: "product" as const,
+            type: "ingrediënt" as const,
             id: p.id,
             name: p.name,
             customName: p.custom_name,
@@ -101,7 +101,7 @@ export function IngredientSearch({
 
       if (companyId) {
         const productIds = merged
-          .filter((m) => m.type === "product")
+          .filter((m) => m.type === "ingrediënt")
           .map((m) => m.id);
         if (productIds.length > 0) {
           const { data: prices } = await supabase
@@ -160,30 +160,30 @@ export function IngredientSearch({
                 >
                   <span className="flex min-w-0 flex-col">
                     <span className="flex items-center gap-2">
-                      {r.type === "product" ? (
+                      {r.type === "ingrediënt" ? (
                         <Package className="h-3.5 w-3.5 shrink-0 text-teal" />
                       ) : (
                         <SoupIcon className="h-3.5 w-3.5 shrink-0 text-copper" />
                       )}
                       <span className="truncate">
-                        {(r.type === "product" && r.customName?.trim()) || r.name}
+                        {(r.type === "ingrediënt" && r.customName?.trim()) || r.name}
                       </span>
                     </span>
-                    {r.type === "product" && r.customName?.trim() && r.customName !== r.name && (
+                    {r.type === "ingrediënt" && r.customName?.trim() && r.customName !== r.name && (
                       <span className="ml-5 truncate text-xs text-muted">{r.name}</span>
                     )}
                   </span>
                   <span className="flex shrink-0 items-center gap-2 text-xs text-muted">
                     <span
                       className={
-                        r.type === "product"
+                        r.type === "ingrediënt"
                           ? "rounded-full bg-teal/10 px-1.5 py-0.5 text-teal"
                           : "rounded-full bg-copper/10 px-1.5 py-0.5 text-copper"
                       }
                     >
-                      {r.type === "product" ? "Ingrediënt" : "Halfproduct"}
+                      {r.type === "ingrediënt" ? "Ingrediënt" : "Halfproduct"}
                     </span>
-                    {r.type === "product" && priceByProduct.has(r.id) && (
+                    {r.type === "ingrediënt" && priceByProduct.has(r.id) && (
                       <span className="tabular">
                         € {priceByProduct.get(r.id)!.toFixed(4)}
                       </span>
@@ -221,7 +221,7 @@ export function IngredientSearch({
             onSaved={(product) => {
               setCreatingProduct(false);
               onPick({
-                type: "product",
+                type: "ingrediënt",
                 id: product.id,
                 name: product.name,
                 baseUnitId: product.base_unit_id,
