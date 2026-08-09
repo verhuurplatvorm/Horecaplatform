@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { createClient } from "@/lib/supabase/client";
+import { ProductViewTabs } from "@/components/products/product-view-tabs";
 
 interface ProductRow {
   id: string;
@@ -285,6 +286,7 @@ export default function ProductenPage() {
     <>
       <Topbar title="Centrale productdatabase" />
       <main className="p-6 space-y-4">
+        <ProductViewTabs />
         <div className="flex items-center justify-between gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
@@ -310,12 +312,6 @@ export default function ProductenPage() {
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/producten/opschonen">
-              <Button variant="secondary" size="sm">
-                <TriangleAlert className="h-3.5 w-3.5" />
-                Producten opschonen
-              </Button>
-            </Link>
             {!loading && (
               <span className="text-xs text-muted">
                 {query.trim()

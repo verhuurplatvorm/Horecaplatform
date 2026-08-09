@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
 import type {
@@ -60,6 +61,7 @@ export function RecipeForm({
   const router = useRouter();
   const isEdit = Boolean(initialRecipe);
   const { activeCompanyIds, scope, companies } = useCompanyScope();
+  const { can } = usePermissions();
 
   const referenceCompanyId =
     initialRecipe?.company_id ?? activeCompanyIds[0] ?? null;
@@ -68,6 +70,9 @@ export function RecipeForm({
   const [recipeKind, setRecipeKind] = useState<RecipeKind>(
     initialRecipe?.recipe_kind ?? lockedKind ?? "gerecht"
   );
+  const canViewFinancial = can(
+    recipeKind === "halfproduct" ? "halfproducten" : "recepturen"
+  ).canViewFinancial;
   const [name, setName] = useState(initialRecipe?.name ?? "");
   const [category, setCategory] = useState(initialRecipe?.category ?? "");
   const [preparation, setPreparation] = useState(
@@ -1045,14 +1050,22 @@ export function RecipeForm({
             </p>
           )}
           {rows.length > 0 && (
-            <div className="hidden grid-cols-2 gap-2 px-3 text-xs font-medium uppercase tracking-wide text-muted sm:grid sm:grid-cols-7">
+            <div
+              className={`hidden grid-cols-2 gap-2 px-3 text-xs font-medium uppercase tracking-wide text-muted sm:grid ${
+                canViewFinancial ? "sm:grid-cols-7" : "sm:grid-cols-5"
+              }`}
+            >
               <span>Hoeveelheid</span>
               <span>Eenheid</span>
               <span>Verlies %</span>
               <span>Optioneel</span>
               <span>Opmerking</span>
-              <span className="text-right">Prijs/eenheid</span>
-              <span className="text-right">Totale kostprijs</span>
+              {canViewFinancial && (
+                <>
+                  <span className="text-right">Prijs/eenheid</span>
+                  <span className="text-right">Totale kostprijs</span>
+                </>
+              )}
             </div>
           )}
           {rows.map((row, i) => (
@@ -1061,6 +1074,7 @@ export function RecipeForm({
               row={row}
               units={unitsForDimension(row.baseUnitId)}
               cost={lineCosts[i]}
+              canViewFinancial={canViewFinancial}
               priceDirection={
                 row.type === "product" && row.refId
                   ? productPrices.get(row.refId)?.priceDirection ?? null
@@ -1097,6 +1111,16 @@ export function RecipeForm({
           </Button>
         </CardContent>
       </Card>
+  );
+
+  const geenFinancieelInzichtCard = (
+    <Card>
+      <CardContent className="py-4">
+        <p className="text-sm text-muted">
+          Kostprijs, inkoopprijzen en marge zijn hier niet zichtbaar voor jouw rol.
+        </p>
+      </CardContent>
+    </Card>
   );
 
   const kostprijsCard = (
@@ -1356,7 +1380,7 @@ export function RecipeForm({
           <div className="grid gap-4 lg:grid-cols-[3fr_2fr] lg:items-start">
             <div className="space-y-4">
               {ingredientenCard}
-              {kostprijsCard}
+              {canViewFinancial ? kostprijsCard : geenFinancieelInzichtCard}
             </div>
             <div className="space-y-4">
               {basisgegevensCard}
@@ -1371,7 +1395,7 @@ export function RecipeForm({
         <>
           {basisgegevensCard}
           {ingredientenCard}
-          {kostprijsCard}
+          {canViewFinancial ? kostprijsCard : geenFinancieelInzichtCard}
           {allergenenCard}
           {gebruiktInCard}
           {errorBlock}
@@ -1559,6 +1583,7 @@ function IngredientLine({
   row,
   units,
   cost,
+  canViewFinancial,
   priceDirection,
   purchasePrice,
   packagingDescription,
@@ -1575,6 +1600,7 @@ function IngredientLine({
   row: IngredientRow;
   units: Unit[];
   cost: number | null;
+  canViewFinancial: boolean;
   priceDirection?: "up" | "down" | null;
   purchasePrice?: number | null;
   packagingDescription?: string | null;
@@ -1655,7 +1681,9 @@ function IngredientLine({
               {row.type === "product" && (purchasePrice != null || packagingDescription) && (
                 <p className="ml-5 text-xs text-muted">
                   {packagingDescription ?? "onbekende verpakking"}
-                  {purchasePrice != null && ` · € ${purchasePrice.toFixed(2)} inkoop`}
+                  {canViewFinancial &&
+                    purchasePrice != null &&
+                    ` · € ${purchasePrice.toFixed(2)} inkoop`}
                 </p>
               )}
             </div>
@@ -1694,7 +1722,7 @@ function IngredientLine({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-7">
+      <div className={`grid grid-cols-2 gap-2 ${canViewFinancial ? "sm:grid-cols-7" : "sm:grid-cols-5"}`}>
         <input
           type="number"
           step="any"
@@ -1741,24 +1769,28 @@ function IngredientLine({
           onChange={(e) => onChange({ note: e.target.value })}
           className="h-8 rounded-md border border-border bg-surface px-2 text-xs sm:col-span-1"
         />
-        <div className="tabular flex h-8 items-center justify-end text-xs text-muted">
-          {cost !== null && pricePerUnit !== null
-            ? `€ ${pricePerUnit.toFixed(4)} / ${unitName ?? "eenh."}`
-            : "—"}
-        </div>
-        <div
-          className={`tabular flex h-8 items-center justify-end gap-1 text-xs font-medium ${
-            isIncomplete ? "text-copper" : "text-foreground"
-          }`}
-        >
-          {priceDirection === "up" && (
-            <TrendingUp className="h-3 w-3 shrink-0 text-danger" aria-label="Prijs recent gestegen" />
-          )}
-          {priceDirection === "down" && (
-            <TrendingDown className="h-3 w-3 shrink-0 text-success" aria-label="Prijs recent gedaald" />
-          )}
-          {cost !== null ? `€ ${cost.toFixed(4)}` : isIncomplete ? "onvolledig" : "—"}
-        </div>
+        {canViewFinancial && (
+          <>
+            <div className="tabular flex h-8 items-center justify-end text-xs text-muted">
+              {cost !== null && pricePerUnit !== null
+                ? `€ ${pricePerUnit.toFixed(4)} / ${unitName ?? "eenh."}`
+                : "—"}
+            </div>
+            <div
+              className={`tabular flex h-8 items-center justify-end gap-1 text-xs font-medium ${
+                isIncomplete ? "text-copper" : "text-foreground"
+              }`}
+            >
+              {priceDirection === "up" && (
+                <TrendingUp className="h-3 w-3 shrink-0 text-danger" aria-label="Prijs recent gestegen" />
+              )}
+              {priceDirection === "down" && (
+                <TrendingDown className="h-3 w-3 shrink-0 text-success" aria-label="Prijs recent gedaald" />
+              )}
+              {cost !== null ? `€ ${cost.toFixed(4)}` : isIncomplete ? "onvolledig" : "—"}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
 import type { Product, SupplierProduct, Unit } from "@/lib/types/database";
+import { ProductViewTabs } from "@/components/products/product-view-tabs";
 
 interface SupplierPriceRow extends SupplierProduct {
   supplierName: string;
@@ -140,8 +141,9 @@ export default function ProductenOpschonenPage() {
 
   return (
     <>
-      <Topbar title="Producten opschonen" />
+      <Topbar title="Producten — te controleren" />
       <main className="max-w-4xl space-y-4 p-6">
+        <ProductViewTabs />
         <Card>
           <CardHeader>
             <CardTitle>Nog te controleren (uit import)</CardTitle>
