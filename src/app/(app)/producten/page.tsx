@@ -15,6 +15,7 @@ interface ProductRow {
   name: string;
   customName: string | null;
   base_unit: string;
+  base_unit_id: string | null;
   article_number: string | null;
   ean_code: string | null;
   is_active: boolean;
@@ -43,6 +44,18 @@ export default function ProductenPage() {
   const [deletingRow, setDeletingRow] = useState<ProductRow | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const [units, setUnits] = useState<
+    { id: string; key: string; name: string; dimension: string }[]
+  >([]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("units")
+      .select("id, key, name, dimension")
+      .order("sort_order")
+      .then(({ data }) => setUnits(data ?? []));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +72,7 @@ export default function ProductenPage() {
         name: string;
         custom_name: string | null;
         base_unit: string;
+        base_unit_id: string | null;
         article_number: string | null;
         ean_code: string | null;
         is_active: boolean;
@@ -71,7 +85,7 @@ export default function ProductenPage() {
         const { data, error: pageError } = await supabase
           .from("products")
           .select(
-            "id, name, custom_name, base_unit, article_number, ean_code, is_active, manual_price_per_base_unit"
+            "id, name, custom_name, base_unit, base_unit_id, article_number, ean_code, is_active, manual_price_per_base_unit"
           )
           .order("name")
           .range(from, from + PAGE_SIZE - 1);
@@ -173,6 +187,7 @@ export default function ProductenPage() {
               name: p.name,
               customName: p.custom_name,
               base_unit: p.base_unit,
+              base_unit_id: p.base_unit_id,
               article_number: p.article_number,
               ean_code: p.ean_code,
               is_active: p.is_active,
@@ -238,6 +253,42 @@ export default function ProductenPage() {
           pricePerBaseUnit,
         };
       })
+    );
+  }
+
+  async function updateBaseUnit(productId: string, newUnitId: string) {
+    const unit = units.find((u) => u.id === newUnitId);
+    if (!unit) return;
+    const row = rows.find((r) => r.id === productId);
+    // Waarschuw bij het wisselen van dimensie (bv. stuk → ml): bestaande
+    // hoeveelheden in recepten en de verpakkingseenheid worden NIET
+    // automatisch omgerekend — die moeten daarna handmatig kloppend
+    // gemaakt worden. Binnen dezelfde dimensie (g → kg) geldt hetzelfde,
+    // dus we waarschuwen altijd.
+    const ok = window.confirm(
+      `Eenheid van "${row?.name ?? "dit product"}" wijzigen naar ${unit.name}?\n\n` +
+        `Let op: hoeveelheden in recepten en de verpakkingseenheid worden ` +
+        `niet automatisch omgerekend. Controleer daarna de verpakkingseenheid ` +
+        `(inhoud) en de recepten waarin dit product zit.`
+    );
+    if (!ok) return;
+    const supabase = createClient();
+    const { error: updateError } = await supabase
+      .from("products")
+      .update({ base_unit_id: newUnitId })
+      .eq("id", productId);
+    if (updateError) {
+      window.alert("Opslaan mislukt: " + updateError.message);
+      return;
+    }
+    // base_unit (tekst) wordt in de database gesynchroniseerd door de
+    // trigger trg_products_sync_base_unit_text; lokaal doen we hetzelfde.
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === productId
+          ? { ...r, base_unit: unit.key, base_unit_id: newUnitId }
+          : r
+      )
     );
   }
 
@@ -398,7 +449,14 @@ export default function ProductenPage() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-muted">{p.supplierName ?? "—"}</td>
-                    <td className="px-5 py-3 text-muted">{p.base_unit}</td>
+                    <td className="px-5 py-3">
+                      <UnitEditCell
+                        units={units}
+                        currentUnitId={p.base_unit_id}
+                        currentLabel={p.base_unit}
+                        onSave={(unitId) => updateBaseUnit(p.id, unitId)}
+                      />
+                    </td>
                     <td className="px-5 py-3">
                       <InlineEditCell
                         value={p.packagingUnitCount !== null ? String(p.packagingUnitCount) : null}
@@ -705,6 +763,67 @@ function BulkDeleteModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function UnitEditCell({
+  units,
+  currentUnitId,
+  currentLabel,
+  onSave,
+}: {
+  units: { id: string; key: string; name: string; dimension: string }[];
+  currentUnitId: string | null;
+  currentLabel: string;
+  onSave: (unitId: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="rounded px-1 py-0.5 text-left text-muted hover:bg-background hover:underline"
+        title="Klik om de eenheid te wijzigen"
+      >
+        {currentLabel}
+      </button>
+    );
+  }
+
+  const byDimension: Record<string, typeof units> = {};
+  for (const u of units) {
+    (byDimension[u.dimension] ??= []).push(u);
+  }
+
+  return (
+    <select
+      autoFocus
+      value={currentUnitId ?? ""}
+      onChange={async (e) => {
+        if (e.target.value && e.target.value !== currentUnitId) {
+          await onSave(e.target.value);
+        }
+        setEditing(false);
+      }}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") setEditing(false);
+      }}
+      className="h-8 rounded-md border border-teal bg-surface px-2 text-sm"
+    >
+      <option value="">Kies…</option>
+      {Object.entries(byDimension).map(([dimension, list]) => (
+        <optgroup key={dimension} label={dimension}>
+          {list.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
   );
 }
 
