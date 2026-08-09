@@ -250,15 +250,31 @@ export async function POST(request: Request) {
     }
   >();
   for (const supplierIdBatch of chunk(relevantSupplierIds, 50)) {
-    const { data } = await supabase
-      .from("supplier_products")
-      .select(
-        "id, supplier_id, product_id, company_id, purchase_price, packaging_unit_count, packaging_description"
-      )
-      .in("supplier_id", supplierIdBatch)
-      .is("valid_to", null);
-    for (const row of data ?? []) {
-      existingActivePrices.set(`${row.supplier_id}:${row.product_id}:${row.company_id ?? "null"}`, row);
+    // Gepagineerd ophalen — Supabase geeft maximaal 1000 rijen per query
+    // terug. Zonder paginering werd de lijst met bestaande actieve
+    // prijzen stilzwijgend afgekapt, waardoor de import bestaande
+    // prijzen niet zag en er identieke duplicaten bijkwamen.
+    const PRICE_PAGE_SIZE = 1000;
+    let from = 0;
+    while (true) {
+      const { data } = await supabase
+        .from("supplier_products")
+        .select(
+          "id, supplier_id, product_id, company_id, purchase_price, packaging_unit_count, packaging_description"
+        )
+        .in("supplier_id", supplierIdBatch)
+        .is("valid_to", null)
+        .order("id")
+        .range(from, from + PRICE_PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        existingActivePrices.set(
+          `${row.supplier_id}:${row.product_id}:${row.company_id ?? "null"}`,
+          row
+        );
+      }
+      if (data.length < PRICE_PAGE_SIZE) break;
+      from += PRICE_PAGE_SIZE;
     }
   }
 
