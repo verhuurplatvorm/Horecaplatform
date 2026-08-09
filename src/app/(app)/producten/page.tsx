@@ -54,7 +54,12 @@ export default function ProductenPage() {
       .from("units")
       .select("id, key, name, dimension")
       .order("sort_order")
-      .then(({ data }) => setUnits(data ?? []));
+      .then(({ data, error: unitsError }) => {
+        if (unitsError) {
+          console.error("Kan eenheden niet ophalen:", unitsError.message);
+        }
+        setUnits(data ?? []);
+      });
   }, []);
 
   useEffect(() => {
@@ -783,7 +788,15 @@ function UnitEditCell({
     return (
       <button
         type="button"
-        onClick={() => setEditing(true)}
+        onClick={() => {
+          if (units.length === 0) {
+            window.alert(
+              "De eenhedenlijst kon niet geladen worden — herlaad de pagina en probeer opnieuw."
+            );
+            return;
+          }
+          setEditing(true);
+        }}
         className="rounded px-1 py-0.5 text-left text-muted hover:bg-background hover:underline"
         title="Klik om de eenheid te wijzigen"
       >
@@ -807,7 +820,11 @@ function UnitEditCell({
         }
         setEditing(false);
       }}
-      onBlur={() => setEditing(false)}
+      onBlur={() => {
+        // Kleine vertraging: op sommige browsers vuurt blur nét vóór
+        // change, waardoor de keuze anders verloren zou gaan.
+        setTimeout(() => setEditing(false), 200);
+      }}
       onKeyDown={(e) => {
         if (e.key === "Escape") setEditing(false);
       }}
