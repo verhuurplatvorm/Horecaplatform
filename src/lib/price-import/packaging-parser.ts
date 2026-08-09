@@ -48,8 +48,13 @@ export function parseCombinedArticleLine(text: string): ParsedArticleLine {
     "l|liter|ltr|ml|milliliter|cl|centiliter|kg|kilogram|kilo|g|gram|gr|stuk|stuks|st|fles|flessen";
 
   let packagingText: string | null = null;
+  // Ook drievoudige patronen (doos × pakjes × inhoud, bv. "12x6x30gr")
+  // volledig meepakken — het middelste blok is optioneel.
   const multiMatch = remainder.match(
-    new RegExp(`\\d+[.,]?\\d*\\s*[x×]\\s*\\d+[.,]?\\d*\\s*(?:${unitAlternation})\\b`, "i")
+    new RegExp(
+      `\\d+[.,]?\\d*\\s*[x×]\\s*(?:\\d+[.,]?\\d*\\s*[x×]\\s*)?\\d+[.,]?\\d*\\s*(?:${unitAlternation})\\b`,
+      "i"
+    )
   );
   const containerMatch = !multiMatch
     ? remainder.match(
@@ -123,6 +128,31 @@ function normalizeNumber(raw: string): number {
 export function parsePackagingText(text: string): ParsedPackaging | null {
   const t = text.trim().toLowerCase();
   if (!t) return null;
+
+  // Drievoudig patroon eerst: "12x6x30gr" = doos van 12 pakjes van elk
+  // 6 × 30 g. Zonder deze check werd alleen "6x30gr" gelezen en viel de
+  // buitenste vermenigvuldiging (×12) stilletjes weg — prijs per
+  // basiseenheid dan 12× te hoog.
+  const triplePack = t.match(
+    /(\d+[.,]?\d*)\s*[x×]\s*(\d+[.,]?\d*)\s*[x×]\s*(\d+[.,]?\d*)\s*(l|liter|ltr|ml|milliliter|cl|centiliter|kg|kilogram|kilo|g|gram|gr|stuk|stuks|st|fles|flessen)\b/
+  );
+  if (triplePack) {
+    const outer = normalizeNumber(triplePack[1]);
+    const inner = normalizeNumber(triplePack[2]);
+    const perUnit = normalizeNumber(triplePack[3]);
+    const unit = UNIT_ALIASES[triplePack[4]] ?? triplePack[4];
+    if (Number.isFinite(outer) && Number.isFinite(inner) && Number.isFinite(perUnit)) {
+      const count = outer * inner;
+      const total = count * perUnit;
+      return {
+        totalQuantity: total,
+        unit,
+        explanation: `${outer} × ${inner} × ${perUnit} ${unit} = ${total} ${unit}`,
+        count,
+        unitQuantity: perUnit,
+      };
+    }
+  }
 
   const multiPack = t.match(
     /(\d+[.,]?\d*)\s*[x×]\s*(\d+[.,]?\d*)\s*(l|liter|ltr|ml|milliliter|cl|centiliter|kg|kilogram|kilo|g|gram|gr|stuk|stuks|st|fles|flessen)\b/
