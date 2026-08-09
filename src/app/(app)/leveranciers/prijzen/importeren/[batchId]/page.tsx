@@ -610,14 +610,25 @@ export default function ImportReviewPage({
           {missingPackagingCount > 0 && (
             <CardContent className="pt-0">
               <button
-                onClick={() => setView("missing")}
+                onClick={() => {
+                  setView("missing");
+                  // Als de weergave al actief is, scroll naar de tabel —
+                  // anders lijkt de knop niets te doen.
+                  document
+                    .getElementById("prijsregels-tabel")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
                 className="flex w-full items-center gap-1 rounded-md bg-copper/10 p-2 text-left text-sm text-copper hover:bg-copper/20"
               >
                 <TriangleAlert className="h-4 w-4 shrink-0" />
                 {missingPackagingCount} regel(s) hebben een gekoppeld product maar
                 missen een verpakkingshoeveelheid — vul deze eerst in, anders wordt
                 de prijs verkeerd geïnterpreteerd en kan er niet doorgevoerd worden.
-                <span className="ml-auto shrink-0 underline">Bekijk deze regels →</span>
+                <span className="ml-auto shrink-0 underline">
+                  {view === "missing"
+                    ? "Deze regels staan hieronder ↓"
+                    : "Bekijk deze regels →"}
+                </span>
               </button>
             </CardContent>
           )}
@@ -658,7 +669,7 @@ export default function ImportReviewPage({
 
         <Card>
           <CardContent className="p-0">
-            <table className="w-full text-sm">
+            <table id="prijsregels-tabel" className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Regel</th>
