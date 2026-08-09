@@ -62,6 +62,7 @@ export default function ProductenPage() {
         article_number: string | null;
         ean_code: string | null;
         is_active: boolean;
+        manual_price_per_base_unit: number | null;
       }[] = [];
       let from = 0;
       let fetchError: { message: string } | null = null;
@@ -69,7 +70,9 @@ export default function ProductenPage() {
       while (true) {
         const { data, error: pageError } = await supabase
           .from("products")
-          .select("id, name, custom_name, base_unit, article_number, ean_code, is_active")
+          .select(
+            "id, name, custom_name, base_unit, article_number, ean_code, is_active, manual_price_per_base_unit"
+          )
           .order("name")
           .range(from, from + PAGE_SIZE - 1);
 
@@ -160,6 +163,11 @@ export default function ProductenPage() {
         setRows(
           products.map((p) => {
             const price = priceByProduct.get(p.id);
+            // Geen actieve leveranciersprijs, maar wél een eigen kostprijs
+            // op het product (bv. kraanwater à €0) → toon die als bron
+            // "Eigen prijs". Een leveranciersprijs gaat altijd voor.
+            const usesManualPrice =
+              !price && p.manual_price_per_base_unit != null;
             return {
               id: p.id,
               name: p.name,
@@ -169,11 +177,15 @@ export default function ProductenPage() {
               ean_code: p.ean_code,
               is_active: p.is_active,
               priceRowId: price?.priceRowId ?? null,
-              pricePerBaseUnit: price?.pricePerBaseUnit ?? null,
+              pricePerBaseUnit: usesManualPrice
+                ? p.manual_price_per_base_unit
+                : price?.pricePerBaseUnit ?? null,
               purchasePrice: price?.purchasePrice ?? null,
               packagingUnitCount: price?.packagingUnitCount ?? null,
               packagingDescription: price?.packagingDescription ?? null,
-              supplierName: price?.supplierName ?? null,
+              supplierName: usesManualPrice
+                ? "Eigen prijs"
+                : price?.supplierName ?? null,
               validFrom: price?.validFrom ?? null,
             };
           })

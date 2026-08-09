@@ -47,6 +47,7 @@ export function ProductPricing({
   const referenceCompanyId = activeCompanyIds[0] ?? null;
 
   const [rows, setRows] = useState<PriceRow[]>([]);
+  const [manualPrice, setManualPrice] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingRow, setEditingRow] = useState<PriceRow | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -56,6 +57,14 @@ export function ProductPricing({
 
     async function run() {
       const supabase = createClient();
+      const { data: productRow } = await supabase
+        .from("products")
+        .select("manual_price_per_base_unit")
+        .eq("id", productId)
+        .maybeSingle();
+      if (cancelled) return;
+      setManualPrice(productRow?.manual_price_per_base_unit ?? null);
+
       const { data } = await supabase
         .from("supplier_products")
         .select(
@@ -152,7 +161,26 @@ export function ProductPricing({
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && !loading && (
+            {rows.length === 0 && !loading && manualPrice !== null && (
+              <tr className="border-t border-border">
+                <td className="px-5 py-3 font-medium">
+                  Eigen prijs
+                  <span className="ml-2 rounded-full bg-teal/10 px-1.5 py-0.5 text-xs text-teal">
+                    zonder leverancier
+                  </span>
+                </td>
+                <td className="px-5 py-3 text-muted">—</td>
+                <td className="px-5 py-3 text-muted">—</td>
+                <td className="px-5 py-3 tabular">
+                  € {manualPrice.toFixed(4)} / {baseUnitName ?? ""}
+                </td>
+                <td className="px-5 py-3 text-muted">—</td>
+                <td className="px-5 py-3 text-xs text-muted">
+                  aanpasbaar via het productformulier
+                </td>
+              </tr>
+            )}
+            {rows.length === 0 && !loading && manualPrice === null && (
               <tr>
                 <td colSpan={7} className="px-5 py-6 text-center text-muted">
                   Nog geen leveranciersprijs bekend voor dit product.
@@ -161,6 +189,13 @@ export function ProductPricing({
             )}
           </tbody>
         </table>
+        {rows.length > 0 && manualPrice !== null && (
+          <p className="px-5 pb-4 pt-2 text-xs text-muted">
+            Dit product heeft ook een eigen kostprijs (€ {manualPrice.toFixed(4)} /{" "}
+            {baseUnitName ?? "basiseenheid"}), maar die is niet actief: een
+            leveranciersprijs gaat altijd voor.
+          </p>
+        )}
       </CardContent>
 
       {editingRow && (

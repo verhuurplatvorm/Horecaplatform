@@ -130,6 +130,11 @@ export function ProductForm({
   const [lossPct, setLossPct] = useState(
     initialProduct?.default_loss_percentage?.toString() ?? ""
   );
+  const [manualPrice, setManualPrice] = useState(
+    initialProduct?.manual_price_per_base_unit != null
+      ? initialProduct.manual_price_per_base_unit.toString()
+      : ""
+  );
   const [preferredSupplierId, setPreferredSupplierId] = useState(
     initialProduct?.preferred_supplier_id ?? ""
   );
@@ -353,6 +358,10 @@ export function ProductForm({
       tax_rate: taxRate ? Number(taxRate) : null,
       default_loss_percentage: lossPct ? Number(lossPct) : null,
       preferred_supplier_id: preferredSupplierId || null,
+      // Leeg veld = geen eigen prijs (null); "0" is een geldige, bewuste
+      // invoer voor gratis ingrediënten zoals kraanwater.
+      manual_price_per_base_unit:
+        manualPrice.trim() === "" ? null : Number(manualPrice),
       min_stock_quantity: minStock ? Number(minStock) : null,
       reorder_quantity: reorderQty ? Number(reorderQty) : null,
       allergens: Array.from(allergens),
@@ -617,6 +626,27 @@ export function ProductForm({
                 </optgroup>
               ))}
             </select>
+          </Field>
+
+          <Field
+            label={`Eigen kostprijs per ${
+              units.find((u) => u.id === baseUnitId)?.name ?? "basiseenheid"
+            } (optioneel)`}
+          >
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={manualPrice}
+              onChange={(e) => setManualPrice(e.target.value)}
+              placeholder="bv. 0,00"
+              className="input max-w-xs"
+            />
+            <p className="mt-1 text-xs text-muted">
+              Voor producten zonder leverancier, zoals kraanwater. €0,00 is
+              toegestaan en telt dan expliciet als gratis mee in de
+              receptkostprijs. Een actieve leveranciersprijs gaat altijd voor.
+            </p>
           </Field>
 
           <div>

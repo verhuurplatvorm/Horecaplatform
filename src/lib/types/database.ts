@@ -110,6 +110,7 @@ export type Product = {
   tax_rate: number | null;
   default_loss_percentage: number | null;
   preferred_supplier_id: string | null;
+  manual_price_per_base_unit: number | null;
   min_stock_quantity: number | null;
   reorder_quantity: number | null;
   is_active: boolean;
@@ -202,10 +203,11 @@ export type RecipeIngredient = {
 export type CurrentProductCost = {
   product_id: string;
   company_id: string;
-  supplier_id: string;
+  // null bij een eigen kostprijs op het product (zonder leverancier)
+  supplier_id: string | null;
   price_per_base_unit: number;
   is_contract_price: boolean;
-  valid_from: string;
+  valid_from: string | null;
 }
 
 export type SalesProduct = {
