@@ -252,6 +252,7 @@ export async function POST(request: Request) {
   const idsToClose: string[] = [];
 
   let flaggedBySourceCount = 0;
+  let contentDerivedCount = 0;
   let flaggedForReview = 0;
   let skippedMissingPriceOrPackaging = 0;
   let skippedNoProductMatch = 0;
@@ -314,6 +315,7 @@ export async function POST(request: Request) {
     }
 
     if (row.flaggedBySource) flaggedBySourceCount++;
+    if (row.contentDerivedFromName) contentDerivedCount++;
 
     supplierProductsToInsert.push({
       supplier_id: supplierId,
@@ -327,8 +329,10 @@ export async function POST(request: Request) {
       // Rijen die het bronbestand zelf al als onzeker markeerde (bv. de
       // "Niet herkend"-kolom) blokkeren de import niet — ze worden
       // gewoon meegenomen, maar blijven gemarkeerd zodat je ze later in
-      // je eigen tempo kunt doorlopen via "Producten opschonen".
-      flagged_for_review: row.flaggedBySource,
+      // je eigen tempo kunt doorlopen via "Producten opschonen". Datzelfde
+      // geldt voor regels waar de inhoud uit de productnaam is afgeleid
+      // (bv. "2x5l") — een goede gok, maar wel eentje om na te lopen.
+      flagged_for_review: row.flaggedBySource || row.contentDerivedFromName === true,
       valid_from: today,
     });
   }
@@ -386,7 +390,7 @@ export async function POST(request: Request) {
     skippedMissingPriceOrPackaging +
     skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
+    `[product-import] Klaar: ${productsCreated} nieuwe producten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle en ${contentDerivedCount} met inhoud uit de productnaam afgeleid), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder productmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
   if (accountedFor !== rows.length) {
     console.error(
@@ -401,6 +405,7 @@ export async function POST(request: Request) {
     pricesInserted,
     alreadyUpToDate,
     flaggedBySourceCount,
+    contentDerivedCount,
     skippedNoSupplier,
     flaggedForReview,
     skippedMissingPriceOrPackaging,

@@ -48,6 +48,7 @@ export default function ProductenImporterenPage() {
     pricesInserted: number;
     alreadyUpToDate: number;
     flaggedBySourceCount: number;
+    contentDerivedCount?: number;
     skippedNoSupplier: number;
     flaggedForReview: number;
     skippedMissingPriceOrPackaging: number;
@@ -160,6 +161,13 @@ export default function ProductenImporterenPage() {
                     {result.flaggedBySourceCount} daarvan komt uit een regel die het bronbestand
                     zelf al als onzeker markeerde — gewoon meegeïmporteerd, niet geblokkeerd, maar
                     gemarkeerd voor als je er later aan toe bent.
+                  </li>
+                )}
+                {(result.contentDerivedCount ?? 0) > 0 && (
+                  <li className="text-copper">
+                    {result.contentDerivedCount} daarvan had geen inhoud/eenheid in het bestand —
+                    de inhoud is uit de productnaam afgeleid (bv. &quot;2x5l&quot; → 10.000 ml).
+                    Meegeïmporteerd en gemarkeerd onder &quot;Te controleren&quot;.
                   </li>
                 )}
                 {result.skippedNoSupplier > 0 && (

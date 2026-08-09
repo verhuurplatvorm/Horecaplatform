@@ -15,6 +15,7 @@ export interface ParsedProductRow {
   eanCode: string | null;
   isAvailable: boolean;
   flaggedBySource: boolean; // "Niet herkend" kolom uit het bronbestand
+  contentDerivedFromName: boolean; // inhoud uit de productnaam afgeleid (bv. "2x5l") — controleren
 }
 
 const HEADER_MAP: Record<string, string> = {
@@ -61,6 +62,50 @@ function toBaseUnitKey(unitKey: string): string {
   return "ml"; // ml, cl, dl, l
 }
 
+// Eenheid-spellingen zoals ze in productnamen voorkomen, met hun factor
+// naar de basiseenheid (ml of g) van hun dimensie.
+const NAME_UNIT_PATTERNS: { pattern: RegExp; baseKey: "ml" | "g"; factor: number }[] = [
+  { pattern: /^(?:ml)$/i, baseKey: "ml", factor: 1 },
+  { pattern: /^(?:cl)$/i, baseKey: "ml", factor: 10 },
+  { pattern: /^(?:dl)$/i, baseKey: "ml", factor: 100 },
+  { pattern: /^(?:l|lt|ltr|liter|litre)$/i, baseKey: "ml", factor: 1000 },
+  { pattern: /^(?:g|gr|gram)$/i, baseKey: "g", factor: 1 },
+  { pattern: /^(?:kg|kilo)$/i, baseKey: "g", factor: 1000 },
+];
+
+/**
+ * Probeert de inhoud uit een productnaam of -omschrijving af te leiden,
+ * voor regels waar het bronbestand geen bruikbare inhoud/eenheid gaf en
+ * die anders als "1 stuk" zouden binnenkomen (bv. een emmer van 10 liter
+ * als € 22,50 "per stuk" — 10.000x te hoge prijs per basiseenheid).
+ *
+ * Herkent o.a.: "2x5l", "6 x 1 ltr", "emmer 10 ltr", "750ml", "0,75L",
+ * "2,5 kg", "500 gr". Bij meerdere maten in de naam wint de laatste
+ * (maataanduidingen staan vrijwel altijd achteraan, bv.
+ * "Cola 0,33 → krat 24x33cl").
+ */
+export function deriveContentFromName(
+  name: string
+): { baseKey: "ml" | "g"; quantityInBase: number; matchedText: string } | null {
+  // "AxB eenheid" (bv. 2x5l, 24 x 33cl) of "B eenheid" (bv. 10 ltr, 750ml)
+  const regex =
+    /(?:(\d+(?:[.,]\d+)?)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(ml|cl|dl|ltr|lt|liter|litre|l|kg|kilo|gram|gr|g)(?![a-z])/gi;
+
+  let best: { baseKey: "ml" | "g"; quantityInBase: number; matchedText: string } | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(name)) !== null) {
+    const count = match[1] ? Number(match[1].replace(",", ".")) : 1;
+    const amount = Number(match[2].replace(",", "."));
+    const unitText = match[3];
+    const unitDef = NAME_UNIT_PATTERNS.find((u) => u.pattern.test(unitText));
+    if (!unitDef || !Number.isFinite(count) || !Number.isFinite(amount)) continue;
+    const quantityInBase = count * amount * unitDef.factor;
+    if (quantityInBase <= 0) continue;
+    best = { baseKey: unitDef.baseKey, quantityInBase, matchedText: match[0].trim() };
+  }
+  return best;
+}
+
 /**
  * Leest het vaste "Ingrediënten"-exportformaat: één blad, kolomkoppen op
  * de eerste rij, één rij per product/leverancier-combinatie. Kolommen
@@ -103,7 +148,24 @@ export function parseMultiSupplierExcel(buffer: Buffer): ParsedProductRow[] {
     const unitRaw = toText(byCanonical.unitRaw) ?? "stuk";
     const unitKey = normalizeUnitKey(unitRaw);
     const factor = UNIT_FACTOR_TO_BASE[unitKey] ?? 1;
-    const packagingUnitCount = packagingCount * contentPerUnit * factor;
+
+    let packagingUnitCount = packagingCount * contentPerUnit * factor;
+    let packagingUnitKey = toBaseUnitKey(unitKey);
+    let packagingDescription = `${packagingCount} × ${contentPerUnit} ${unitRaw}`;
+    let contentDerivedFromName = false;
+
+    // Bronbestand gaf geen bruikbare inhoud (eenheid "stuk" zonder echte
+    // inhoud per stuk) — probeer de maat uit de productnaam te halen,
+    // zodat een "emmer 10 ltr" niet als 1 stuk van € 22,50 binnenkomt.
+    if (packagingUnitKey === "stuk" && contentPerUnit === 1) {
+      const derived = deriveContentFromName(name);
+      if (derived) {
+        packagingUnitKey = derived.baseKey;
+        packagingUnitCount = packagingCount * derived.quantityInBase;
+        packagingDescription = `${packagingCount} × ${derived.matchedText} (uit naam afgeleid)`;
+        contentDerivedFromName = true;
+      }
+    }
 
     result.push({
       rowNumber: i + 2,
@@ -114,11 +176,12 @@ export function parseMultiSupplierExcel(buffer: Buffer): ParsedProductRow[] {
       category: toText(byCanonical.category),
       purchasePrice: toNumber(byCanonical.purchasePrice),
       packagingUnitCount: packagingUnitCount > 0 ? packagingUnitCount : null,
-      packagingUnitKey: toBaseUnitKey(unitKey),
-      packagingDescription: `${packagingCount} × ${contentPerUnit} ${unitRaw}`,
+      packagingUnitKey,
+      packagingDescription,
       eanCode: toText(byCanonical.eanCode),
       isAvailable: toText(byCanonical.isAvailable)?.toLowerCase() !== "nee",
       flaggedBySource: toText(byCanonical.flaggedBySource)?.toLowerCase() === "true",
+      contentDerivedFromName,
     });
   });
 
