@@ -73,6 +73,7 @@ export function RecipeForm({
   const canViewFinancial = can(
     recipeKind === "halfproduct" ? "halfproducten" : "recepturen"
   ).canViewFinancial;
+  const [formTab, setFormTab] = useState<"ingredienten" | "gegevens" | "gebruikt">("ingredienten");
   const [name, setName] = useState(initialRecipe?.name ?? "");
   const [category, setCategory] = useState(initialRecipe?.category ?? "");
   const [preparation, setPreparation] = useState(
@@ -1373,35 +1374,49 @@ export function RecipeForm({
       }}
       className="space-y-4"
     >
-      {recipeKind === "halfproduct" ? (
-        <>
-          {/* Het volledige recept (ingrediënten + kostprijs) linksboven,
-              zodat het meteen zichtbaar is — de rest ernaast. */}
-          <div className="grid gap-4 lg:grid-cols-[3fr_2fr] lg:items-start">
-            <div className="space-y-4">
-              {ingredientenCard}
-              {canViewFinancial ? kostprijsCard : geenFinancieelInzichtCard}
-            </div>
-            <div className="space-y-4">
-              {basisgegevensCard}
-              {allergenenCard}
-              {gebruiktInCard}
-            </div>
+      {(() => {
+        const tabs: { key: typeof formTab; label: string }[] = [
+          { key: "ingredienten", label: "Ingrediënten & kostprijs" },
+          { key: "gegevens", label: "Basisgegevens & allergenen" },
+          ...(gebruiktInCard ? [{ key: "gebruikt" as const, label: "Gebruikt in" }] : []),
+        ];
+        return (
+          <div className="flex gap-1 border-b border-border">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setFormTab(t.key)}
+                className={`border-b-2 px-3 py-2 text-sm transition-colors ${
+                  formTab === t.key
+                    ? "border-teal font-medium text-teal"
+                    : "border-transparent text-muted hover:text-foreground"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
-          {errorBlock}
-          {buttonsBlock}
-        </>
-      ) : (
-        <>
-          {basisgegevensCard}
+        );
+      })()}
+
+      {formTab === "ingredienten" && (
+        <div className="space-y-4">
           {ingredientenCard}
           {canViewFinancial ? kostprijsCard : geenFinancieelInzichtCard}
-          {allergenenCard}
-          {gebruiktInCard}
-          {errorBlock}
-          {buttonsBlock}
-        </>
+        </div>
       )}
+      {formTab === "gegevens" && (
+        <div className="space-y-4">
+          {basisgegevensCard}
+          {allergenenCard}
+        </div>
+      )}
+      {formTab === "gebruikt" && gebruiktInCard && (
+        <div className="space-y-4">{gebruiktInCard}</div>
+      )}
+      {errorBlock}
+      {buttonsBlock}
 
       <style jsx>{`
         .input {
