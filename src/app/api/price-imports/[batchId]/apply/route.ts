@@ -10,7 +10,7 @@ export async function POST(
 
   const { data: rows, error: rowsError } = await supabase
     .from("price_import_rows")
-    .select("id, matched_product_id, status")
+    .select("id, matched_product_id, status, row_number, description")
     .eq("batch_id", batchId);
 
   if (rowsError || !rows) {
@@ -32,7 +32,17 @@ export async function POST(
       p_row_id: row.id,
     });
     if (error) {
-      errors.push(`Regel ${row.id}: ${error.message}`);
+      // Toon de bron-omschrijving en het regelnummer uit het bestand —
+      // een technisch regel-ID zegt de gebruiker niets. De databasefout
+      // zelf herhaalt dat ID; strip het voor de leesbaarheid.
+      const label = row.description
+        ? `"${row.description}" (regel ${row.row_number})`
+        : `regel ${row.row_number}`;
+      const cleanMessage = error.message.replace(
+        /Kan regel [0-9a-f-]+ niet toepassen:\s*/i,
+        ""
+      );
+      errors.push(`${label}: ${cleanMessage}`);
     } else {
       applied++;
     }
