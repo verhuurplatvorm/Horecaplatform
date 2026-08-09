@@ -141,6 +141,7 @@ export async function POST(request: Request) {
   // nooit honderden goede rijen meesleurt in de mislukking.
   let productsCreated = 0;
   let productCreationFailures = 0;
+  const createdProductNames: string[] = [];
 
   async function insertProductRows(toInsert: ParsedProductRow[]) {
     const { data: inserted, error: insertError } = await supabase
@@ -185,6 +186,7 @@ export async function POST(request: Request) {
         if (p.ean_code) newlyCreatedByEan.set(p.ean_code, p.id);
         productById.set(p.id, p);
         productsCreated++;
+        createdProductNames.push(p.name);
       }
       continue;
     }
@@ -209,6 +211,7 @@ export async function POST(request: Request) {
       if (p.ean_code) newlyCreatedByEan.set(p.ean_code, p.id);
       productById.set(p.id, p);
       productsCreated++;
+      createdProductNames.push(p.name);
     }
   }
 
@@ -218,6 +221,25 @@ export async function POST(request: Request) {
   // bij een echte prijswijziging de oude regel netjes af te sluiten
   // i.p.v. een tweede "actieve" prijs ernaast te laten bestaan.
   const relevantSupplierIds = [...new Set(Object.values(supplierResolution).filter(Boolean))] as string[];
+
+  const supplierNameById = new Map<string, string>();
+  {
+    const { data: supplierRows } = await supabase
+      .from("suppliers")
+      .select("id, name")
+      .in("id", relevantSupplierIds);
+    for (const s of supplierRows ?? []) supplierNameById.set(s.id, s.name);
+  }
+
+  const priceChanges: {
+    productName: string;
+    supplierName: string;
+    oldPrice: number;
+    newPrice: number;
+    validFrom: string;
+  }[] = [];
+  const unchangedProducts: string[] = [];
+
   const existingActivePrices = new Map<
     string,
     {
@@ -300,15 +322,9 @@ export async function POST(request: Request) {
         if (packagingUnit.dimension === productUnit.dimension) {
           finalCount = (row.packagingUnitCount * packagingUnit.factor_to_base) / productUnit.factor_to_base;
         } else if (existing) {
-          // Dimensie klopt niet (bv. het bestand levert weer "1 stuk"
-          // terwijl het product — al dan niet handmatig gecorrigeerd —
-          // in ml rekent), maar er bestaat al een actieve prijs met een
-          // kloppende verpakkingseenheid voor dezelfde leverancier +
-          // product. Aanname: het gaat om dezelfde verpakking. We nemen
-          // de nieuwe PRIJS over en behouden de bestaande
-          // verpakkingseenheid en -omschrijving — zo blijft een
-          // handmatige eenheidscorrectie ook bij elke volgende
-          // prijslijst gewoon staan. Gemarkeerd als "Te controleren".
+          // Dimensie klopt niet (bv. het bestand levert "1 stuk" terwijl
+          // het product in ml rekent), maar er bestaat al een actieve
+          // prijs — verpakking hergebruiken, alleen de prijs telt.
           finalCount = existing.packaging_unit_count;
           finalDescription = existing.packaging_description;
           packagingReusedFromExisting = true;
@@ -322,6 +338,24 @@ export async function POST(request: Request) {
       }
     }
 
+    // BESTAANDE PRIJSREGEL: alleen de prijs mag wijzigen. De bestaande
+    // verpakkingseenheid en -omschrijving blijven altijd behouden — een
+    // handmatige correctie (bv. stuk → 10.000 ml) wordt dus nooit door
+    // een import overschreven. Suggereert het bestand een afwijkende
+    // verpakking, dan markeren we de nieuwe prijsregel wel als
+    // "Te controleren" zodat een échte verpakkingswijziging bij de
+    // leverancier niet onopgemerkt blijft.
+    if (existing) {
+      if (
+        !packagingReusedFromExisting &&
+        Math.abs(existing.packaging_unit_count - finalCount) > 0.0001
+      ) {
+        packagingReusedFromExisting = true;
+      }
+      finalCount = existing.packaging_unit_count;
+      finalDescription = existing.packaging_description;
+    }
+
     if (existing) {
       const samePrice = Math.abs(existing.purchase_price - row.purchasePrice) < 0.0001;
       const samePackaging = Math.abs(existing.packaging_unit_count - finalCount) < 0.0001;
@@ -329,12 +363,20 @@ export async function POST(request: Request) {
         // Exact dezelfde prijs staat al actief — niets te doen, geen
         // duplicaat aanmaken.
         alreadyUpToDate++;
+        unchangedProducts.push(product?.name ?? row.name);
         continue;
       }
       // Prijs of verpakking is gewijzigd: oude regel afsluiten, nieuwe
       // erbij — zelfde patroon als een gewone prijswijziging, i.p.v.
       // een tweede "actieve" prijs ernaast te laten bestaan.
       idsToClose.push(existing.id);
+      priceChanges.push({
+        productName: product?.name ?? row.name,
+        supplierName: supplierNameById.get(supplierId) ?? "onbekend",
+        oldPrice: existing.purchase_price,
+        newPrice: row.purchasePrice,
+        validFrom: today,
+      });
     }
 
     if (row.flaggedBySource) flaggedBySourceCount++;
@@ -436,6 +478,14 @@ export async function POST(request: Request) {
     flaggedBySourceCount,
     contentDerivedCount,
     packagingReusedCount,
+    // Detailoverzicht (afgekapt op 2000 regels per lijst om de respons
+    // hanteerbaar te houden bij zeer grote imports)
+    priceChanges: priceChanges.slice(0, 2000),
+    priceChangesTruncated: priceChanges.length > 2000,
+    newProducts: createdProductNames.slice(0, 2000),
+    newProductsTruncated: createdProductNames.length > 2000,
+    unchangedProducts: unchangedProducts.slice(0, 2000),
+    unchangedProductsTruncated: unchangedProducts.length > 2000,
     skippedNoSupplier,
     flaggedForReview,
     skippedMissingPriceOrPackaging,

@@ -50,6 +50,18 @@ export default function ProductenImporterenPage() {
     flaggedBySourceCount: number;
     contentDerivedCount?: number;
     packagingReusedCount?: number;
+    priceChanges?: {
+      productName: string;
+      supplierName: string;
+      oldPrice: number;
+      newPrice: number;
+      validFrom: string;
+    }[];
+    priceChangesTruncated?: boolean;
+    newProducts?: string[];
+    newProductsTruncated?: boolean;
+    unchangedProducts?: string[];
+    unchangedProductsTruncated?: boolean;
     skippedNoSupplier: number;
     flaggedForReview: number;
     skippedMissingPriceOrPackaging: number;
@@ -212,6 +224,78 @@ export default function ProductenImporterenPage() {
                   result.skippedNoProductMatch}{" "}
                 van {result.totalRows} regels verantwoord.
               </p>
+
+              {(result.priceChanges?.length ?? 0) > 0 && (
+                <div className="pt-4">
+                  <p className="mb-2 text-sm font-medium text-foreground">
+                    Gewijzigde prijzen ({result.priceChanges!.length}
+                    {result.priceChangesTruncated ? "+" : ""})
+                  </p>
+                  <div className="max-h-64 overflow-y-auto rounded-md border border-border">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="sticky top-0 bg-surface text-left text-muted">
+                          <th className="px-3 py-2 font-medium">Product</th>
+                          <th className="px-3 py-2 font-medium">Leverancier</th>
+                          <th className="px-3 py-2 font-medium">Oude prijs</th>
+                          <th className="px-3 py-2 font-medium">Nieuwe prijs</th>
+                          <th className="px-3 py-2 font-medium">Ingangsdatum</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.priceChanges!.map((c, i) => (
+                          <tr key={i} className="border-t border-border">
+                            <td className="px-3 py-1.5">{c.productName}</td>
+                            <td className="px-3 py-1.5 text-muted">{c.supplierName}</td>
+                            <td className="px-3 py-1.5 tabular text-muted">
+                              € {c.oldPrice.toFixed(2)}
+                            </td>
+                            <td
+                              className={
+                                "px-3 py-1.5 tabular " +
+                                (c.newPrice > c.oldPrice ? "text-danger" : "text-success")
+                              }
+                            >
+                              € {c.newPrice.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-1.5 text-muted">
+                              {new Date(c.validFrom).toLocaleDateString("nl-NL")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {(result.newProducts?.length ?? 0) > 0 && (
+                <div className="pt-4">
+                  <p className="mb-2 text-sm font-medium text-copper">
+                    Nieuw aangemaakte producten ({result.newProducts!.length}
+                    {result.newProductsTruncated ? "+" : ""})
+                  </p>
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border px-3 py-2 text-xs">
+                    {result.newProducts!.map((name, i) => (
+                      <p key={i}>{name}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(result.unchangedProducts?.length ?? 0) > 0 && (
+                <details className="pt-4">
+                  <summary className="cursor-pointer text-sm font-medium text-muted">
+                    Geen wijziging nodig ({result.unchangedProducts!.length}
+                    {result.unchangedProductsTruncated ? "+" : ""} producten)
+                  </summary>
+                  <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-border px-3 py-2 text-xs text-muted">
+                    {result.unchangedProducts!.map((name, i) => (
+                      <p key={i}>{name}</p>
+                    ))}
+                  </div>
+                </details>
+              )}
             </CardContent>
           </Card>
           <div className="flex gap-2">

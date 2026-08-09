@@ -447,6 +447,7 @@ export type PriceImportRowStatus =
   | "gematcht"
   | "niet_gematcht"
   | "toegepast"
+  | "ongewijzigd"
   | "overgeslagen"
   | "fout";
 export type PriceMatchMethod = "ean" | "artikelnummer" | "handmatig" | "automatisch_aangemaakt";

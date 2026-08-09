@@ -21,7 +21,7 @@ export async function POST(
   }
 
   const toApply = rows.filter(
-    (r) => r.matched_product_id && r.status !== "toegepast"
+    (r) => r.matched_product_id && r.status !== "toegepast" && r.status !== "ongewijzigd"
   );
 
   let applied = 0;
@@ -57,5 +57,95 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ applied, failed: errors.length, errors });
+  // ---------------------------------------------------------------------
+  // Overzicht opbouwen: gewijzigde prijzen (oud → nieuw + ingangsdatum),
+  // nieuw aangemaakte producten, en regels zonder wijziging.
+  // ---------------------------------------------------------------------
+  const { data: reportRows } = await supabase
+    .from("price_import_rows")
+    .select(
+      "id, description, status, match_method, matched_product_id, resulting_supplier_product_id, reopened_supplier_product_id"
+    )
+    .eq("batch_id", batchId);
+
+  const allRows = reportRows ?? [];
+
+  const productIds = [
+    ...new Set(allRows.map((r) => r.matched_product_id).filter(Boolean)),
+  ] as string[];
+  const productNameById = new Map<string, string>();
+  for (let i = 0; i < productIds.length; i += 200) {
+    const { data } = await supabase
+      .from("products")
+      .select("id, name, custom_name")
+      .in("id", productIds.slice(i, i + 200));
+    for (const p of data ?? []) {
+      productNameById.set(p.id, p.custom_name || p.name);
+    }
+  }
+
+  const priceRowIds = [
+    ...new Set(
+      allRows
+        .flatMap((r) => [r.resulting_supplier_product_id, r.reopened_supplier_product_id])
+        .filter(Boolean)
+    ),
+  ] as string[];
+  const priceById = new Map<string, { purchase_price: number; valid_from: string }>();
+  for (let i = 0; i < priceRowIds.length; i += 200) {
+    const { data } = await supabase
+      .from("supplier_products")
+      .select("id, purchase_price, valid_from")
+      .in("id", priceRowIds.slice(i, i + 200));
+    for (const sp of data ?? []) {
+      priceById.set(sp.id, { purchase_price: sp.purchase_price, valid_from: sp.valid_from });
+    }
+  }
+
+  const priceChanges: {
+    productName: string;
+    oldPrice: number | null;
+    newPrice: number | null;
+    validFrom: string | null;
+  }[] = [];
+  const newProducts: string[] = [];
+  const unchanged: string[] = [];
+
+  for (const r of allRows) {
+    const name =
+      (r.matched_product_id && productNameById.get(r.matched_product_id)) ||
+      r.description ||
+      "onbekend product";
+
+    if (r.match_method === "automatisch_aangemaakt") {
+      newProducts.push(name);
+    }
+
+    if (r.status === "ongewijzigd") {
+      unchanged.push(name);
+      continue;
+    }
+
+    if (r.status === "toegepast" && r.resulting_supplier_product_id) {
+      const nieuw = priceById.get(r.resulting_supplier_product_id) ?? null;
+      const oud = r.reopened_supplier_product_id
+        ? priceById.get(r.reopened_supplier_product_id) ?? null
+        : null;
+      priceChanges.push({
+        productName: name,
+        oldPrice: oud?.purchase_price ?? null,
+        newPrice: nieuw?.purchase_price ?? null,
+        validFrom: nieuw?.valid_from ?? null,
+      });
+    }
+  }
+
+  return NextResponse.json({
+    applied,
+    failed: errors.length,
+    errors,
+    priceChanges,
+    newProducts,
+    unchanged,
+  });
 }

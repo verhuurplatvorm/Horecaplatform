@@ -38,6 +38,16 @@ export default function ImportReviewPage({
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
+  const [applyReport, setApplyReport] = useState<{
+    priceChanges: {
+      productName: string;
+      oldPrice: number | null;
+      newPrice: number | null;
+      validFrom: string | null;
+    }[];
+    newProducts: string[];
+    unchanged: string[];
+  } | null>(null);
   const [view, setView] = useState<"all" | "changes" | "missing">("changes");
   const [autoFocusedMissing, setAutoFocusedMissing] = useState(false);
   const [creatingForRow, setCreatingForRow] = useState<PriceImportRow | null>(
@@ -164,6 +174,7 @@ export default function ImportReviewPage({
   async function handleApply() {
     setApplying(true);
     setApplyResult(null);
+    setApplyReport(null);
     const res = await fetch(`/api/price-imports/${batchId}/apply`, {
       method: "POST",
     });
@@ -174,6 +185,11 @@ export default function ImportReviewPage({
         ? `${body.applied} prijzen doorgevoerd, ${body.failed} mislukt.`
         : `${body.applied} prijzen succesvol doorgevoerd.`
     );
+    setApplyReport({
+      priceChanges: body.priceChanges ?? [],
+      newProducts: body.newProducts ?? [],
+      unchanged: body.unchanged ?? [],
+    });
     reload();
   }
 
@@ -495,6 +511,95 @@ export default function ImportReviewPage({
           {applyResult && (
             <CardContent className="pt-0 text-sm text-success">
               {applyResult}
+            </CardContent>
+          )}
+          {applyReport && (
+            <CardContent className="pt-0 text-sm">
+              {applyReport.priceChanges.filter((c) => c.oldPrice !== null).length > 0 && (
+                <div className="mb-4">
+                  <p className="mb-2 font-medium text-foreground">
+                    Gewijzigde prijzen (
+                    {applyReport.priceChanges.filter((c) => c.oldPrice !== null).length})
+                  </p>
+                  <div className="max-h-64 overflow-y-auto rounded-md border border-border">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="sticky top-0 bg-surface text-left text-muted">
+                          <th className="px-3 py-2 font-medium">Product</th>
+                          <th className="px-3 py-2 font-medium">Oude prijs</th>
+                          <th className="px-3 py-2 font-medium">Nieuwe prijs</th>
+                          <th className="px-3 py-2 font-medium">Ingangsdatum</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {applyReport.priceChanges
+                          .filter((c) => c.oldPrice !== null)
+                          .map((c, i) => (
+                            <tr key={i} className="border-t border-border">
+                              <td className="px-3 py-1.5">{c.productName}</td>
+                              <td className="px-3 py-1.5 tabular text-muted">
+                                {c.oldPrice !== null ? `€ ${c.oldPrice.toFixed(2)}` : "—"}
+                              </td>
+                              <td
+                                className={
+                                  "px-3 py-1.5 tabular " +
+                                  (c.oldPrice !== null &&
+                                  c.newPrice !== null &&
+                                  c.newPrice > c.oldPrice
+                                    ? "text-danger"
+                                    : "text-success")
+                                }
+                              >
+                                {c.newPrice !== null ? `€ ${c.newPrice.toFixed(2)}` : "—"}
+                              </td>
+                              <td className="px-3 py-1.5 text-muted">
+                                {c.validFrom
+                                  ? new Date(c.validFrom).toLocaleDateString("nl-NL")
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {applyReport.priceChanges.filter((c) => c.oldPrice === null).length > 0 && (
+                <div className="mb-4">
+                  <p className="mb-1 font-medium text-foreground">
+                    Eerste prijs vastgelegd (
+                    {applyReport.priceChanges.filter((c) => c.oldPrice === null).length})
+                  </p>
+                  <p className="text-xs text-muted">
+                    Voor deze producten was er nog geen prijs van deze leverancier — geen
+                    wijziging, maar een eerste vastlegging.
+                  </p>
+                </div>
+              )}
+              {applyReport.newProducts.length > 0 && (
+                <div className="mb-4">
+                  <p className="mb-1 font-medium text-copper">
+                    Nieuw aangemaakte producten ({applyReport.newProducts.length})
+                  </p>
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border px-3 py-2 text-xs">
+                    {applyReport.newProducts.map((name, i) => (
+                      <p key={i}>{name}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {applyReport.unchanged.length > 0 && (
+                <details className="mb-2">
+                  <summary className="cursor-pointer font-medium text-muted">
+                    Geen wijziging nodig ({applyReport.unchanged.length} producten)
+                  </summary>
+                  <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-border px-3 py-2 text-xs text-muted">
+                    {applyReport.unchanged.map((name, i) => (
+                      <p key={i}>{name}</p>
+                    ))}
+                  </div>
+                </details>
+              )}
             </CardContent>
           )}
           {bulkResult && (
