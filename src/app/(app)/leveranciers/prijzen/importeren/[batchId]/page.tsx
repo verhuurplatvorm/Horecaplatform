@@ -391,7 +391,11 @@ export default function ImportReviewPage({
     (r) =>
       r.matched_product_id &&
       r.packaging_unit_count &&
-      r.status !== "toegepast"
+      r.status !== "toegepast" &&
+      // "ongewijzigd" = prijs is identiek aan de al actieve prijs; die
+      // regels slaat het doorvoeren bewust over en horen dus ook niet in
+      // de knoptekst meegeteld te worden.
+      r.status !== "ongewijzigd"
   ).length;
 
   const displayRows =
