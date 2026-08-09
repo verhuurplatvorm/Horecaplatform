@@ -621,6 +621,16 @@ export function RecipeForm({
   }
 
   function handlePick(index: number, picked: PickedIngredient) {
+    const existingRowId = rows[index]?.id;
+    // Eenheid alleen vervangen als de huidige eenheid een andere
+    // dimensie heeft dan het nieuwe product — bij het omwisselen van
+    // bv. de ene olie naar de andere blijft "100 milliliter" gewoon staan.
+    const currentUnit = rows[index]?.unitId ? unitsById.get(rows[index].unitId!) : null;
+    const newBaseUnit = picked.baseUnitId ? unitsById.get(picked.baseUnitId) : null;
+    const keepUnit =
+      currentUnit && newBaseUnit && currentUnit.dimension === newBaseUnit.dimension;
+    const nextUnitId = keepUnit ? rows[index].unitId : picked.baseUnitId;
+
     updateRow(index, {
       type: picked.type,
       refId: picked.id,
@@ -629,10 +639,31 @@ export function RecipeForm({
       unmatchedArticleNumber: null,
       baseUnitId: picked.baseUnitId,
       yieldQuantity: picked.yieldQuantity ?? null,
-      unitId: picked.baseUnitId,
+      unitId: nextUnitId,
     });
     if (picked.type === "product") loadProductPrice(picked.id);
     else loadHalfproductCost(picked.id);
+
+    // Al eerder opgeslagen regel: wijziging meteen bewaren, niet pas
+    // bij "Opslaan" — zelfde patroon als "Opnieuw zoeken in Producten".
+    if (existingRowId) {
+      const supabase = createClient();
+      supabase
+        .from("recipe_ingredients")
+        .update({
+          product_id: picked.type === "product" ? picked.id : null,
+          sub_recipe_id: picked.type === "halfproduct" ? picked.id : null,
+          unmatched_name: null,
+          unmatched_article_number: null,
+          unit_id: nextUnitId,
+        })
+        .eq("id", existingRowId)
+        .then(({ error: persistError }) => {
+          if (persistError) {
+            console.error("Kan ingrediëntwijziging niet direct opslaan:", persistError.message);
+          }
+        });
+    }
   }
 
   async function handleSubmit(e: React.FormEvent, publishStatus?: RecipeStatus) {
@@ -742,7 +773,7 @@ export function RecipeForm({
       return;
     }
 
-    router.push("/recepturen");
+    router.push(recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen");
   }
 
   async function handleDelete() {
@@ -784,7 +815,7 @@ export function RecipeForm({
       );
       return;
     }
-    router.push("/recepturen");
+    router.push(recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen");
   }
 
   const basisgegevensCard = (
@@ -1603,6 +1634,23 @@ function IngredientLine({
                     Halfproduct openen →
                   </Link>
                 )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      refId: null,
+                      refName: null,
+                      // Oude naam bewaren zodat de regel toont wat er
+                      // gekoppeld wás en nooit stilzwijgend leeg raakt.
+                      unmatchedName: row.refName,
+                      baseUnitId: null,
+                    })
+                  }
+                  className="text-xs text-muted hover:text-teal hover:underline"
+                  title="Ander product koppelen"
+                >
+                  wijzig
+                </button>
               </span>
               {row.type === "product" && (purchasePrice != null || packagingDescription) && (
                 <p className="ml-5 text-xs text-muted">
