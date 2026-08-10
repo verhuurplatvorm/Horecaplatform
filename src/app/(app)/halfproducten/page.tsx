@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, Search, Star, Archive, Copy, Download, Upload } from "lucide-react";
+import { Plus, Search, Star, Archive, Copy, Download, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +35,7 @@ export default function HalfproductenPage() {
   const [rows, setRows] = useState<HalfproductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [activeFolder, setActiveFolder] = useState<string>("__alle__");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [showArchived, setShowArchived] = useState(false);
@@ -230,13 +231,21 @@ export default function HalfproductenPage() {
       showArchived ? true : r.status !== "vervallen"
     );
     const q = query.trim().toLowerCase();
-    const matched = q
+    const searched = q
       ? visible.filter(
           (r) =>
             r.name.toLowerCase().includes(q) ||
             (r.category ?? "").toLowerCase().includes(q)
         )
       : visible;
+    // Mappen (categorieën) als tabbladen — zelfde patroon als bij
+    // Recepten: elk halfproduct staat alleen in zijn eigen map.
+    const matched =
+      activeFolder === "__alle__"
+        ? searched
+        : activeFolder === "__zonder__"
+          ? searched.filter((r) => !r.category?.trim())
+          : searched.filter((r) => r.category?.trim() === activeFolder);
 
     return [...matched].sort((a, b) => {
       const favCmp = Number(b.isFavorite) - Number(a.isFavorite);
@@ -300,6 +309,19 @@ export default function HalfproductenPage() {
             </Button>
           </Link>
         </div>
+
+        <FolderTabs
+          rows={rows}
+          activeFolder={activeFolder}
+          setActiveFolder={setActiveFolder}
+          onFolderCleared={(folder) =>
+            setRows((prev) =>
+              prev.map((r) =>
+                r.category?.trim() === folder ? { ...r, category: null } : r
+              )
+            )
+          }
+        />
 
         <Card>
           <CardContent className="p-0">
@@ -434,5 +456,87 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`rounded-full px-2 py-0.5 text-xs ${styles[status] ?? styles.concept}`}>
       {labels[status] ?? status}
     </span>
+  );
+}
+
+/**
+ * Maptabs voor halfproducten — zelfde patroon als bij Recepten. De map
+ * is het categorie-veld; "Map verwijderen" verplaatst de halfproducten
+ * naar "Zonder map" (verwijdert nooit halfproducten zelf).
+ */
+function FolderTabs({
+  rows,
+  activeFolder,
+  setActiveFolder,
+  onFolderCleared,
+}: {
+  rows: HalfproductRow[];
+  activeFolder: string;
+  setActiveFolder: (f: string) => void;
+  onFolderCleared: (folder: string) => void;
+}) {
+  const folders = Array.from(
+    new Set(rows.map((r) => r.category?.trim()).filter((c): c is string => !!c))
+  ).sort((a, b) => a.localeCompare(b, "nl"));
+  const hasUnfiled = rows.some((r) => !r.category?.trim());
+  if (folders.length === 0 && !hasUnfiled) return null;
+
+  async function handleDeleteFolder(folder: string) {
+    const count = rows.filter((r) => r.category?.trim() === folder).length;
+    const ok = window.confirm(
+      `Map "${folder}" verwijderen?\n\nDe ${count} halfproduct(en) in deze map ` +
+        `worden NIET verwijderd — ze verhuizen naar "Zonder map".`
+    );
+    if (!ok) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("recipes")
+      .update({ category: null })
+      .eq("category", folder)
+      .eq("recipe_kind", "halfproduct");
+    if (error) {
+      window.alert("Map verwijderen mislukt: " + error.message);
+      return;
+    }
+    onFolderCleared(folder);
+    setActiveFolder("__alle__");
+  }
+
+  const tab = (key: string, label: string) => (
+    <button
+      key={key}
+      onClick={() => setActiveFolder(key)}
+      className={`rounded-full px-3 py-1.5 text-sm ${
+        activeFolder === key
+          ? "bg-teal text-white"
+          : "bg-surface text-muted hover:bg-background"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {tab("__alle__", `Alle mappen (${rows.length})`)}
+      {folders.map((f) =>
+        tab(f, `${f} (${rows.filter((r) => r.category?.trim() === f).length})`)
+      )}
+      {activeFolder !== "__alle__" && activeFolder !== "__zonder__" && (
+        <button
+          onClick={() => handleDeleteFolder(activeFolder)}
+          title={'Map "' + activeFolder + '" verwijderen (halfproducten verhuizen naar Zonder map)'}
+          className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-danger/10 hover:text-danger"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Map verwijderen
+        </button>
+      )}
+      {hasUnfiled &&
+        tab(
+          "__zonder__",
+          `Zonder map (${rows.filter((r) => !r.category?.trim()).length})`
+        )}
+    </div>
   );
 }
