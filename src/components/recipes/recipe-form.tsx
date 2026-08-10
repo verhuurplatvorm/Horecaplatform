@@ -389,6 +389,25 @@ export function RecipeForm({
     recipeKind === "halfproduct" && yieldQuantityNum > 0 ? totalCost / yieldQuantityNum : null;
   const baseUnitName = baseUnitId ? unitsById.get(baseUnitId)?.name ?? null : null;
 
+  // Naast de prijs per basiseenheid (ml/gram) ook de prijs per liter/kilo
+  // tonen wanneer dat een zinvolle, andere eenheid is — makkelijker te
+  // vergelijken met leveranciersprijzen die meestal per liter/kilo staan.
+  const LARGER_UNIT_KEY: Record<string, { key: string; factor: number }> = {
+    ml: { key: "l", factor: 1000 },
+    milliliter: { key: "l", factor: 1000 },
+    g: { key: "kg", factor: 1000 },
+    gram: { key: "kg", factor: 1000 },
+  };
+  const baseUnit = baseUnitId ? unitsById.get(baseUnitId) : null;
+  const largerUnitDef = baseUnit
+    ? LARGER_UNIT_KEY[baseUnit.key] ?? LARGER_UNIT_KEY[baseUnit.name.toLowerCase()]
+    : null;
+  const largerUnit = largerUnitDef
+    ? units.find((u) => u.key === largerUnitDef.key)
+    : null;
+  const costPerLargerUnit =
+    costPerBaseUnit !== null && largerUnitDef ? costPerBaseUnit * largerUnitDef.factor : null;
+
   // Som van de ingrediënten in de eigen basiseenheid van dit recept —
   // alleen regels met dezelfde dimensie (bv. allemaal inhoud, of
   // allemaal gewicht) tellen mee, net als bij de "Totale hoeveelheid"
@@ -1201,11 +1220,21 @@ export function RecipeForm({
                 />
               </>
             ) : (
-              <Stat
-                label={`Prijs per ${baseUnitName ?? "basiseenheid"}`}
-                value={costPerBaseUnit !== null ? `€ ${costPerBaseUnit.toFixed(4)}` : "—"}
-                emphasis
-              />
+              <>
+                <Stat
+                  label={`Prijs per ${baseUnitName ?? "basiseenheid"}`}
+                  value={costPerBaseUnit !== null ? `€ ${costPerBaseUnit.toFixed(4)}` : "—"}
+                  emphasis
+                />
+                {largerUnit && (
+                  <Stat
+                    label={`Prijs per ${largerUnit.name}`}
+                    value={
+                      costPerLargerUnit !== null ? `€ ${costPerLargerUnit.toFixed(2)}` : "—"
+                    }
+                  />
+                )}
+              </>
             )}
           </div>
           {recipeKind === "gerecht" && (
