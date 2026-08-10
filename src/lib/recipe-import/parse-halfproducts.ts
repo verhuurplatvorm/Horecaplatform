@@ -99,7 +99,91 @@ export function parseHalfproductsExcel(buffer: Buffer): ParsedImportRecipe[] {
     recipes.push(current);
   }
 
+  // Geen blokken gevonden? Probeer het rij-formaat: één gerecht per rij,
+  // met alle ingrediënten als meerregelige tekst in één "Ingrediënten"-
+  // kolom (zoals de Gerechten-export: "220 ml Vissoep\n60 gr Kabeljauw…").
+  if (recipes.length === 0) {
+    return parseGerechtenRowFormat(workbook);
+  }
+
   return recipes;
+}
+
+/**
+ * Leest het rij-formaat van een Gerechten-export: kopregel met o.a.
+ * "Naam" en "Ingrediënten", daarna per gerecht één rij waarin de
+ * ingrediënten als regels tekst in één cel staan ("hoeveelheid [eenheid]
+ * naam"). Ontbreekt de eenheid ("0,025 Little gem"), dan geldt stuk.
+ */
+function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] {
+  const INGREDIENT_LINE =
+    /^\s*(\d+(?:[.,]\d+)?)\s*(?:(stuks?|st|gram|gr|g|kg|ml|cl|dl|ltr|lt|liter|l)\b\.?\s+)?(.+)$/i;
+
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      raw: false,
+    });
+
+    // Kopregel zoeken in de eerste vijf rijen
+    let headerIndex = -1;
+    let nameCol = -1;
+    let ingredientsCol = -1;
+    let idCol = -1;
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      const headers = (rows[i] ?? []).map((h) =>
+        String(h ?? "").trim().toLowerCase()
+      );
+      const n = headers.indexOf("naam");
+      const ing = headers.findIndex((h) => h.startsWith("ingredi"));
+      if (n >= 0 && ing >= 0) {
+        headerIndex = i;
+        nameCol = n;
+        ingredientsCol = ing;
+        idCol = headers.indexOf("id");
+        break;
+      }
+    }
+    if (headerIndex < 0) continue;
+
+    const recipes: ParsedImportRecipe[] = [];
+    for (const row of rows.slice(headerIndex + 1)) {
+      const name = cell(row, nameCol);
+      const ingredientsText = cell(row, ingredientsCol);
+      if (!name || !ingredientsText) continue;
+
+      const ingredients: ParsedImportIngredient[] = [];
+      for (const rawLine of ingredientsText.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const match = line.match(INGREDIENT_LINE);
+        if (!match) continue;
+        const quantity = Number(match[1].replace(",", "."));
+        const ingredientName = match[3].trim();
+        if (!Number.isFinite(quantity) || quantity <= 0 || !ingredientName) continue;
+        ingredients.push({
+          name: ingredientName,
+          quantity,
+          unitRaw: match[2] ?? "stuk",
+          supplierArticleNumber: null,
+          supplierName: null,
+          brand: null,
+        });
+      }
+
+      if (ingredients.length > 0) {
+        recipes.push({
+          name,
+          externalId: idCol >= 0 ? cell(row, idCol) : null,
+          ingredients,
+        });
+      }
+    }
+
+    if (recipes.length > 0) return recipes;
+  }
+
+  return [];
 }
 
 /** Zet een Excel-eenheidsnaam (Stuks/Gram/Ml/...) om naar de systeem-eenheidssleutel. */
@@ -110,6 +194,7 @@ export function normalizeUnitKey(raw: string): string {
     stuk: "stuk",
     st: "stuk",
     gram: "g",
+    gr: "g",
     g: "g",
     kg: "kg",
     kilogram: "kg",

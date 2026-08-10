@@ -28,6 +28,8 @@ interface ReviewRecipe {
   candidates: RecipeCandidate[];
   include: boolean;
   linkedRecipeId: string | null;
+  /** Zelfde naam komt eerder in dit bestand voor — standaard overgeslagen. */
+  inFileDuplicate?: boolean;
 }
 
 interface ImportResultRow {
@@ -72,12 +74,30 @@ export default function HalfproductenImporterenPage() {
         setError(body.error ?? "Kan bestand niet lezen.");
         return;
       }
+      const seenNames = new Set<string>();
       setRecipes(
-        (body.recipes ?? []).map((r) => ({
-          ...r,
-          include: true,
-          linkedRecipeId: null,
-        }))
+        (body.recipes ?? []).map((r) => {
+          // Exacte naamsmatch met een bestaand recept → standaard
+          // koppelen in plaats van nieuw aanmaken, zodat een herhaalde
+          // import nooit dubbelen oplevert. De gebruiker kan alsnog
+          // "Nieuw aanmaken" kiezen als het bewust een apart recept is.
+          const exact = (r.candidates ?? []).find(
+            (c) =>
+              c.recipe_name.trim().toLowerCase() === r.name.trim().toLowerCase()
+          );
+          // Zelfde naam eerder in ditzelfde bestand (bronbestanden
+          // bevatten soms letterlijk dubbele gerechten) → standaard
+          // uitgevinkt, met een label erbij. Aanvinken kan altijd.
+          const nameKey = r.name.trim().toLowerCase();
+          const inFileDuplicate = seenNames.has(nameKey);
+          seenNames.add(nameKey);
+          return {
+            ...r,
+            include: !inFileDuplicate,
+            linkedRecipeId: exact?.recipe_id ?? null,
+            inFileDuplicate,
+          };
+        })
       );
       setStep("review");
     } catch (err) {
@@ -229,6 +249,16 @@ export default function HalfproductenImporterenPage() {
                         onChange={(e) => updateRecipe(i, { include: e.target.checked })}
                       />
                       {recipe.name}
+                      {recipe.inFileDuplicate && (
+                        <span className="rounded-full bg-copper/10 px-2 py-0.5 text-xs font-normal text-copper">
+                          dubbel in bestand — overgeslagen
+                        </span>
+                      )}
+                      {recipe.linkedRecipeId && !recipe.inFileDuplicate && (
+                        <span className="rounded-full bg-teal/10 px-2 py-0.5 text-xs font-normal text-teal">
+                          wordt gekoppeld aan bestaand
+                        </span>
+                      )}
                       {recipe.externalId && (
                         <span className="text-xs font-normal text-muted">
                           (extern ID: {recipe.externalId})

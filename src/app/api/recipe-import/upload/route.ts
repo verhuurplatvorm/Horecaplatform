@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Geen recepten herkend in dit bestand. Verwacht formaat: per recept een rij \"Item naam: ...\", gevolgd door ingrediëntregels.",
+          "Geen recepten herkend in dit bestand. Verwachte formaten: blokken met \"Item naam: ...\" gevolgd door ingrediëntregels, óf één gerecht per rij met een \"Naam\"- en \"Ingrediënten\"-kolom (Gerechten-export).",
       },
       { status: 422 }
     );
