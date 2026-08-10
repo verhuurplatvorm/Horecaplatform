@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, Search, Upload } from "lucide-react";
+import { Plus, Search, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -115,6 +115,93 @@ export default function RecepturenPage() {
     };
   }, [referenceCompanyId, scopeLoading]);
 
+  /**
+   * Recept verwijderen — met vooraf-controle op de plekken die het
+   * verwijderen blokkeren (database: on delete restrict), zodat de
+   * gebruiker een leesbare uitleg krijgt in plaats van een technische
+   * databasefout: menukaarten, gebruik als ingrediënt in een ander
+   * recept, en gekoppelde verkoopproducten.
+   */
+  async function handleDeleteRecipe(recipe: RecipeWithCost) {
+    const supabase = createClient();
+
+    const [{ count: onMenus }, { count: usedAsIngredient }, { count: salesLinks }] =
+      await Promise.all([
+        supabase
+          .from("menu_items")
+          .select("id", { count: "exact", head: true })
+          .eq("recipe_id", recipe.id),
+        supabase
+          .from("recipe_ingredients")
+          .select("id", { count: "exact", head: true })
+          .eq("sub_recipe_id", recipe.id),
+        supabase
+          .from("sales_product_components")
+          .select("id", { count: "exact", head: true })
+          .eq("recipe_id", recipe.id),
+      ]);
+
+    const blockers: string[] = [];
+    if (onMenus) blockers.push(`staat op ${onMenus} menukaartregel(s)`);
+    if (usedAsIngredient)
+      blockers.push(`wordt als ingrediënt gebruikt in ${usedAsIngredient} ander(e) recept(en)`);
+    if (salesLinks) blockers.push(`heeft ${salesLinks} gekoppeld(e) verkoopproduct(en)`);
+
+    if (blockers.length > 0) {
+      window.alert(
+        `"${recipe.name}" kan niet verwijderd worden: het recept ${blockers.join(", ")}. ` +
+          `Haal het daar eerst weg en probeer het opnieuw.`
+      );
+      return;
+    }
+
+    const ok = window.confirm(
+      `"${recipe.name}" definitief verwijderen?\n\n` +
+        `De ingrediëntregels en eventuele productiehistorie van dit recept ` +
+        `worden ook verwijderd. Dit kan niet ongedaan gemaakt worden.`
+    );
+    if (!ok) return;
+
+    const { error: deleteError } = await supabase
+      .from("recipes")
+      .delete()
+      .eq("id", recipe.id);
+    if (deleteError) {
+      window.alert("Verwijderen mislukt: " + deleteError.message);
+      return;
+    }
+    setRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
+  }
+
+  /**
+   * Map verwijderen — de recepten zelf blijven bestaan en verhuizen naar
+   * "Zonder map" (de categorie wordt leeggemaakt). Recepten verwijderen
+   * gaat bewust per recept, nooit per hele map tegelijk.
+   */
+  async function handleDeleteFolder(folder: string) {
+    const count = recipes.filter((r) => r.category?.trim() === folder).length;
+    const ok = window.confirm(
+      `Map "${folder}" verwijderen?\n\n` +
+        `De ${count} recept(en) in deze map worden NIET verwijderd — ze ` +
+        `verhuizen naar "Zonder map".`
+    );
+    if (!ok) return;
+    const supabase = createClient();
+    const { error: updateError } = await supabase
+      .from("recipes")
+      .update({ category: null })
+      .eq("category", folder)
+      .eq("recipe_kind", "gerecht");
+    if (updateError) {
+      window.alert("Map verwijderen mislukt: " + updateError.message);
+      return;
+    }
+    setRecipes((prev) =>
+      prev.map((r) => (r.category?.trim() === folder ? { ...r, category: null } : r))
+    );
+    setActiveFolder("__alle__");
+  }
+
   const q = query.trim().toLowerCase();
   const searchedRecipes = q
     ? recipes.filter((r) =>
@@ -196,6 +283,16 @@ export default function RecepturenPage() {
                 </button>
               );
             })}
+            {activeFolder !== "__alle__" && activeFolder !== "__zonder__" && (
+              <button
+                onClick={() => handleDeleteFolder(activeFolder)}
+                title={'Map "' + activeFolder + '" verwijderen (recepten verhuizen naar Zonder map)'}
+                className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-danger/10 hover:text-danger"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Map verwijderen
+              </button>
+            )}
             {hasUnfiled && (
               <button
                 onClick={() => setActiveFolder("__zonder__")}
@@ -223,6 +320,7 @@ export default function RecepturenPage() {
                   <th className="px-5 py-3 font-medium">Verkoopprijs</th>
                   <th className="px-5 py-3 font-medium">Foodcost %</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -274,6 +372,15 @@ export default function RecepturenPage() {
                       </td>
                       <td className="px-5 py-3">
                         <StatusBadge status={r.status} />
+                      </td>
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => handleDeleteRecipe(r)}
+                          title="Recept verwijderen"
+                          className="text-muted hover:text-danger"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   );
