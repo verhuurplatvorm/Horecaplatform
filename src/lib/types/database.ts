@@ -153,6 +153,14 @@ export type SupplierProduct = {
   valid_to: string | null;
 }
 
+export type HalfproductFolder = {
+  id: string;
+  group_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+}
+
 export type Recipe = {
   id: string;
   group_id: string;
@@ -160,6 +168,7 @@ export type Recipe = {
   parent_recipe_id: string | null;
   name: string;
   category: string | null;
+  halfproduct_folder_id: string | null;
   preparation: string | null;
   plating_instructions: string | null;
   photo_url: string | null;
@@ -590,6 +599,12 @@ export type Database = {
         Row: Recipe;
         Insert: Partial<Recipe>;
         Update: Partial<Recipe>;
+        Relationships: [];
+      };
+      halfproduct_folders: {
+        Row: HalfproductFolder;
+        Insert: Partial<HalfproductFolder>;
+        Update: Partial<HalfproductFolder>;
         Relationships: [];
       };
       user_profiles: {

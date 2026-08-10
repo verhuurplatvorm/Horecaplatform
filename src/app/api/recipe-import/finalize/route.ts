@@ -106,7 +106,11 @@ export async function POST(request: Request) {
         .maybeSingle();
       if (existing) {
         const patch: { category?: string; sales_price?: number } = {};
-        if (!existing.category?.trim() && recipe.folderName?.trim()) {
+        if (
+          recipeKind === "gerecht" &&
+          !existing.category?.trim() &&
+          recipe.folderName?.trim()
+        ) {
           patch.category = recipe.folderName.trim();
         }
         if (existing.sales_price == null && recipe.salesPriceInclVat != null) {
@@ -125,7 +129,11 @@ export async function POST(request: Request) {
         group_id: groupId,
         company_id: companyId || null,
         name: recipe.name,
-        category: recipe.folderName?.trim() || null,
+        // Mappen voor halfproducten worden nooit automatisch aangemaakt
+        // door een import — alleen handmatig via de Halfproducten-pagina
+        // (drag-and-drop / map-keuze). Alleen bij "Gerechten" neemt de
+        // import de mapnaam uit het bestand over.
+        category: recipeKind === "gerecht" ? recipe.folderName?.trim() || null : null,
         // De "Btw"-kolom in de Gerechten-export is een btw-BEDRAG (geen
         // tarief) en wordt daarom bewust niet geïmporteerd; het btw-
         // tarief houdt de databasestandaard.
