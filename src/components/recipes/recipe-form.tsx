@@ -556,6 +556,7 @@ export function RecipeForm({
     const supabase = createClient();
     const updated = [...rows];
     let resolvedCount = 0;
+    const newlyMatchedIds: string[] = [];
 
     for (let i = 0; i < updated.length; i++) {
       const row = updated[i];
@@ -598,6 +599,7 @@ export function RecipeForm({
           unitId: row.unitId ?? match.base_unit_id,
         };
         resolvedCount++;
+        newlyMatchedIds.push(match.id);
 
         // Meteen bewaren als deze regel al eerder is opgeslagen — niet
         // wachten tot de gebruiker op "Opslaan" klikt, anders raakt de
@@ -618,6 +620,14 @@ export function RecipeForm({
     }
 
     setRows(updated);
+
+    // Prijzen van de zojuist gekoppelde ingrediënten direct ophalen —
+    // anders blijft de regel "onvolledig" tonen (met prijs "—") tot de
+    // pagina volledig herladen wordt, terwijl de koppeling al bestaat.
+    await Promise.all(
+      [...new Set(newlyMatchedIds)].map((id) => loadProductPrice(id))
+    );
+
     setRematching(false);
     setRematchMessage(
       resolvedCount > 0
