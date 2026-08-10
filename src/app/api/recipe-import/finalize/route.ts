@@ -16,6 +16,8 @@ interface FinalizeRecipe {
   externalId: string | null;
   /** Mapnaam uit het bronbestand — opgeslagen als categorie/map van het recept. */
   folderName?: string | null;
+  salesPriceInclVat?: number | null;
+  vatRate?: number | null;
   ingredients: FinalizeIngredient[];
   linkedRecipeId?: string | null; // koppel aan bestaand i.p.v. nieuw aanmaken
   skip?: boolean;
@@ -92,6 +94,28 @@ export async function POST(request: Request) {
       recipeNameToId.set(recipe.name.trim().toLowerCase(), recipe.linkedRecipeId);
       createdRecipeIds.push({ name: recipe.name, id: recipe.linkedRecipeId, wasLinked: true });
       linkedCount++;
+
+      // Aanvullen zonder overschrijven: heeft het bestaande recept nog
+      // geen map, verkoopprijs of btw, en levert het bronbestand die
+      // wél, dan vullen we alleen de lege velden in. Handmatig gezette
+      // waarden blijven altijd staan.
+      const { data: existing } = await supabase
+        .from("recipes")
+        .select("category, sales_price, vat_rate")
+        .eq("id", recipe.linkedRecipeId)
+        .maybeSingle();
+      if (existing) {
+        const patch: { category?: string; sales_price?: number } = {};
+        if (!existing.category?.trim() && recipe.folderName?.trim()) {
+          patch.category = recipe.folderName.trim();
+        }
+        if (existing.sales_price == null && recipe.salesPriceInclVat != null) {
+          patch.sales_price = recipe.salesPriceInclVat;
+        }
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("recipes").update(patch).eq("id", recipe.linkedRecipeId);
+        }
+      }
       continue;
     }
 
@@ -102,6 +126,10 @@ export async function POST(request: Request) {
         company_id: companyId || null,
         name: recipe.name,
         category: recipe.folderName?.trim() || null,
+        // De "Btw"-kolom in de Gerechten-export is een btw-BEDRAG (geen
+        // tarief) en wordt daarom bewust niet geïmporteerd; het btw-
+        // tarief houdt de databasestandaard.
+        sales_price: recipe.salesPriceInclVat ?? null,
         recipe_kind: recipeKind,
         status: "concept" as const,
         base_unit_id: unitIdByKey.get(inferBaseUnitKey(recipe.ingredients)) ?? null,

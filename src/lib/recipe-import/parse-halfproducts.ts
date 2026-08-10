@@ -14,7 +14,21 @@ export interface ParsedImportRecipe {
   externalId: string | null;
   /** Mapnaam uit de bron (bv. "01. HS Lunch") — wordt de categorie/map van het recept. */
   folderName: string | null;
+  /** Kaartprijs (verkoopprijs incl. btw) uit de bron, indien aanwezig. */
+  salesPriceInclVat: number | null;
+  /** Btw-percentage uit de bron, indien aanwezig. */
+  vatRate: number | null;
   ingredients: ParsedImportIngredient[];
+}
+
+function parseDutchNumber(raw: string | null): number | null {
+  if (!raw) return null;
+  const cleaned = raw
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(",", ".");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
 }
 
 function cell(row: unknown[], index: number): string | null {
@@ -64,6 +78,8 @@ export function parseHalfproductsExcel(buffer: Buffer): ParsedImportRecipe[] {
         name,
         externalId: externalIdMatch ? externalIdMatch[1] : null,
         folderName: null,
+        salesPriceInclVat: null,
+        vatRate: null,
         ingredients: [],
       };
       awaitingColumnHeaderRow = true;
@@ -134,6 +150,8 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
     let ingredientsCol = -1;
     let idCol = -1;
     let mapCol = -1;
+    let priceCol = -1;
+    let vatCol = -1;
     for (let i = 0; i < Math.min(rows.length, 5); i++) {
       const headers = (rows[i] ?? []).map((h) =>
         String(h ?? "").trim().toLowerCase()
@@ -146,6 +164,8 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
         ingredientsCol = ing;
         idCol = headers.indexOf("id");
         mapCol = headers.indexOf("mapnaam");
+        priceCol = headers.indexOf("kaartprijs");
+        vatCol = headers.indexOf("btw");
         break;
       }
     }
@@ -181,6 +201,8 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
           name,
           externalId: idCol >= 0 ? cell(row, idCol) : null,
           folderName: mapCol >= 0 ? cell(row, mapCol) : null,
+          salesPriceInclVat: priceCol >= 0 ? parseDutchNumber(cell(row, priceCol)) : null,
+          vatRate: vatCol >= 0 ? parseDutchNumber(cell(row, vatCol)) : null,
           ingredients,
         });
       }

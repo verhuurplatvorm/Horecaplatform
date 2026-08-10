@@ -25,6 +25,8 @@ interface ReviewRecipe {
   name: string;
   externalId: string | null;
   folderName?: string | null;
+  salesPriceInclVat?: number | null;
+  vatRate?: number | null;
   ingredients: ReviewIngredient[];
   candidates: RecipeCandidate[];
   include: boolean;
@@ -132,6 +134,8 @@ export default function HalfproductenImporterenPage() {
             name: r.name,
             externalId: r.externalId,
             folderName: r.folderName ?? null,
+            salesPriceInclVat: r.salesPriceInclVat ?? null,
+            vatRate: r.vatRate ?? null,
             ingredients: r.ingredients,
             linkedRecipeId: r.linkedRecipeId,
           })),
