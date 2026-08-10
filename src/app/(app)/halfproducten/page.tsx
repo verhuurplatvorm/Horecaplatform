@@ -13,6 +13,7 @@ import {
   Upload,
   FolderPlus,
   Pencil,
+  GripVertical,
 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
@@ -389,7 +390,6 @@ export default function HalfproductenPage() {
     }
   }
 
-  const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
   const unfiledCount = rows.filter((r) => !r.halfproduct_folder_id).length;
 
   return (
@@ -482,6 +482,7 @@ export default function HalfproductenPage() {
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-muted">
                     <th className="w-8 px-3 py-3"></th>
+                    <th className="w-6 px-1 py-3"></th>
                     <th
                       className="cursor-pointer px-2 py-3 font-medium"
                       onClick={() => toggleSort("name")}
@@ -517,13 +518,7 @@ export default function HalfproductenPage() {
                   {filteredRows.map((r) => (
                     <tr
                       key={r.id}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData(DRAG_TYPE, r.id);
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      className="cursor-grab border-t border-border hover:bg-background active:cursor-grabbing"
-                      title="Sleep naar een map hiernaast om te verplaatsen"
+                      className="border-t border-border hover:bg-background"
                     >
                       <td className="px-3 py-3">
                         <button onClick={() => toggleFavorite(r.id, r.isFavorite)}>
@@ -537,6 +532,19 @@ export default function HalfproductenPage() {
                           />
                         </button>
                       </td>
+                      <td className="px-1 py-3">
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(DRAG_TYPE, r.id);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          title="Sleep naar een map hiernaast om te verplaatsen"
+                          className="flex cursor-grab items-center justify-center text-muted hover:text-teal active:cursor-grabbing"
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </span>
+                      </td>
                       <td className="px-2 py-3 font-medium">
                         <Link
                           href={`/halfproducten/${r.id}/bewerken`}
@@ -545,8 +553,20 @@ export default function HalfproductenPage() {
                           {r.name}
                         </Link>
                       </td>
-                      <td className="px-2 py-3 text-muted">
-                        {folderNameById.get(r.halfproduct_folder_id ?? "") ?? "—"}
+                      <td className="px-2 py-3">
+                        <select
+                          value={r.halfproduct_folder_id ?? ""}
+                          onChange={(e) => moveToFolder(r.id, e.target.value || null)}
+                          className="h-8 rounded-md border border-border bg-surface px-1.5 text-xs text-muted"
+                          title="Verplaats naar map"
+                        >
+                          <option value="">Zonder map</option>
+                          {folders.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-2 py-3 tabular text-muted">
                         {r.yield_quantity ?? "—"} {r.unitName ?? ""}
@@ -590,7 +610,7 @@ export default function HalfproductenPage() {
                   ))}
                   {filteredRows.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={9} className="px-5 py-6 text-center text-muted">
+                      <td colSpan={10} className="px-5 py-6 text-center text-muted">
                         Nog geen halfproducten. Maak het eerste aan, of voeg er
                         een toe via de zoekfunctie binnen een gerecht.
                       </td>
@@ -640,9 +660,9 @@ function FolderNavItem({
   return (
     <div
       className={cn(
-        "flex items-center rounded-md px-2 py-1.5 text-sm hover:bg-background",
+        "flex items-center rounded-md px-2 py-2.5 text-sm hover:bg-background",
         selected && "bg-teal/10 text-teal",
-        dragOver && "bg-teal/20 outline outline-2 outline-teal"
+        dragOver && "scale-[1.02] bg-teal/25 outline outline-2 outline-teal transition-transform"
       )}
       onDragOver={(e) => {
         if (!onDropItem) return;
@@ -692,9 +712,9 @@ function FolderRow({
   return (
     <div
       className={cn(
-        "group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm hover:bg-background",
+        "group flex items-center gap-1 rounded-md px-2 py-2.5 text-sm hover:bg-background",
         selected && "bg-teal/10 text-teal",
-        dragOver && "bg-teal/20 outline outline-2 outline-teal"
+        dragOver && "scale-[1.02] bg-teal/25 outline outline-2 outline-teal transition-transform"
       )}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(DRAG_TYPE)) {
