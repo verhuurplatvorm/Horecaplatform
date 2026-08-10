@@ -21,6 +21,24 @@ export interface ParsedImportRecipe {
   ingredients: ParsedImportIngredient[];
 }
 
+/**
+ * Bronbestanden bevatten soms letterlijke HTML-codes in de tekst
+ * (vooral "&nbsp;" als spatie), waardoor eenheden niet herkend worden
+ * ("200&nbsp;ml&nbsp;Vissoep" → 200 stuk met de eenheid in de naam).
+ * Decodeert de gangbare codes en normaliseert alle witruimte.
+ */
+function decodeEntities(raw: string): string {
+  return raw
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&eacute;/gi, "é")
+    .replace(/&euml;/gi, "ë")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseDutchNumber(raw: string | null): number | null {
   if (!raw) return null;
   const cleaned = raw
@@ -173,13 +191,14 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
 
     const recipes: ParsedImportRecipe[] = [];
     for (const row of rows.slice(headerIndex + 1)) {
-      const name = cell(row, nameCol);
+      const rawName = cell(row, nameCol);
       const ingredientsText = cell(row, ingredientsCol);
-      if (!name || !ingredientsText) continue;
+      if (!rawName || !ingredientsText) continue;
+      const name = decodeEntities(rawName);
 
       const ingredients: ParsedImportIngredient[] = [];
       for (const rawLine of ingredientsText.split(/\r?\n/)) {
-        const line = rawLine.trim();
+        const line = decodeEntities(rawLine);
         if (!line) continue;
         const match = line.match(INGREDIENT_LINE);
         if (!match) continue;
