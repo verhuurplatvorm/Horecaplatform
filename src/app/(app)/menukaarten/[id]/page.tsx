@@ -53,6 +53,7 @@ export default function MenukaartWorkspacePage({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [reloadToken, setReloadToken] = useState(0);
   const [addingRecipe, setAddingRecipe] = useState(false);
+  const [addingFromRecipeFolder, setAddingFromRecipeFolder] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
 
   const referenceCompanyId = card?.company_id ?? activeCompanyIds[0] ?? null;
@@ -349,6 +350,14 @@ export default function MenukaartWorkspacePage({
               )}
             </CardContent>
           </Card>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => setAddingFromRecipeFolder(true)}
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            Receptmap toevoegen aan kaart
+          </Button>
         </div>
 
         <div className="space-y-4">
@@ -526,7 +535,226 @@ export default function MenukaartWorkspacePage({
           }}
         />
       )}
+
+      {addingFromRecipeFolder && (
+        <AddFromRecipeFolderModal
+          menuCardId={menuCardId}
+          cardFolders={folders}
+          existingItems={items}
+          onClose={() => setAddingFromRecipeFolder(false)}
+          onAdded={() => {
+            setAddingFromRecipeFolder(false);
+            reload();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * "Receptmap toevoegen aan kaart": kies een receptmap (categorie uit de
+ * keukenorganisatie) en een doelmap op deze kaart — alle gerechten uit
+ * de receptmap worden in één keer toegevoegd. Standaard wordt een
+ * kaartmap met dezelfde naam voorgesteld (zonder nummer-voorvoegsel
+ * zoals "01. "), maar een bestaande kaartmap kiezen kan ook. Gerechten
+ * die al ergens op de kaart staan worden overgeslagen. Eenrichtings-
+ * verkeer: daarna is de kaart autonoom (eigen prijzen/volgorde).
+ */
+function AddFromRecipeFolderModal({
+  menuCardId,
+  cardFolders,
+  existingItems,
+  onClose,
+  onAdded,
+}: {
+  menuCardId: string;
+  cardFolders: MenuFolder[];
+  existingItems: ItemWithRecipe[];
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [recipeFolders, setRecipeFolders] = useState<{ name: string; count: number }[]>([]);
+  const [chosenRecipeFolder, setChosenRecipeFolder] = useState("");
+  const [targetFolderId, setTargetFolderId] = useState<string>("__nieuw__");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("recipes")
+      .select("category")
+      .eq("recipe_kind", "gerecht")
+      .not("category", "is", null)
+      .then(({ data }) => {
+        const counts = new Map<string, number>();
+        for (const r of data ?? []) {
+          const c = r.category?.trim();
+          if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+        }
+        setRecipeFolders(
+          Array.from(counts.entries())
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => a.name.localeCompare(b.name, "nl"))
+        );
+      });
+  }, []);
+
+  function suggestedCardFolderName(recipeFolder: string): string {
+    // Nummer-voorvoegsels als "01. " zijn keukensortering; op de kaart
+    // toont de map zich zonder ("01. HS Lunch" → "HS Lunch").
+    return recipeFolder.replace(/^\d+\.\s*/, "").trim() || recipeFolder;
+  }
+
+  function handleChooseRecipeFolder(name: string) {
+    setChosenRecipeFolder(name);
+    if (name) setNewFolderName(suggestedCardFolderName(name));
+  }
+
+  async function handleAdd() {
+    if (!chosenRecipeFolder) return;
+    setSaving(true);
+    setError(null);
+    const supabase = createClient();
+
+    // 1. Doelmap bepalen (bestaand of nieuw)
+    let folderId = targetFolderId;
+    if (targetFolderId === "__nieuw__") {
+      const name = newFolderName.trim() || suggestedCardFolderName(chosenRecipeFolder);
+      const maxOrder = Math.max(0, ...cardFolders.map((f) => f.sort_order + 1));
+      const { data: newFolder, error: folderError } = await supabase
+        .from("menu_folders")
+        .insert({ menu_card_id: menuCardId, name, sort_order: maxOrder })
+        .select("id")
+        .single();
+      if (folderError || !newFolder) {
+        setError("Kan kaartmap niet aanmaken: " + (folderError?.message ?? "onbekende fout"));
+        setSaving(false);
+        return;
+      }
+      folderId = newFolder.id;
+    }
+
+    // 2. Alle gerechten uit de receptmap ophalen (gepagineerd — geen
+    // stille 1000-rijenlimiet)
+    const recipes: { id: string }[] = [];
+    let from = 0;
+    while (true) {
+      const { data: page } = await supabase
+        .from("recipes")
+        .select("id")
+        .eq("recipe_kind", "gerecht")
+        .eq("category", chosenRecipeFolder)
+        .order("name")
+        .range(from, from + 999);
+      if (!page || page.length === 0) break;
+      recipes.push(...page);
+      if (page.length < 1000) break;
+      from += 1000;
+    }
+
+    // 3. Gerechten die al ergens op deze kaart staan overslaan
+    const alreadyOnCard = new Set(existingItems.map((i) => i.recipe_id));
+    const toAdd = recipes.filter((r) => !alreadyOnCard.has(r.id));
+
+    if (toAdd.length > 0) {
+      const { count: existingCount } = await supabase
+        .from("menu_items")
+        .select("id", { count: "exact", head: true })
+        .eq("folder_id", folderId);
+      const startOrder = existingCount ?? 0;
+      const { error: insertError } = await supabase.from("menu_items").insert(
+        toAdd.map((r, i) => ({
+          folder_id: folderId,
+          recipe_id: r.id,
+          sort_order: startOrder + i,
+        }))
+      );
+      if (insertError) {
+        setError("Toevoegen mislukt: " + insertError.message);
+        setSaving(false);
+        return;
+      }
+    }
+
+    setSaving(false);
+    window.alert(
+      `${toAdd.length} gerecht(en) toegevoegd` +
+        (recipes.length - toAdd.length > 0
+          ? `, ${recipes.length - toAdd.length} overgeslagen (stond al op deze kaart).`
+          : ".")
+    );
+    onAdded();
+  }
+
+  return (
+    <Modal title="Receptmap toevoegen aan kaart" onClose={onClose}>
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-foreground">Receptmap</label>
+          <select
+            value={chosenRecipeFolder}
+            onChange={(e) => handleChooseRecipeFolder(e.target.value)}
+            className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+          >
+            <option value="">Kies een receptmap…</option>
+            {recipeFolders.map((f) => (
+              <option key={f.name} value={f.name}>
+                {f.name} ({f.count} gerechten)
+              </option>
+            ))}
+          </select>
+          {recipeFolders.length === 0 && (
+            <p className="mt-1 text-xs text-muted">
+              Nog geen receptmappen — geef recepten een map via het receptenoverzicht of de import.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-foreground">Naar kaartmap</label>
+          <select
+            value={targetFolderId}
+            onChange={(e) => setTargetFolderId(e.target.value)}
+            className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+          >
+            <option value="__nieuw__">Nieuwe kaartmap aanmaken</option>
+            {cardFolders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {targetFolderId === "__nieuw__" && (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">
+              Naam nieuwe kaartmap
+            </label>
+            <input
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="bv. Hoofdgerechten"
+              className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+            />
+          </div>
+        )}
+
+        {error && <p className="text-sm text-danger">{error}</p>}
+
+        <div className="flex gap-2">
+          <Button onClick={handleAdd} disabled={!chosenRecipeFolder || saving}>
+            {saving ? "Bezig…" : "Toevoegen aan kaart"}
+          </Button>
+          <Button variant="secondary" onClick={onClose}>
+            Annuleren
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -735,12 +963,31 @@ function AddRecipeModal({
   const [results, setResults] = useState<Recipe[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [recipeFolders, setRecipeFolders] = useState<string[]>([]);
+  const [recipeFolderFilter, setRecipeFolderFilter] = useState("");
+
+  useEffect(() => {
+    // Beschikbare receptmappen (categorieën) voor het filter
+    const supabase = createClient();
+    supabase
+      .from("recipes")
+      .select("category")
+      .eq("recipe_kind", "gerecht")
+      .not("category", "is", null)
+      .then(({ data }) => {
+        const unique = Array.from(
+          new Set((data ?? []).map((r) => r.category?.trim()).filter((c): c is string => !!c))
+        ).sort((a, b) => a.localeCompare(b, "nl"));
+        setRecipeFolders(unique);
+      });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
     const timeout = setTimeout(async () => {
       let q = supabase.from("recipes").select("*").eq("recipe_kind", "gerecht").order("name").limit(30);
+      if (recipeFolderFilter) q = q.eq("category", recipeFolderFilter);
       if (query.trim()) q = q.ilike("name", `%${query.trim()}%`);
       const { data } = await q;
       if (!cancelled) setResults((data as Recipe[]) ?? []);
@@ -749,7 +996,7 @@ function AddRecipeModal({
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [query]);
+  }, [query, recipeFolderFilter]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -782,6 +1029,20 @@ function AddRecipeModal({
   return (
     <Modal title="Gerecht toevoegen" onClose={onClose}>
       <div className="space-y-3">
+        {recipeFolders.length > 0 && (
+          <select
+            value={recipeFolderFilter}
+            onChange={(e) => setRecipeFolderFilter(e.target.value)}
+            className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+          >
+            <option value="">Alle receptmappen</option>
+            {recipeFolders.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
