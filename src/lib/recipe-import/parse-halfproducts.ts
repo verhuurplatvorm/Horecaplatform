@@ -12,6 +12,8 @@ export interface ParsedImportIngredient {
 export interface ParsedImportRecipe {
   name: string;
   externalId: string | null;
+  /** Mapnaam uit de bron (bv. "01. HS Lunch") — wordt de categorie/map van het recept. */
+  folderName: string | null;
   ingredients: ParsedImportIngredient[];
 }
 
@@ -61,6 +63,7 @@ export function parseHalfproductsExcel(buffer: Buffer): ParsedImportRecipe[] {
       current = {
         name,
         externalId: externalIdMatch ? externalIdMatch[1] : null,
+        folderName: null,
         ingredients: [],
       };
       awaitingColumnHeaderRow = true;
@@ -130,6 +133,7 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
     let nameCol = -1;
     let ingredientsCol = -1;
     let idCol = -1;
+    let mapCol = -1;
     for (let i = 0; i < Math.min(rows.length, 5); i++) {
       const headers = (rows[i] ?? []).map((h) =>
         String(h ?? "").trim().toLowerCase()
@@ -141,6 +145,7 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
         nameCol = n;
         ingredientsCol = ing;
         idCol = headers.indexOf("id");
+        mapCol = headers.indexOf("mapnaam");
         break;
       }
     }
@@ -175,6 +180,7 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
         recipes.push({
           name,
           externalId: idCol >= 0 ? cell(row, idCol) : null,
+          folderName: mapCol >= 0 ? cell(row, mapCol) : null,
           ingredients,
         });
       }

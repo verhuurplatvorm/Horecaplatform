@@ -35,6 +35,7 @@ export default function RecepturenPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeFolder, setActiveFolder] = useState<string>("__alle__");
 
   // Voor de kostprijsberekening is een concreet bedrijf nodig (recepten
   // kunnen groepsbreed of lokaal zijn, maar inkoopprijzen kunnen per
@@ -54,14 +55,30 @@ export default function RecepturenPage() {
       // Alleen gerechten — halfproducten hebben een eigen module
       // (spec: "Halfproducten mogen geen onderdeel zijn van de gewone
       // receptenlijst").
-      const { data, error: fetchError } = await supabase
-        .from("recipes")
-        .select(
-          "id, name, category, status, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit"
-        )
-        .eq("recipe_kind", "gerecht")
-        .order("name")
-        .limit(100);
+      // Gepagineerd ophalen — Supabase geeft maximaal 1000 rijen per
+      // query terug en een vaste limiet kapt de lijst stilzwijgend af.
+      const PAGE_SIZE = 1000;
+      const data: Recipe[] = [];
+      let fetchError = null;
+      let from = 0;
+      while (true) {
+        const { data: page, error: pageError } = await supabase
+          .from("recipes")
+          .select(
+            "id, name, category, status, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit"
+          )
+          .eq("recipe_kind", "gerecht")
+          .order("name")
+          .range(from, from + PAGE_SIZE - 1);
+        if (pageError) {
+          fetchError = pageError;
+          break;
+        }
+        if (!page || page.length === 0) break;
+        data.push(...(page as Recipe[]));
+        if (page.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
 
       if (cancelled) return;
       if (fetchError || !data) {
@@ -99,13 +116,27 @@ export default function RecepturenPage() {
   }, [referenceCompanyId, scopeLoading]);
 
   const q = query.trim().toLowerCase();
-  const filteredRecipes = q
+  const searchedRecipes = q
     ? recipes.filter((r) =>
         [r.name, r.category, r.status]
           .filter(Boolean)
           .some((field) => field!.toLowerCase().includes(q))
       )
     : recipes;
+
+  // Mappen (categorieën) als tabbladen: elk recept staat alleen in zijn
+  // eigen map, met "Alle mappen" als totaaloverzicht en "Zonder map"
+  // voor recepten zonder categorie.
+  const folders = Array.from(
+    new Set(recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c))
+  ).sort((a, b) => a.localeCompare(b, "nl"));
+  const hasUnfiled = recipes.some((r) => !r.category?.trim());
+  const filteredRecipes =
+    activeFolder === "__alle__"
+      ? searchedRecipes
+      : activeFolder === "__zonder__"
+        ? searchedRecipes.filter((r) => !r.category?.trim())
+        : searchedRecipes.filter((r) => r.category?.trim() === activeFolder);
 
   return (
     <>
@@ -134,6 +165,51 @@ export default function RecepturenPage() {
             </Button>
           </Link>
         </div>
+
+        {(folders.length > 0 || hasUnfiled) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveFolder("__alle__")}
+              className={`rounded-full px-3 py-1.5 text-sm ${
+                activeFolder === "__alle__"
+                  ? "bg-teal text-white"
+                  : "bg-surface text-muted hover:bg-background"
+              }`}
+            >
+              Alle mappen ({searchedRecipes.length})
+            </button>
+            {folders.map((folder) => {
+              const count = searchedRecipes.filter(
+                (r) => r.category?.trim() === folder
+              ).length;
+              return (
+                <button
+                  key={folder}
+                  onClick={() => setActiveFolder(folder)}
+                  className={`rounded-full px-3 py-1.5 text-sm ${
+                    activeFolder === folder
+                      ? "bg-teal text-white"
+                      : "bg-surface text-muted hover:bg-background"
+                  }`}
+                >
+                  {folder} ({count})
+                </button>
+              );
+            })}
+            {hasUnfiled && (
+              <button
+                onClick={() => setActiveFolder("__zonder__")}
+                className={`rounded-full px-3 py-1.5 text-sm ${
+                  activeFolder === "__zonder__"
+                    ? "bg-teal text-white"
+                    : "bg-surface text-muted hover:bg-background"
+                }`}
+              >
+                Zonder map ({searchedRecipes.filter((r) => !r.category?.trim()).length})
+              </button>
+            )}
+          </div>
+        )}
 
         <Card>
           <CardContent className="p-0">

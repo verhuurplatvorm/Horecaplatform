@@ -14,6 +14,8 @@ interface FinalizeIngredient {
 interface FinalizeRecipe {
   name: string;
   externalId: string | null;
+  /** Mapnaam uit het bronbestand — opgeslagen als categorie/map van het recept. */
+  folderName?: string | null;
   ingredients: FinalizeIngredient[];
   linkedRecipeId?: string | null; // koppel aan bestaand i.p.v. nieuw aanmaken
   skip?: boolean;
@@ -99,6 +101,7 @@ export async function POST(request: Request) {
         group_id: groupId,
         company_id: companyId || null,
         name: recipe.name,
+        category: recipe.folderName?.trim() || null,
         recipe_kind: recipeKind,
         status: "concept" as const,
         base_unit_id: unitIdByKey.get(inferBaseUnitKey(recipe.ingredients)) ?? null,

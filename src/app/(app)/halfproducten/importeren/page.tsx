@@ -24,6 +24,7 @@ interface ReviewIngredient {
 interface ReviewRecipe {
   name: string;
   externalId: string | null;
+  folderName?: string | null;
   ingredients: ReviewIngredient[];
   candidates: RecipeCandidate[];
   include: boolean;
@@ -130,6 +131,7 @@ export default function HalfproductenImporterenPage() {
           recipes: included.map((r) => ({
             name: r.name,
             externalId: r.externalId,
+            folderName: r.folderName ?? null,
             ingredients: r.ingredients,
             linkedRecipeId: r.linkedRecipeId,
           })),
@@ -257,6 +259,11 @@ export default function HalfproductenImporterenPage() {
                       {recipe.linkedRecipeId && !recipe.inFileDuplicate && (
                         <span className="rounded-full bg-teal/10 px-2 py-0.5 text-xs font-normal text-teal">
                           wordt gekoppeld aan bestaand
+                        </span>
+                      )}
+                      {recipe.folderName && (
+                        <span className="rounded-full bg-background px-2 py-0.5 text-xs font-normal text-muted">
+                          map: {recipe.folderName}
                         </span>
                       )}
                       {recipe.externalId && (
