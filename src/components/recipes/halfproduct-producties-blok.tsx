@@ -44,7 +44,29 @@ export function HalfproductIngredientenModule({
   const { activeCompanyIds } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
 
-  const [quantity, setQuantity] = useState(standardYield?.toString() ?? "");
+  // Schalen gebeurt intern altijd in de basiseenheid van het recept
+  // (ml/gram) — dat is ook wat registratie en voorraadboekingen
+  // verwachten. Getoond aan de gebruiker wordt de handzamere grotere
+  // eenheid (liter/kilo) wanneer die van toepassing is; "stuk" en
+  // andere eenheden blijven ongewijzigd.
+  const LARGER_UNIT: Record<string, { name: string; factor: number }> = {
+    milliliter: { name: "liter", factor: 1000 },
+    gram: { name: "kilogram", factor: 1000 },
+  };
+  const largerUnit = unitName ? LARGER_UNIT[unitName] : null;
+  const displayUnitName = largerUnit?.name ?? unitName;
+  const displayFactor = largerUnit?.factor ?? 1;
+
+  const [displayQuantity, setDisplayQuantity] = useState(
+    standardYield ? (standardYield / displayFactor).toString() : ""
+  );
+  // De echte, door registratie/voorraad gebruikte hoeveelheid — altijd
+  // in de basiseenheid van het recept. Afgerond op 6 decimalen om
+  // drijvendekomma-restjes (bv. 0,1 × 1000 = 100,00000000000001) te
+  // voorkomen in wat naar registratie/sticker doorgaat.
+  const quantity = (
+    Math.round(Number(displayQuantity || "0") * displayFactor * 1e6) / 1e6
+  ).toString();
   const [producedByUserId, setProducedByUserId] = useState("");
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [breakdown, setBreakdown] = useState<BreakdownLine[]>([]);
@@ -107,18 +129,19 @@ export function HalfproductIngredientenModule({
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">
-              Gewenste productiehoeveelheid ({unitName ?? "eenheid"})
+              Gewenste productiehoeveelheid ({displayUnitName ?? "eenheid"})
             </label>
             <input
               type="number"
               step="any"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
+              value={displayQuantity}
+              onChange={(e) => setDisplayQuantity(e.target.value)}
               className="input"
             />
             <p className="mt-1 text-xs text-muted">
-              Standaard {standardYield ?? "—"} {unitName ?? ""}. Ingrediënten en kostprijs
-              herberekenen automatisch evenredig.
+              Standaard {standardYield ? standardYield / displayFactor : "—"}{" "}
+              {displayUnitName ?? ""}. Ingrediënten en kostprijs herberekenen automatisch
+              evenredig.
             </p>
             {!standardYield && (
               <p className="mt-1 flex items-center gap-1 text-xs text-copper">
@@ -194,8 +217,10 @@ export function HalfproductIngredientenModule({
             <div className="text-sm">
               <span className="text-muted">Totale hoeveelheid:&nbsp;</span>
               <span className="font-semibold text-foreground">
-                {totalScaledQuantity.toLocaleString("nl-NL", { maximumFractionDigits: 3 })}{" "}
-                {unitName ?? ""}
+                {(totalScaledQuantity / displayFactor).toLocaleString("nl-NL", {
+                  maximumFractionDigits: 3,
+                })}{" "}
+                {displayUnitName ?? ""}
               </span>
               {linesWithConvertedQty.length < breakdown.length && (
                 <span className="ml-1 text-xs text-muted">
