@@ -60,18 +60,54 @@ export function HalfproductIngredientenModule({
   const [displayQuantity, setDisplayQuantity] = useState(
     standardYield ? (standardYield / displayFactor).toString() : ""
   );
-  // De echte, door registratie/voorraad gebruikte hoeveelheid — altijd
-  // in de basiseenheid van het recept. Afgerond op 6 decimalen om
-  // drijvendekomma-restjes (bv. 0,1 × 1000 = 100,00000000000001) te
-  // voorkomen in wat naar registratie/sticker doorgaat.
-  const quantity = (
-    Math.round(Number(displayQuantity || "0") * displayFactor * 1e6) / 1e6
-  ).toString();
+
+  // Twee manieren om te schalen: op een gewenste productiehoeveelheid
+  // (zoals voorheen), of op de beschikbare hoeveelheid van één
+  // ingrediënt — handig als bv. "we hebben nog 3 liter Room, hoeveel
+  // van dit halfproduct kunnen we daarmee maximaal maken?".
+  const [scaleMode, setScaleMode] = useState<"target" | "ingredient">("target");
+  const [scaleIngredientSortOrder, setScaleIngredientSortOrder] = useState<string>("");
+  const [availableAmount, setAvailableAmount] = useState("");
+
   const [producedByUserId, setProducedByUserId] = useState("");
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [breakdown, setBreakdown] = useState<BreakdownLine[]>([]);
 
-  const scale = standardYield && Number(quantity) > 0 ? Number(quantity) / standardYield : 1;
+  const scaleIngredientLine =
+    scaleMode === "ingredient"
+      ? breakdown.find((l) => l.sort_order.toString() === scaleIngredientSortOrder)
+      : undefined;
+
+  // De schaalfactor: bij "gewenste hoeveelheid" komt die uit de
+  // ingevulde productiehoeveelheid t.o.v. de standaardopbrengst; bij
+  // "beschikbaar ingrediënt" uit de verhouding tussen wat er beschikbaar
+  // is en wat het basisrecept van dat ingrediënt gebruikt. Zolang er
+  // geen geldige invoer is, blijft de schaal bewust "onbekend" (null) in
+  // plaats van stilzwijgend op 1 (= ongeschaald basisrecept) te vallen —
+  // anders lijkt het net of er al een keuze gemaakt is.
+  const scale: number | null =
+    scaleMode === "ingredient"
+      ? scaleIngredientLine && scaleIngredientLine.quantity > 0 && Number(availableAmount) > 0
+        ? Number(availableAmount) / scaleIngredientLine.quantity
+        : null
+      : standardYield && Number(displayQuantity) > 0
+        ? (Number(displayQuantity) * displayFactor) / standardYield
+        : null;
+  const effectiveScale = scale ?? 1;
+
+  // De hoeveelheid die uiteindelijk geregistreerd/op de sticker komt —
+  // altijd in de basiseenheid van het recept, ongeacht welke modus is
+  // gebruikt om de schaalfactor te bepalen. Afgerond op 6 decimalen om
+  // drijvendekomma-restjes te voorkomen.
+  const quantity =
+    standardYield && scale !== null
+      ? (Math.round(scale * standardYield * 1e6) / 1e6).toString()
+      : "0";
+  // Wat de "beschikbaar ingrediënt"-modus oplevert, terugvertaald naar
+  // de gebruikelijke productiehoeveelheid-eenheid — zodat de producent
+  // ook in deze modus meteen ziet hoeveel er maximaal gemaakt kan worden.
+  const resultingDisplayQuantity =
+    standardYield && scale !== null ? (scale * standardYield) / displayFactor : null;
 
   useEffect(() => {
     const supabase = createClient();
@@ -101,15 +137,15 @@ export function HalfproductIngredientenModule({
   }, [recipeId, referenceCompanyId]);
 
   const totalScaledCost = useMemo(
-    () => breakdown.reduce((sum, l) => sum + (l.line_cost ?? 0) * scale, 0),
-    [breakdown, scale]
+    () => breakdown.reduce((sum, l) => sum + (l.line_cost ?? 0) * effectiveScale, 0),
+    [breakdown, effectiveScale]
   );
 
   const linesWithConvertedQty = breakdown.filter((l) => l.quantity_in_recipe_unit !== null);
   const totalScaledQuantity = useMemo(
     () =>
-      linesWithConvertedQty.reduce((sum, l) => sum + (l.quantity_in_recipe_unit ?? 0) * scale, 0),
-    [linesWithConvertedQty, scale]
+      linesWithConvertedQty.reduce((sum, l) => sum + (l.quantity_in_recipe_unit ?? 0) * effectiveScale, 0),
+    [linesWithConvertedQty, effectiveScale]
   );
 
   const producedByName = users.find((u) => u.id === producedByUserId)?.full_name ?? "";
@@ -129,20 +165,32 @@ export function HalfproductIngredientenModule({
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">
-              Gewenste productiehoeveelheid ({displayUnitName ?? "eenheid"})
+              Schaalmethode
             </label>
-            <input
-              type="number"
-              step="any"
-              value={displayQuantity}
-              onChange={(e) => setDisplayQuantity(e.target.value)}
-              className="input"
-            />
-            <p className="mt-1 text-xs text-muted">
-              Standaard {standardYield ? standardYield / displayFactor : "—"}{" "}
-              {displayUnitName ?? ""}. Ingrediënten en kostprijs herberekenen automatisch
-              evenredig.
-            </p>
+            <div className="flex gap-1 rounded-md border border-border bg-background p-1">
+              <button
+                type="button"
+                onClick={() => setScaleMode("target")}
+                className={`flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                  scaleMode === "target"
+                    ? "bg-surface font-medium text-foreground shadow-sm"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                Gewenste hoeveelheid
+              </button>
+              <button
+                type="button"
+                onClick={() => setScaleMode("ingredient")}
+                className={`flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                  scaleMode === "ingredient"
+                    ? "bg-surface font-medium text-foreground shadow-sm"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                Op beschikbaar ingrediënt
+              </button>
+            </div>
             {!standardYield && (
               <p className="mt-1 flex items-center gap-1 text-xs text-copper">
                 <TriangleAlert className="h-3.5 w-3.5" />
@@ -178,6 +226,87 @@ export function HalfproductIngredientenModule({
           </div>
         </div>
 
+        {scaleMode === "target" ? (
+          <div className="max-w-sm">
+            <label className="mb-1 block text-sm font-medium text-foreground">
+              Gewenste productiehoeveelheid ({displayUnitName ?? "eenheid"})
+            </label>
+            <input
+              type="number"
+              step="any"
+              value={displayQuantity}
+              onChange={(e) => setDisplayQuantity(e.target.value)}
+              className="input"
+            />
+            <p className="mt-1 text-xs text-muted">
+              Standaard {standardYield ? standardYield / displayFactor : "—"}{" "}
+              {displayUnitName ?? ""}. Ingrediënten en kostprijs herberekenen automatisch
+              evenredig.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">
+                Ingrediënt
+              </label>
+              <select
+                value={scaleIngredientSortOrder}
+                onChange={(e) => {
+                  setScaleIngredientSortOrder(e.target.value);
+                  setAvailableAmount("");
+                }}
+                className="input"
+              >
+                <option value="">Kies een ingrediënt uit dit recept…</option>
+                {breakdown.map((line) => (
+                  <option key={line.sort_order} value={line.sort_order.toString()}>
+                    {line.ingredient_name ?? "—"}
+                    {line.unit_name ? ` (normaal ${line.quantity} ${line.unit_name})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">
+                Beschikbare hoeveelheid
+                {scaleIngredientLine?.unit_name ? ` (${scaleIngredientLine.unit_name})` : ""}
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={availableAmount}
+                onChange={(e) => setAvailableAmount(e.target.value)}
+                disabled={!scaleIngredientLine}
+                className="input"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              {scaleIngredientLine && Number(availableAmount) > 0 ? (
+                <p className="text-xs text-muted">
+                  Met <strong>{availableAmount} {scaleIngredientLine.unit_name}</strong>{" "}
+                  {scaleIngredientLine.ingredient_name} kan er maximaal{" "}
+                  <strong>
+                    {resultingDisplayQuantity !== null
+                      ? resultingDisplayQuantity.toLocaleString("nl-NL", {
+                          maximumFractionDigits: 3,
+                        })
+                      : "—"}{" "}
+                    {displayUnitName}
+                  </strong>{" "}
+                  van dit halfproduct gemaakt worden. Alle ingrediënten, de totale
+                  hoeveelheid en de kostprijs hieronder zijn hier al op herberekend.
+                </p>
+              ) : (
+                <p className="text-xs text-muted">
+                  Kies een ingrediënt en vul in hoeveel daarvan beschikbaar is — de
+                  maximaal haalbare productiehoeveelheid wordt dan automatisch berekend.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
 <table className="w-full text-sm">
           <thead>
@@ -193,11 +322,11 @@ export function HalfproductIngredientenModule({
               <tr key={line.sort_order} className="border-t border-border">
                 <td className="px-2 py-3 font-medium">{line.ingredient_name ?? "—"}</td>
                 <td className="px-2 py-3 tabular">
-                  {(line.quantity * scale).toLocaleString("nl-NL", { maximumFractionDigits: 3 })}
+                  {(line.quantity * effectiveScale).toLocaleString("nl-NL", { maximumFractionDigits: 3 })}
                 </td>
                 <td className="px-2 py-3 text-muted">{line.unit_name ?? "—"}</td>
                 <td className="px-2 py-3 tabular text-muted">
-                  {line.line_cost !== null ? `€ ${(line.line_cost * scale).toFixed(4)}` : "—"}
+                  {line.line_cost !== null ? `€ ${(line.line_cost * effectiveScale).toFixed(4)}` : "—"}
                 </td>
               </tr>
             ))}
@@ -233,7 +362,9 @@ export function HalfproductIngredientenModule({
               <span className="mx-2 text-muted">·</span>
               <span className="text-muted">Totale kostprijs:&nbsp;</span>
               <span className="font-semibold text-foreground">€ {totalScaledCost.toFixed(2)}</span>
-              {scale !== 1 && <span className="ml-1 text-muted">(×{scale.toFixed(2)})</span>}
+              {effectiveScale !== 1 && (
+                <span className="ml-1 text-muted">(×{effectiveScale.toFixed(2)})</span>
+              )}
             </div>
             <Link href={canRegister ? stickerHref : "#"} aria-disabled={!canRegister}>
               <Button type="button" disabled={!canRegister}>
