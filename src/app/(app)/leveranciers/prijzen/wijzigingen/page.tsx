@@ -111,6 +111,7 @@ export default function PrijswijzigingenPage() {
             {(["alle", "duurder", "goedkoper", "ongewijzigd"] as const).map((d) => (
               <button
                 key={d}
+                type="button"
                 onClick={() => setDirection(d)}
                 className={cn(
                   "rounded px-3 py-1 text-xs font-medium capitalize",
@@ -155,6 +156,7 @@ export default function PrijswijzigingenPage() {
                   <th className="px-5 py-3 font-medium">Bedrijf</th>
                   <th className="px-5 py-3 font-medium">Oude prijs</th>
                   <th className="px-5 py-3 font-medium">Nieuwe prijs</th>
+                  <th className="px-5 py-3 font-medium">Inkoopprijs (verpakking)</th>
                   <th className="px-5 py-3 font-medium">Wijziging</th>
                   <th className="px-5 py-3 font-medium">Ingangsdatum</th>
                   <th className="px-5 py-3 font-medium">Reden</th>
@@ -171,6 +173,24 @@ export default function PrijswijzigingenPage() {
                     </td>
                     <td className="px-5 py-3 tabular">
                       € {c.new_price_per_base_unit?.toFixed(4)}
+                    </td>
+                    <td className="px-5 py-3 tabular text-muted">
+                      {c.old_purchase_price !== null && (
+                        <>
+                          <span className="line-through">
+                            € {c.old_purchase_price.toFixed(2)}
+                          </span>
+                          {" → "}
+                        </>
+                      )}
+                      <span className="font-medium text-foreground">
+                        € {c.new_purchase_price.toFixed(2)}
+                      </span>
+                      {c.new_packaging_description && (
+                        <span className="ml-1 text-xs">
+                          ({c.new_packaging_description})
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {c.deltaPct === null || c.deltaPct === 0 ? (
@@ -195,7 +215,7 @@ export default function PrijswijzigingenPage() {
                 ))}
                 {filtered.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-6 text-center text-muted">
                       Geen prijswijzigingen gevonden.
                     </td>
                   </tr>

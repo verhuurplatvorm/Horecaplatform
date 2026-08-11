@@ -315,11 +315,15 @@ export type PriceChangeHistory = {
   supplier_id: string;
   company_id: string | null;
   new_purchase_price: number;
+  new_packaging_description: string | null;
+  new_packaging_unit_count: number | null;
   new_price_per_base_unit: number | null;
   valid_from: string;
   change_reason: string | null;
   is_contract_price: boolean;
   old_purchase_price: number | null;
+  old_packaging_description: string | null;
+  old_packaging_unit_count: number | null;
   old_price_per_base_unit: number | null;
 }
 
