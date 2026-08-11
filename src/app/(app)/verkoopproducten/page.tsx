@@ -119,7 +119,8 @@ export default function VerkoopproductenPage() {
 
         <Card>
           <CardContent className="p-0">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+<table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Verkoopnaam</th>
@@ -226,6 +227,7 @@ export default function VerkoopproductenPage() {
                 )}
               </tbody>
             </table>
+</div>
           </CardContent>
         </Card>
         <p className="text-xs text-muted">

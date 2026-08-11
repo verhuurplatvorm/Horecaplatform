@@ -208,7 +208,8 @@ export function RoleForm({ initialRole, initialPermissions = [] }: RoleFormProps
           <CardTitle>Rechten per onderdeel</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+<table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-muted">
                 <th className="px-5 py-3 font-medium">Onderdeel</th>
@@ -236,6 +237,7 @@ export function RoleForm({ initialRole, initialPermissions = [] }: RoleFormProps
               ))}
             </tbody>
           </table>
+</div>
         </CardContent>
         <CardContent className="pt-0">
           <p className="text-xs text-muted">

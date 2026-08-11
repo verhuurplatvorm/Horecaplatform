@@ -113,7 +113,8 @@ export function ProductPricing({
         <CardTitle>Leveranciersprijzen vergelijken</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+<table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Leverancier</th>
@@ -189,6 +190,7 @@ export function ProductPricing({
             )}
           </tbody>
         </table>
+</div>
         {rows.length > 0 && manualPrice !== null && (
           <p className="px-5 pb-4 pt-2 text-xs text-muted">
             Dit ingrediënt heeft ook een eigen kostprijs (€ {manualPrice.toFixed(4)} /{" "}

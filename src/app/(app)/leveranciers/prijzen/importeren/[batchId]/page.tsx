@@ -526,7 +526,8 @@ export default function ImportReviewPage({
                     {applyReport.priceChanges.filter((c) => c.oldPrice !== null).length})
                   </p>
                   <div className="max-h-64 overflow-y-auto rounded-md border border-border">
-                    <table className="w-full text-xs">
+                    <div className="overflow-x-auto">
+<table className="w-full text-xs">
                       <thead>
                         <tr className="sticky top-0 bg-surface text-left text-muted">
                           <th className="px-3 py-2 font-medium">Ingrediënt</th>
@@ -565,6 +566,7 @@ export default function ImportReviewPage({
                           ))}
                       </tbody>
                     </table>
+</div>
                   </div>
                 </div>
               )}
@@ -673,7 +675,8 @@ export default function ImportReviewPage({
 
         <Card>
           <CardContent className="p-0">
-            <table id="prijsregels-tabel" className="w-full text-sm">
+            <div className="overflow-x-auto">
+<table id="prijsregels-tabel" className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Regel</th>
@@ -719,6 +722,7 @@ export default function ImportReviewPage({
                 ))}
               </tbody>
             </table>
+</div>
           </CardContent>
         </Card>
 

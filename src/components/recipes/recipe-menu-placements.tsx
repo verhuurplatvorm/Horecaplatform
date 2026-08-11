@@ -94,7 +94,8 @@ export function RecipeMenuPlacements({
         </Button>
       </CardHeader>
       <CardContent className="p-0">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+<table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Menukaart</th>
@@ -173,6 +174,7 @@ export function RecipeMenuPlacements({
             )}
           </tbody>
         </table>
+</div>
       </CardContent>
 
       {editing && (

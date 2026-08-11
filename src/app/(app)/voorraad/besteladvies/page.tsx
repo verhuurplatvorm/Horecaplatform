@@ -161,7 +161,8 @@ export default function BesteladviesPage() {
                       {supplierName}
                     </p>
                   </div>
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+<table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
                         <th className="px-5 py-3 font-medium">Artikel</th>
@@ -204,6 +205,7 @@ export default function BesteladviesPage() {
                       ))}
                     </tbody>
                   </table>
+</div>
                 </CardContent>
               </Card>
             ))}

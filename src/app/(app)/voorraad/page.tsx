@@ -177,7 +177,7 @@ export default function ProductiesPage() {
           </p>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="relative max-w-sm flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                 <input
@@ -204,7 +204,8 @@ export default function ProductiesPage() {
 
             <Card>
               <CardContent className="p-0">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+<table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-muted">
                       <th className="px-5 py-3 font-medium">Halfproduct</th>
@@ -287,6 +288,7 @@ export default function ProductiesPage() {
                     )}
                   </tbody>
                 </table>
+</div>
               </CardContent>
             </Card>
           </>

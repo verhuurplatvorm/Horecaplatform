@@ -387,7 +387,8 @@ export default function NieuweStickerPage({
                   Nog geen eerdere producties geregistreerd voor dit halfproduct.
                 </p>
               ) : (
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+<table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-muted">
                       <th className="px-5 py-3 font-medium">Datum</th>
@@ -413,6 +414,7 @@ export default function NieuweStickerPage({
                     ))}
                   </tbody>
                 </table>
+</div>
               )}
             </CardContent>
           </Card>

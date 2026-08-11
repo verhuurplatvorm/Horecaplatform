@@ -159,7 +159,8 @@ export default function ProductenOpschonenPage() {
             ) : flaggedPrices.length === 0 ? (
               <p className="text-sm text-muted">Niets meer te controleren.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+<table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-muted">
                     <th className="py-2 font-medium">Ingrediënt</th>
@@ -181,6 +182,7 @@ export default function ProductenOpschonenPage() {
                   ))}
                 </tbody>
               </table>
+</div>
             )}
           </CardContent>
         </Card>
@@ -289,7 +291,8 @@ function CandidateCard({
         </p>
 
         {prices.length > 0 && (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+<table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-muted">
                 <th className="py-2 font-medium">Leverancier</th>
@@ -323,6 +326,7 @@ function CandidateCard({
               ))}
             </tbody>
           </table>
+</div>
         )}
 
         {error && <p className="text-sm text-danger">{error}</p>}

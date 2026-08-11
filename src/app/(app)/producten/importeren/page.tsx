@@ -232,7 +232,8 @@ export default function ProductenImporterenPage() {
                     {result.priceChangesTruncated ? "+" : ""})
                   </p>
                   <div className="max-h-64 overflow-y-auto rounded-md border border-border">
-                    <table className="w-full text-xs">
+                    <div className="overflow-x-auto">
+<table className="w-full text-xs">
                       <thead>
                         <tr className="sticky top-0 bg-surface text-left text-muted">
                           <th className="px-3 py-2 font-medium">Ingrediënt</th>
@@ -265,6 +266,7 @@ export default function ProductenImporterenPage() {
                         ))}
                       </tbody>
                     </table>
+</div>
                   </div>
                 </div>
               )}
@@ -335,7 +337,8 @@ export default function ProductenImporterenPage() {
 
           <Card>
             <CardContent className="p-0">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+<table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-muted">
                     <th className="px-5 py-3 font-medium">Leverancier in bestand</th>
@@ -380,6 +383,7 @@ export default function ProductenImporterenPage() {
                   ))}
                 </tbody>
               </table>
+</div>
             </CardContent>
           </Card>
 

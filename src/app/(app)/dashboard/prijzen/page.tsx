@@ -290,7 +290,8 @@ function ChangeTable({ title, rows }: { title: string; rows: IngredientChange[] 
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+<table className="w-full text-sm">
           <tbody>
             {rows.map((c) => (
               <IngredientRow key={c.id} change={c} />
@@ -302,6 +303,7 @@ function ChangeTable({ title, rows }: { title: string; rows: IngredientChange[] 
             )}
           </tbody>
         </table>
+</div>
       </CardContent>
     </Card>
   );
@@ -354,7 +356,8 @@ function RecipeChangeTable({
 }) {
   const sorted = [...rows].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+<table className="w-full text-sm">
       <thead>
         <tr className="text-left text-xs uppercase tracking-wide text-muted">
           <th className="px-5 py-3 font-medium">Naam</th>
@@ -420,5 +423,6 @@ function RecipeChangeTable({
         )}
       </tbody>
     </table>
+</div>
   );
 }

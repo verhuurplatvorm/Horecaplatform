@@ -63,7 +63,8 @@ export default function ProductiesPage({
       <main className="p-6 space-y-4">
         <Card>
           <CardContent className="p-0">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+<table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Datum</th>
@@ -103,6 +104,7 @@ export default function ProductiesPage({
                 )}
               </tbody>
             </table>
+</div>
           </CardContent>
         </Card>
       </main>

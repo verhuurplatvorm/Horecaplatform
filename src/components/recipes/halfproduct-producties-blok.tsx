@@ -178,7 +178,8 @@ export function HalfproductIngredientenModule({
           </div>
         </div>
 
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+<table className="w-full text-sm">
           <thead>
             <tr className="border-t border-border text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-2 py-3 font-medium">Ingrediënt</th>
@@ -211,6 +212,7 @@ export function HalfproductIngredientenModule({
             )}
           </tbody>
         </table>
+</div>
 
         {breakdown.length > 0 && (
           <div className="flex items-center justify-between border-t border-border pt-3">
@@ -356,7 +358,8 @@ export function ProductiesGeschiedenis({
         <CardTitle>Producties</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+<table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Batchnummer</th>
@@ -402,6 +405,7 @@ export function ProductiesGeschiedenis({
             )}
           </tbody>
         </table>
+</div>
       </CardContent>
     </Card>
   );

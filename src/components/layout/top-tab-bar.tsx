@@ -2,19 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_TABS, findTabForPath } from "@/lib/nav-structure";
 import { usePermissions } from "@/components/permissions/permissions-context";
+import { useMobileNav } from "@/components/layout/mobile-nav-context";
 
 /**
  * Volledige-breedte tabbalk bovenaan het scherm voor de vijf
  * hoofdonderdelen (Keuken / Inkoop & Voorraad / Productie / Financieel /
  * Beheer). Vervangt de eerdere, te krappe bolletjes-tabs binnen de
- * smalle zijbalk.
+ * smalle zijbalk. Op mobiel/tablet (< md) staat er links een
+ * hamburger-knop die het zijmenu opent, aangezien de zijbalk daar niet
+ * permanent zichtbaar is.
  */
 export function TopTabBar() {
   const pathname = usePathname() ?? "";
   const { can, loading } = usePermissions();
+  const { toggle } = useMobileNav();
   const activeTab = findTabForPath(pathname);
 
   const visibleTabs = NAV_TABS.filter((tab) =>
@@ -23,15 +28,29 @@ export function TopTabBar() {
 
   if (loading || visibleTabs.length === 0) {
     return (
-      <div className="flex h-12 shrink-0 items-center border-b border-border bg-surface px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 md:px-4">
+        <button
+          onClick={toggle}
+          className="rounded-md p-1.5 text-muted hover:bg-background md:hidden"
+          aria-label="Menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
         <span className="text-sm font-semibold text-foreground">Horeca Platform</span>
       </div>
     );
   }
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-4">
-      <span className="mr-4 shrink-0 text-sm font-semibold text-foreground">
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3 md:px-4">
+      <button
+        onClick={toggle}
+        className="mr-1 shrink-0 rounded-md p-1.5 text-muted hover:bg-background md:hidden"
+        aria-label="Menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+      <span className="mr-4 hidden shrink-0 text-sm font-semibold text-foreground sm:block">
         Horeca Platform
       </span>
       <nav className="flex h-full items-stretch gap-1 overflow-x-auto">

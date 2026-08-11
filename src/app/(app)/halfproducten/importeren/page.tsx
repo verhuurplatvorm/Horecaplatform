@@ -175,7 +175,8 @@ export default function HalfproductenImporterenPage() {
           </Card>
           <Card>
             <CardContent className="p-0">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+<table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-muted">
                     <th className="px-5 py-3 font-medium">Naam</th>
@@ -219,6 +220,7 @@ export default function HalfproductenImporterenPage() {
                   ))}
                 </tbody>
               </table>
+</div>
             </CardContent>
           </Card>
           <Button variant="secondary" onClick={() => router.push("/halfproducten")}>
@@ -247,7 +249,7 @@ export default function HalfproductenImporterenPage() {
             {recipes.map((recipe, i) => (
               <Card key={i}>
                 <CardContent className="space-y-2 py-4">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <label className="flex items-center gap-2 font-medium text-foreground">
                       <input
                         type="checkbox"

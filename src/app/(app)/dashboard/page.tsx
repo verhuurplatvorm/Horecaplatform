@@ -91,7 +91,8 @@ export default function DashboardPage() {
             <CardTitle>Bedrijven in de groep</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+<table className="w-full text-sm">
               <thead>
                 <tr className="border-t border-border text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-2 font-medium">Bedrijf</th>
@@ -136,6 +137,7 @@ export default function DashboardPage() {
                 )}
               </tbody>
             </table>
+</div>
           </CardContent>
         </Card>
 

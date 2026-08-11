@@ -310,7 +310,7 @@ export default function MenukaartWorkspacePage({
   return (
     <>
       <Topbar title={card.name} />
-      <main className="grid grid-cols-[280px_1fr] gap-4 p-6">
+      <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[280px_1fr] md:p-6">
         <div className="space-y-3">
           <div className="flex gap-2">
             <Link href={`/menukaarten/${menuCardId}/instellingen`} className="flex-1">
@@ -387,7 +387,8 @@ export default function MenukaartWorkspacePage({
 
               <Card>
                 <CardContent className="p-0">
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+<table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
                         <th className="px-5 py-3 font-medium">Naam op kaart</th>
@@ -517,6 +518,7 @@ export default function MenukaartWorkspacePage({
                       )}
                     </tbody>
                   </table>
+</div>
                 </CardContent>
               </Card>
             </>
