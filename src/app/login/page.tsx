@@ -62,7 +62,7 @@ function LoginForm() {
     <main className="flex min-h-screen items-center justify-center bg-navy px-4">
       <div className="w-full max-w-sm rounded-lg border border-white/10 bg-navy-light p-8">
         <p className="text-sm font-semibold tracking-wide text-white">
-          Horeca Platform
+          Culilogic
         </p>
         <h1 className="mt-1 text-xl font-semibold text-white">Inloggen</h1>
 

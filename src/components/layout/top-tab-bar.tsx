@@ -36,7 +36,7 @@ export function TopTabBar() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <span className="text-sm font-semibold text-foreground">Horeca Platform</span>
+        <span className="text-sm font-semibold text-foreground">Culilogic</span>
       </div>
     );
   }
@@ -51,7 +51,7 @@ export function TopTabBar() {
         <Menu className="h-5 w-5" />
       </button>
       <span className="mr-4 hidden shrink-0 text-sm font-semibold text-foreground sm:block">
-        Horeca Platform
+        Culilogic
       </span>
       <nav className="flex h-full items-stretch gap-1 overflow-x-auto">
         {visibleTabs.map((tab) => {
