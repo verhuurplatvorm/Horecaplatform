@@ -7,6 +7,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import type { Recipe } from "@/lib/types/database";
 
@@ -31,11 +32,15 @@ interface RecipeWithCost extends RecipeListItem {
 export default function RecepturenPage() {
   const { activeCompanyIds, scope, companies, loading: scopeLoading } =
     useCompanyScope();
+  const { can } = usePermissions();
+  const canViewFinancial = can("recepturen").canViewFinancial;
   const [recipes, setRecipes] = useState<RecipeWithCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [activeFolder, setActiveFolder] = useState<string>("__alle__");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Voor de kostprijsberekening is een concreet bedrijf nodig (recepten
   // kunnen groepsbreed of lokaal zijn, maar inkoopprijzen kunnen per
@@ -202,6 +207,61 @@ export default function RecepturenPage() {
     setActiveFolder("__alle__");
   }
 
+  // Bulkacties: meerdere recepten tegelijk naar een map verplaatsen of
+  // archiveren, in plaats van rij voor rij.
+  async function bulkMoveToFolder(targetCategory: string | null) {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    const ids = [...selectedIds];
+    const { error: moveError } = await supabase
+      .from("recipes")
+      .update({ category: targetCategory })
+      .in("id", ids);
+    setBulkBusy(false);
+    if (moveError) {
+      window.alert("Verplaatsen mislukt: " + moveError.message);
+      return;
+    }
+    setRecipes((prev) =>
+      prev.map((r) => (ids.includes(r.id) ? { ...r, category: targetCategory } : r))
+    );
+    setSelectedIds(new Set());
+  }
+
+  async function bulkArchive() {
+    if (selectedIds.size === 0) return;
+    const ok = window.confirm(
+      `${selectedIds.size} recept(en) archiveren? Ze blijven bewaard, maar krijgen status "vervallen".`
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    const ids = [...selectedIds];
+    const { error: archiveError } = await supabase
+      .from("recipes")
+      .update({ status: "vervallen" as const })
+      .in("id", ids);
+    setBulkBusy(false);
+    if (archiveError) {
+      window.alert("Archiveren mislukt: " + archiveError.message);
+      return;
+    }
+    setRecipes((prev) =>
+      prev.map((r) => (ids.includes(r.id) ? { ...r, status: "vervallen" } : r))
+    );
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const q = query.trim().toLowerCase();
   const searchedRecipes = q
     ? recipes.filter((r) =>
@@ -308,18 +368,80 @@ export default function RecepturenPage() {
           </div>
         )}
 
+        {selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-teal bg-teal/5 px-3 py-2 text-sm">
+            <span className="font-medium text-foreground">
+              {selectedIds.size} geselecteerd
+            </span>
+            <select
+              disabled={bulkBusy}
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value)
+                  bulkMoveToFolder(e.target.value === "__zonder__" ? null : e.target.value);
+                e.target.value = "";
+              }}
+              className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+            >
+              <option value="" disabled>
+                Verplaats naar map…
+              </option>
+              <option value="__zonder__">Zonder map</option>
+              {folders.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={bulkBusy}
+              onClick={bulkArchive}
+              className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-background"
+            >
+              Archiveren
+            </button>
+            <button
+              disabled={bulkBusy}
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-auto text-xs text-muted hover:text-foreground"
+            >
+              Selectie opheffen
+            </button>
+          </div>
+        )}
+
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
 <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="w-8 px-5 py-3">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredRecipes.length > 0 &&
+                        filteredRecipes.every((r) => selectedIds.has(r.id))
+                      }
+                      onChange={(e) =>
+                        setSelectedIds(
+                          e.target.checked
+                            ? new Set(filteredRecipes.map((r) => r.id))
+                            : new Set()
+                        )
+                      }
+                    />
+                  </th>
                   <th className="px-5 py-3 font-medium">Naam</th>
                   <th className="px-5 py-3 font-medium">Categorie</th>
                   <th className="px-5 py-3 font-medium">Bereik</th>
-                  <th className="px-5 py-3 font-medium">Kostprijs</th>
+                  {canViewFinancial && (
+                    <th className="px-5 py-3 font-medium">Kostprijs</th>
+                  )}
                   <th className="px-5 py-3 font-medium">Verkoopprijs</th>
-                  <th className="px-5 py-3 font-medium">Foodcost %</th>
+                  {canViewFinancial && (
+                    <th className="px-5 py-3 font-medium">Foodcost %</th>
+                  )}
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
@@ -336,6 +458,13 @@ export default function RecepturenPage() {
                       : null;
                   return (
                     <tr key={r.id} className="border-t border-border">
+                      <td className="px-5 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                        />
+                      </td>
                       <td className="px-5 py-3 font-medium">
                         <Link
                           href={`/recepturen/${r.id}/bewerken`}
@@ -348,29 +477,33 @@ export default function RecepturenPage() {
                       <td className="px-5 py-3 text-muted">
                         {r.is_central ? "Centrale standaard" : "Lokale variant"}
                       </td>
-                      <td className="px-5 py-3 tabular">
-                        {loading
-                          ? "…"
-                          : r.costPrice !== null
-                          ? `€ ${r.costPrice.toFixed(2)}`
-                          : "—"}
-                      </td>
+                      {canViewFinancial && (
+                        <td className="px-5 py-3 tabular">
+                          {loading
+                            ? "…"
+                            : r.costPrice !== null
+                            ? `€ ${r.costPrice.toFixed(2)}`
+                            : "—"}
+                        </td>
+                      )}
                       <td className="px-5 py-3 tabular">
                         {r.sales_price ? `€ ${r.sales_price.toFixed(2)}` : "—"}
                       </td>
-                      <td className="px-5 py-3 tabular">
-                        {foodCostPct !== null ? (
-                          <span
-                            className={
-                              foodCostPct > 33 ? "text-danger" : "text-success"
-                            }
-                          >
-                            {foodCostPct.toFixed(1)}%
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
+                      {canViewFinancial && (
+                        <td className="px-5 py-3 tabular">
+                          {foodCostPct !== null ? (
+                            <span
+                              className={
+                                foodCostPct > 33 ? "text-danger" : "text-success"
+                              }
+                            >
+                              {foodCostPct.toFixed(1)}%
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      )}
                       <td className="px-5 py-3">
                         <StatusBadge status={r.status} />
                       </td>
@@ -388,7 +521,7 @@ export default function RecepturenPage() {
                 })}
                 {filteredRecipes.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={canViewFinancial ? 9 : 7} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
                         : q

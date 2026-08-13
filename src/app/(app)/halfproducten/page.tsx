@@ -19,6 +19,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,8 @@ const DRAG_TYPE = "text/halfproduct-id";
 
 export default function HalfproductenPage() {
   const { activeCompanyIds, loading: scopeLoading } = useCompanyScope();
+  const { can } = usePermissions();
+  const canViewFinancial = can("halfproducten").canViewFinancial;
   const referenceCompanyId = activeCompanyIds[0] ?? null;
 
   const [rows, setRows] = useState<HalfproductRow[]>([]);
@@ -61,6 +64,8 @@ export default function HalfproductenPage() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [showArchived, setShowArchived] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -230,8 +235,7 @@ export default function HalfproductenPage() {
       "Map",
       "Opbrengst",
       "Eenheid",
-      "Kostprijs per basiseenheid",
-      "Totale productiekostprijs",
+      ...(canViewFinancial ? ["Kostprijs per basiseenheid", "Totale productiekostprijs"] : []),
       "Status",
       "Laatst gewijzigd",
       "Aantal gekoppelde gerechten",
@@ -243,8 +247,9 @@ export default function HalfproductenPage() {
       folderName(r.halfproduct_folder_id),
       r.yield_quantity ?? "",
       r.unitName ?? "",
-      r.costPerBaseUnit?.toFixed(4) ?? "",
-      r.costPrice?.toFixed(2) ?? "",
+      ...(canViewFinancial
+        ? [r.costPerBaseUnit?.toFixed(4) ?? "", r.costPrice?.toFixed(2) ?? ""]
+        : []),
       r.status,
       new Date(r.updated_at).toLocaleDateString("nl-NL"),
       r.usageCount,
@@ -344,6 +349,63 @@ export default function HalfproductenPage() {
         r.id === recipeId ? { ...r, halfproduct_folder_id: targetFolderId } : r
       )
     );
+  }
+
+  // Bulkacties: meerdere halfproducten tegelijk naar een map verplaatsen
+  // of archiveren, zodat je niet elke rij apart hoeft te bewerken.
+  async function bulkMoveToFolder(targetFolderId: string | null) {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    const ids = [...selectedIds];
+    const { error } = await supabase
+      .from("recipes")
+      .update({ halfproduct_folder_id: targetFolderId })
+      .in("id", ids);
+    setBulkBusy(false);
+    if (error) {
+      window.alert("Verplaatsen mislukt: " + error.message);
+      return;
+    }
+    setRows((prev) =>
+      prev.map((r) =>
+        ids.includes(r.id) ? { ...r, halfproduct_folder_id: targetFolderId } : r
+      )
+    );
+    setSelectedIds(new Set());
+  }
+
+  async function bulkArchive() {
+    if (selectedIds.size === 0) return;
+    const ok = window.confirm(
+      `${selectedIds.size} halfproduct(en) archiveren? Ze blijven bewaard en zichtbaar via "Toon gearchiveerd", maar verdwijnen uit het normale overzicht.`
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    const ids = [...selectedIds];
+    const { error } = await supabase
+      .from("recipes")
+      .update({ status: "vervallen" as const })
+      .in("id", ids);
+    setBulkBusy(false);
+    if (error) {
+      window.alert("Archiveren mislukt: " + error.message);
+      return;
+    }
+    setRows((prev) =>
+      prev.map((r) => (ids.includes(r.id) ? { ...r, status: "vervallen" } : r))
+    );
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   const filteredRows = (() => {
@@ -476,12 +538,67 @@ export default function HalfproductenPage() {
             </Link>
           </div>
 
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-teal bg-teal/5 px-3 py-2 text-sm">
+              <span className="font-medium text-foreground">
+                {selectedIds.size} geselecteerd
+              </span>
+              <select
+                disabled={bulkBusy}
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) bulkMoveToFolder(e.target.value === "__zonder__" ? null : e.target.value);
+                  e.target.value = "";
+                }}
+                className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+              >
+                <option value="" disabled>
+                  Verplaats naar map…
+                </option>
+                <option value="__zonder__">Zonder map</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={bulkBusy}
+                onClick={bulkArchive}
+                className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-background"
+              >
+                Archiveren
+              </button>
+              <button
+                disabled={bulkBusy}
+                onClick={() => setSelectedIds(new Set())}
+                className="ml-auto text-xs text-muted hover:text-foreground"
+              >
+                Selectie opheffen
+              </button>
+            </div>
+          )}
+
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
 <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                    <th className="w-8 px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredRows.length > 0 &&
+                          filteredRows.every((r) => selectedIds.has(r.id))
+                        }
+                        onChange={(e) =>
+                          setSelectedIds(
+                            e.target.checked ? new Set(filteredRows.map((r) => r.id)) : new Set()
+                          )
+                        }
+                      />
+                    </th>
                     <th className="w-8 px-3 py-3"></th>
                     <th className="w-6 px-1 py-3"></th>
                     <th
@@ -492,13 +609,17 @@ export default function HalfproductenPage() {
                     </th>
                     <th className="px-2 py-3 font-medium">Map</th>
                     <th className="px-2 py-3 font-medium">Opbrengst</th>
-                    <th
-                      className="cursor-pointer px-2 py-3 font-medium"
-                      onClick={() => toggleSort("costPerBaseUnit")}
-                    >
-                      Kostprijs/basiseenheid
-                    </th>
-                    <th className="px-2 py-3 font-medium">Totale kostprijs</th>
+                    {canViewFinancial && (
+                      <>
+                        <th
+                          className="cursor-pointer px-2 py-3 font-medium"
+                          onClick={() => toggleSort("costPerBaseUnit")}
+                        >
+                          Kostprijs/basiseenheid
+                        </th>
+                        <th className="px-2 py-3 font-medium">Totale kostprijs</th>
+                      </>
+                    )}
                     <th
                       className="cursor-pointer px-2 py-3 font-medium"
                       onClick={() => toggleSort("usageCount")}
@@ -521,6 +642,13 @@ export default function HalfproductenPage() {
                       key={r.id}
                       className="border-t border-border hover:bg-background"
                     >
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                        />
+                      </td>
                       <td className="px-3 py-3">
                         <button onClick={() => toggleFavorite(r.id, r.isFavorite)}>
                           <Star
@@ -572,14 +700,18 @@ export default function HalfproductenPage() {
                       <td className="px-2 py-3 tabular text-muted">
                         {r.yield_quantity ?? "—"} {r.unitName ?? ""}
                       </td>
-                      <td className="px-2 py-3 tabular">
-                        {r.costPerBaseUnit !== null
-                          ? `€ ${r.costPerBaseUnit.toFixed(4)}`
-                          : "—"}
-                      </td>
-                      <td className="px-2 py-3 tabular">
-                        {r.costPrice !== null ? `€ ${r.costPrice.toFixed(2)}` : "—"}
-                      </td>
+                      {canViewFinancial && (
+                        <>
+                          <td className="px-2 py-3 tabular">
+                            {r.costPerBaseUnit !== null
+                              ? `€ ${r.costPerBaseUnit.toFixed(4)}`
+                              : "—"}
+                          </td>
+                          <td className="px-2 py-3 tabular">
+                            {r.costPrice !== null ? `€ ${r.costPrice.toFixed(2)}` : "—"}
+                          </td>
+                        </>
+                      )}
                       <td className="px-2 py-3 tabular">{r.usageCount}</td>
                       <td className="px-2 py-3">
                         <StatusBadge status={r.status} />
@@ -611,7 +743,7 @@ export default function HalfproductenPage() {
                   ))}
                   {filteredRows.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={10} className="px-5 py-6 text-center text-muted">
+                      <td colSpan={canViewFinancial ? 11 : 9} className="px-5 py-6 text-center text-muted">
                         Nog geen halfproducten. Maak het eerste aan, of voeg er
                         een toe via de zoekfunctie binnen een gerecht.
                       </td>

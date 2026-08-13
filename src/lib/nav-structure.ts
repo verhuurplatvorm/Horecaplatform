@@ -9,10 +9,11 @@ import {
   Users,
   UtensilsCrossed,
   ShoppingCart,
-  PrinterIcon,
+  // PrinterIcon, // terug in gebruik zodra Besteladvies weer actief is
   LineChart,
   History,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 
 export interface NavItem {
@@ -56,15 +57,22 @@ export const NAV_TABS: NavTab[] = [
     label: "Productie",
     items: [
       { href: "/voorraad", label: "Producties", icon: Warehouse, moduleKey: "producties" },
-      { href: "/voorraad/besteladvies", label: "Besteladvies", icon: PrinterIcon, moduleKey: "voorraad" },
+      // Besteladvies rekent met min_stock_quantity t.o.v. actuele
+      // voorraad — de voorraadmodule zelf staat nog niet aan (geen
+      // verbruiksregistratie), dus dit advies zou nu op onvolledige
+      // cijfers draaien. Verborgen tot voorraad daadwerkelijk in
+      // gebruik wordt genomen. De pagina zelf blijft bestaan.
+      // { href: "/voorraad/besteladvies", label: "Besteladvies", icon: PrinterIcon, moduleKey: "voorraad" },
     ],
   },
   {
     key: "financieel",
     label: "Financieel",
     items: [
-      { href: "/financieel", label: "Prijsontwikkeling", icon: LineChart, moduleKey: "leveranciers" },
+      { href: "/financieel", label: "Overzicht", icon: LineChart, moduleKey: "leveranciers" },
+      { href: "/financieel/bedrijven", label: "Per bedrijf", icon: Building2, moduleKey: "leveranciers" },
       { href: "/leveranciers/prijzen/wijzigingen", label: "Prijswijzigingen", icon: History, moduleKey: "leveranciers" },
+      { href: "/leveranciers/facturen", label: "Facturen", icon: FileText, moduleKey: "leveranciers" },
     ],
   },
   {
@@ -74,6 +82,7 @@ export const NAV_TABS: NavTab[] = [
       { href: "/bedrijven", label: "Bedrijven", icon: Building2, moduleKey: "bedrijven" },
       { href: "/gebruikers", label: "Gebruikers & rechten", icon: Users, moduleKey: "gebruikers" },
       { href: "/gebruikers/rollen", label: "Rollen", icon: ShieldCheck, moduleKey: "gebruikers" },
+      { href: "/beheer/wijzigingslog", label: "Wijzigingslog", icon: History, moduleKey: "gebruikers" },
     ],
   },
 ];

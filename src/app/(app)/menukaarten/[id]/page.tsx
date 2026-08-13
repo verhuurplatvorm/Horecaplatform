@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { useCompanyScope } from "@/components/company-context";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { MenuCard, MenuFolder, MenuItem, Recipe } from "@/lib/types/database";
@@ -44,6 +45,8 @@ export default function MenukaartWorkspacePage({
   const { id: menuCardId } = use(params);
   const router = useRouter();
   const { activeCompanyIds } = useCompanyScope();
+  const { can } = usePermissions();
+  const canViewFinancial = can("menukaarten").canViewFinancial;
 
   const [card, setCard] = useState<MenuCard | null>(null);
   const [folders, setFolders] = useState<MenuFolder[]>([]);
@@ -370,11 +373,16 @@ export default function MenukaartWorkspacePage({
                   <h2 className="text-lg font-semibold text-foreground">{selectedFolder.name}</h2>
                   {folderStats && (
                     <p className="text-sm text-muted">
-                      {folderStats.count} gerecht(en) · gem. foodcost {folderStats.avgFoodcost.toFixed(1)}%
-                      {folderStats.attentionCount > 0 && (
-                        <span className="ml-2 text-copper">
-                          · {folderStats.attentionCount} boven norm
-                        </span>
+                      {folderStats.count} gerecht(en)
+                      {canViewFinancial && (
+                        <>
+                          {" "}· gem. foodcost {folderStats.avgFoodcost.toFixed(1)}%
+                          {folderStats.attentionCount > 0 && (
+                            <span className="ml-2 text-copper">
+                              · {folderStats.attentionCount} boven norm
+                            </span>
+                          )}
+                        </>
                       )}
                     </p>
                   )}
@@ -393,8 +401,12 @@ export default function MenukaartWorkspacePage({
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
                         <th className="px-5 py-3 font-medium">Naam op kaart</th>
                         <th className="px-5 py-3 font-medium">Verkoopprijs</th>
-                        <th className="px-5 py-3 font-medium">Kostprijs</th>
-                        <th className="px-5 py-3 font-medium">Foodcost</th>
+                        {canViewFinancial && (
+                          <>
+                            <th className="px-5 py-3 font-medium">Kostprijs</th>
+                            <th className="px-5 py-3 font-medium">Foodcost</th>
+                          </>
+                        )}
                         <th className="px-5 py-3 font-medium">Labels</th>
                         <th className="px-5 py-3 font-medium"></th>
                       </tr>
@@ -462,18 +474,26 @@ export default function MenukaartWorkspacePage({
                                 </span>
                               )}
                             </td>
-                            <td className="px-5 py-3 tabular text-muted">
-                              {item.cost !== null ? `€ ${item.cost.toFixed(2)}` : "—"}
-                            </td>
-                            <td className="px-5 py-3">
-                              {foodcost !== null ? (
-                                <span className={foodcost > FOODCOST_NORM ? "text-copper" : "text-success"}>
-                                  {foodcost.toFixed(1)}%
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
+                            {canViewFinancial && (
+                              <>
+                                <td className="px-5 py-3 tabular text-muted">
+                                  {item.cost !== null ? `€ ${item.cost.toFixed(2)}` : "—"}
+                                </td>
+                                <td className="px-5 py-3">
+                                  {foodcost !== null ? (
+                                    <span
+                                      className={
+                                        foodcost > FOODCOST_NORM ? "text-copper" : "text-success"
+                                      }
+                                    >
+                                      {foodcost.toFixed(1)}%
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                              </>
+                            )}
                             <td className="px-5 py-3">
                               <div className="flex gap-1">
                                 {item.is_new && <Badge label="Nieuw" tone="teal" />}

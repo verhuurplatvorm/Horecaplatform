@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { createClient } from "@/lib/supabase/client";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
 
 interface ProductRow {
@@ -36,6 +37,8 @@ interface UsageInfo {
 }
 
 export default function ProductenPage() {
+  const { can } = usePermissions();
+  const canViewFinancial = can("producten").canViewFinancial;
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -423,8 +426,12 @@ export default function ProductenPage() {
                   <th className="px-5 py-3 font-medium">Leverancier</th>
                   <th className="px-5 py-3 font-medium">Eenheid</th>
                   <th className="px-5 py-3 font-medium">Verpakkingseenheid</th>
-                  <th className="px-5 py-3 font-medium">Aankoopprijs</th>
-                  <th className="px-5 py-3 font-medium">Actuele inkoopprijs</th>
+                  {canViewFinancial && (
+                    <>
+                      <th className="px-5 py-3 font-medium">Aankoopprijs</th>
+                      <th className="px-5 py-3 font-medium">Actuele inkoopprijs</th>
+                    </>
+                  )}
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
@@ -478,36 +485,40 @@ export default function ProductenPage() {
                         }}
                       />
                     </td>
-                    <td className="px-5 py-3">
-                      <InlineEditCell
-                        value={p.purchasePrice !== null ? p.purchasePrice.toFixed(2) : null}
-                        placeholder="—"
-                        prefix="€ "
-                        type="number"
-                        disabled={!p.priceRowId}
-                        onSave={(value) => {
-                          const num = Number(value);
-                          if (!value || !Number.isFinite(num) || num <= 0) return;
-                          updatePriceField(p.priceRowId, { purchase_price: num });
-                        }}
-                      />
-                    </td>
-                    <td className="px-5 py-3 tabular">
-                      {p.pricePerBaseUnit !== null ? (
-                        <div>
-                          <div className="text-foreground">
-                            € {p.pricePerBaseUnit.toFixed(4)} / {p.base_unit}
-                          </div>
-                          {p.validFrom && (
-                            <div className="text-xs text-muted">
-                              sinds {new Date(p.validFrom).toLocaleDateString("nl-NL")}
+                    {canViewFinancial && (
+                      <>
+                        <td className="px-5 py-3">
+                          <InlineEditCell
+                            value={p.purchasePrice !== null ? p.purchasePrice.toFixed(2) : null}
+                            placeholder="—"
+                            prefix="€ "
+                            type="number"
+                            disabled={!p.priceRowId}
+                            onSave={(value) => {
+                              const num = Number(value);
+                              if (!value || !Number.isFinite(num) || num <= 0) return;
+                              updatePriceField(p.priceRowId, { purchase_price: num });
+                            }}
+                          />
+                        </td>
+                        <td className="px-5 py-3 tabular">
+                          {p.pricePerBaseUnit !== null ? (
+                            <div>
+                              <div className="text-foreground">
+                                € {p.pricePerBaseUnit.toFixed(4)} / {p.base_unit}
+                              </div>
+                              {p.validFrom && (
+                                <div className="text-xs text-muted">
+                                  sinds {new Date(p.validFrom).toLocaleDateString("nl-NL")}
+                                </div>
+                              )}
                             </div>
+                          ) : (
+                            <span className="text-muted">Geen prijs bekend</span>
                           )}
-                        </div>
-                      ) : (
-                        <span className="text-muted">Geen prijs bekend</span>
-                      )}
-                    </td>
+                        </td>
+                      </>
+                    )}
                     <td className="px-5 py-3">
                       <span
                         className={
@@ -532,7 +543,7 @@ export default function ProductenPage() {
                 ))}
                 {filteredRows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={9} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={canViewFinancial ? 9 : 7} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan ingrediënten niet laden — controleer de Supabase-koppeling."
                         : q

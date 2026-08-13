@@ -1,9 +1,16 @@
 import Link from "next/link";
-import { LineChart, History, ArrowRight } from "lucide-react";
+import { LineChart, History, ArrowRight, Building2 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const SECTIONS = [
+  {
+    href: "/financieel/bedrijven",
+    icon: Building2,
+    title: "Kostprijs & foodcost per bedrijf",
+    description:
+      "Gemiddelde kostprijs, verkoopprijs en foodcost% van alle gerechten, per bedrijf naast elkaar vergeleken.",
+  },
   {
     href: "/dashboard/prijzen",
     icon: LineChart,

@@ -161,6 +161,19 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type AuditLogEntry = {
+  id: number;
+  group_id: string | null;
+  company_id: string | null;
+  table_name: string;
+  record_id: string | null;
+  action: "insert" | "update" | "delete";
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+  changed_by: string | null;
+  changed_at: string;
+}
+
 export type Recipe = {
   id: string;
   group_id: string;
@@ -609,6 +622,12 @@ export type Database = {
         Row: HalfproductFolder;
         Insert: Partial<HalfproductFolder>;
         Update: Partial<HalfproductFolder>;
+        Relationships: [];
+      };
+      audit_log: {
+        Row: AuditLogEntry;
+        Insert: Partial<AuditLogEntry>;
+        Update: Partial<AuditLogEntry>;
         Relationships: [];
       };
       user_profiles: {
