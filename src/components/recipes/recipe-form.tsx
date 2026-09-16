@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
+import { convertQuantity } from "@/lib/units/convert";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
 import type {
@@ -150,6 +151,8 @@ export function RecipeForm({
       {
         pricePerBaseUnit: number;
         baseUnitId: string | null;
+        avgUnitQuantity: number | null;
+        avgUnitId: string | null;
         allergens: string[];
         traces: string[];
         nutritionPer100: Record<string, number> | null;
@@ -264,7 +267,7 @@ export function RecipeForm({
           .maybeSingle(),
         supabase
           .from("products")
-          .select("base_unit_id, allergens, contains_traces, nutrition_per_100")
+          .select("base_unit_id, avg_unit_quantity, avg_unit_id, allergens, contains_traces, nutrition_per_100")
           .eq("id", productId)
           .single(),
         supabase
@@ -297,6 +300,8 @@ export function RecipeForm({
       new Map(prev).set(productId, {
         pricePerBaseUnit: cost?.price_per_base_unit ?? 0,
         baseUnitId: product?.base_unit_id ?? null,
+        avgUnitQuantity: product?.avg_unit_quantity ?? null,
+        avgUnitId: product?.avg_unit_id ?? null,
         allergens: product?.allergens ?? [],
         traces: product?.contains_traces ?? [],
         nutritionPer100: product?.nutrition_per_100 ?? null,
@@ -338,10 +343,23 @@ export function RecipeForm({
 
   const unitsById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
 
-  function unitsForDimension(referenceUnitId: string | null) {
+  // Eenheden die voor een regel te kiezen zijn: dezelfde dimensie als de
+  // basiseenheid van het ingrediënt — én, als het ingrediënt een brug
+  // heeft ("1 stuk = 95 gram"), ook "stuk" bij een gewicht/inhoud-basis
+  // of juist de brug-dimensie bij een stuk-basis.
+  function unitsForDimension(referenceUnitId: string | null, productRefId?: string | null) {
     if (!referenceUnitId) return units;
-    const dim = unitsById.get(referenceUnitId)?.dimension;
-    return dim ? units.filter((u) => u.dimension === dim) : units;
+    const ref = unitsById.get(referenceUnitId);
+    if (!ref) return units;
+    const bridge = productRefId ? productPrices.get(productRefId) : null;
+    const avgUnit = bridge?.avgUnitId ? unitsById.get(bridge.avgUnitId) : null;
+    const hasBridge = !!(bridge?.avgUnitQuantity && avgUnit);
+    return units.filter((u) => {
+      if (u.dimension === ref.dimension) return true;
+      if (!hasBridge) return false;
+      if (ref.dimension === "aantal") return u.dimension === avgUnit!.dimension;
+      return u.dimension === "aantal" && avgUnit!.dimension === ref.dimension;
+    });
   }
 
   const lineCosts = useMemo(() => {
@@ -354,18 +372,20 @@ export function RecipeForm({
         const priceInfo = productPrices.get(row.refId);
         if (!priceInfo) return null;
         const baseUnit = priceInfo.baseUnitId ? unitsById.get(priceInfo.baseUnitId) : null;
-        if (!chosenUnit || !baseUnit || chosenUnit.dimension !== baseUnit.dimension) return null;
-        const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
+        if (!chosenUnit || !baseUnit) return null;
+        const qtyInBase = convertQuantity(qty, chosenUnit, baseUnit, priceInfo, unitsById);
+        if (qtyInBase === null) return null;
         const lossPct = parseFloat(row.lossPercentage) || 0;
-        return qty * factor * priceInfo.pricePerBaseUnit * (1 + lossPct / 100);
+        return qtyInBase * priceInfo.pricePerBaseUnit * (1 + lossPct / 100);
       }
 
       const hpInfo = halfproductCosts.get(row.refId);
       if (!hpInfo || !hpInfo.yieldQuantity) return null;
       const baseUnit = hpInfo.baseUnitId ? unitsById.get(hpInfo.baseUnitId) : null;
-      if (!chosenUnit || !baseUnit || chosenUnit.dimension !== baseUnit.dimension) return null;
-      const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
-      return (qty * factor / hpInfo.yieldQuantity) * hpInfo.totalCost;
+      if (!chosenUnit || !baseUnit) return null;
+      const qtyInBase = convertQuantity(qty, chosenUnit, baseUnit, null, unitsById);
+      if (qtyInBase === null) return null;
+      return (qtyInBase / hpInfo.yieldQuantity) * hpInfo.totalCost;
     });
   }, [rows, productPrices, halfproductCosts, unitsById]);
 
@@ -423,12 +443,15 @@ export function RecipeForm({
       const qty = parseFloat(row.quantity);
       if (!Number.isFinite(qty)) continue;
       const rowUnit = unitsById.get(row.unitId);
-      if (!rowUnit || rowUnit.dimension !== targetUnit.dimension) continue;
-      sum += (qty * rowUnit.factor_to_base) / targetUnit.factor_to_base;
+      if (!rowUnit) continue;
+      const bridge = row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId) : null;
+      const converted = convertQuantity(qty, rowUnit, targetUnit, bridge, unitsById);
+      if (converted === null) continue;
+      sum += converted;
       matchedAny = true;
     }
     return matchedAny ? sum : null;
-  }, [rows, baseUnitId, unitsById]);
+  }, [rows, baseUnitId, unitsById, productPrices]);
 
   // Vult Opbrengst automatisch als die nog leeg is, zodra er genoeg
   // ingrediënten met een bruikbare eenheid zijn ingevuld. Overschrijft
@@ -478,9 +501,9 @@ export function RecipeForm({
         const info = productPrices.get(row.refId);
         if (!info?.nutritionPer100 || !info.baseUnitId) return;
         const baseUnit = unitsById.get(info.baseUnitId);
-        if (!baseUnit || chosenUnit.dimension !== baseUnit.dimension) return;
-        const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
-        const convertedQty = qty * factor;
+        if (!baseUnit) return;
+        const convertedQty = convertQuantity(qty, chosenUnit, baseUnit, info, unitsById);
+        if (convertedQty === null) return;
         for (const [key, value] of Object.entries(info.nutritionPer100)) {
           totals[key] = (totals[key] ?? 0) + (value * convertedQty) / 100;
         }
@@ -488,9 +511,9 @@ export function RecipeForm({
         const info = halfproductCosts.get(row.refId);
         if (!info || !info.yieldQuantity || !info.baseUnitId) return;
         const baseUnit = unitsById.get(info.baseUnitId);
-        if (!baseUnit || chosenUnit.dimension !== baseUnit.dimension) return;
-        const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
-        const convertedQty = qty * factor;
+        if (!baseUnit) return;
+        const convertedQty = convertQuantity(qty, chosenUnit, baseUnit, null, unitsById);
+        if (convertedQty === null) return;
         const ratio = convertedQty / info.yieldQuantity;
         for (const [key, value] of Object.entries(info.nutritionTotals)) {
           totals[key] = (totals[key] ?? 0) + value * ratio;
@@ -1102,7 +1125,7 @@ export function RecipeForm({
             <IngredientLine
               key={i}
               row={row}
-              units={unitsForDimension(row.baseUnitId)}
+              units={unitsForDimension(row.baseUnitId, row.type === "ingrediënt" ? row.refId : null)}
               cost={lineCosts[i]}
               canViewFinancial={canViewFinancial}
               priceDirection={

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { convertQuantity } from "@/lib/units/convert";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import type { ParsedProductRow } from "@/lib/product-import/parse-multi-supplier";
@@ -339,32 +340,21 @@ export async function POST(request: Request) {
       const packagingUnit = unitByKey.get(row.packagingUnitKey);
       const productUnit = unitById.get(product.base_unit_id);
       if (packagingUnit && productUnit) {
-        if (packagingUnit.dimension === productUnit.dimension) {
-          finalCount = (row.packagingUnitCount * packagingUnit.factor_to_base) / productUnit.factor_to_base;
-        } else if (
-          product.avg_unit_quantity &&
-          product.avg_unit_id &&
-          unitById.get(product.avg_unit_id)?.dimension === productUnit.dimension &&
-          (packagingUnit.dimension === "aantal" || productUnit.dimension === "aantal")
-        ) {
-          // Dimensie klopt niet, maar het product heeft een gemiddeld
-          // stuksgewicht/-inhoud ingesteld die precies deze twee
-          // dimensies overbrugt (bv. verpakking in stuks, basiseenheid
-          // in gram, "1 stuk = 80 gram" bekend) — reken via die brug om
-          // in plaats van te gokken of over te slaan.
-          const avgUnit = unitById.get(product.avg_unit_id)!;
-          if (packagingUnit.dimension === "aantal") {
-            // Verpakking in stuks → omrekenen naar de basiseenheid via
-            // het gemiddelde gewicht/inhoud per stuk.
-            const quantityInAvgUnit = row.packagingUnitCount * product.avg_unit_quantity;
-            finalCount = (quantityInAvgUnit * avgUnit.factor_to_base) / productUnit.factor_to_base;
-          } else {
-            // Verpakking in gewicht/inhoud, basiseenheid is stuks →
-            // omrekenen naar aantal stuks via hetzelfde gemiddelde.
-            const quantityInAvgUnit =
-              (row.packagingUnitCount * packagingUnit.factor_to_base) / avgUnit.factor_to_base;
-            finalCount = quantityInAvgUnit / product.avg_unit_quantity;
-          }
+        // Eén centrale conversieregel (src/lib/units/convert.ts): zelfde
+        // dimensie via factor-verhouding, stuks ↔ gewicht/inhoud via de
+        // brug ("1 stuk = X ...") van het product, anders null.
+        const converted = convertQuantity(
+          row.packagingUnitCount,
+          packagingUnit,
+          productUnit,
+          { avgUnitQuantity: product.avg_unit_quantity, avgUnitId: product.avg_unit_id },
+          unitById
+        );
+        if (converted !== null && packagingUnit.dimension === productUnit.dimension) {
+          finalCount = converted;
+        } else if (converted !== null) {
+          // Omgerekend via de stuk-brug — een aanname, dus "Te controleren".
+          finalCount = converted;
           avgWeightBridged = true;
         } else if (existing) {
           // Dimensie klopt niet (bv. het bestand levert "1 stuk" terwijl

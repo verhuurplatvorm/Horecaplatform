@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
-import type { Product, SupplierProduct, Unit } from "@/lib/types/database";
+import type { Product, ProductMissingUnitBridge, SupplierProduct, Unit } from "@/lib/types/database";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
 
 interface SupplierPriceRow extends SupplierProduct {
@@ -30,6 +30,16 @@ export default function ProductenOpschonenPage() {
   const [reloadToken, setReloadToken] = useState(0);
   const [flaggedPrices, setFlaggedPrices] = useState<SupplierPriceRow[]>([]);
   const [flaggedLoading, setFlaggedLoading] = useState(true);
+  const [missingBridge, setMissingBridge] = useState<ProductMissingUnitBridge[]>([]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("products_missing_unit_bridge")
+      .select("*")
+      .order("recipe_count", { ascending: false })
+      .then(({ data }) => setMissingBridge(data ?? []));
+  }, [reloadToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +154,55 @@ export default function ProductenOpschonenPage() {
       <Topbar title="Ingrediënten — te controleren" />
       <main className="max-w-4xl space-y-4 p-6">
         <ProductViewTabs />
+
+        {missingBridge.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Gemiddeld gewicht/inhoud per stuk ontbreekt ({missingBridge.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted">
+                Deze ingrediënten worden zowel per stuk als per gewicht/inhoud gebruikt of
+                ingekocht, maar hebben nog geen &quot;1 stuk = X gram/ml&quot; ingesteld. Zonder
+                die brug tellen ze niet mee in kostprijs en totale hoeveelheid, en worden
+                verpakkingen in stuks bij imports geweigerd.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                      <th className="px-3 py-2 font-medium">Ingrediënt</th>
+                      <th className="px-3 py-2 font-medium">Basiseenheid</th>
+                      <th className="px-3 py-2 font-medium">In recepten</th>
+                      <th className="px-3 py-2 font-medium">Prijzen in stuks</th>
+                      <th className="px-3 py-2 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {missingBridge.map((m) => (
+                      <tr key={m.product_id} className="border-t border-border">
+                        <td className="px-3 py-2 font-medium">{m.product_name}</td>
+                        <td className="px-3 py-2 text-muted">{m.base_dimension}</td>
+                        <td className="px-3 py-2 text-muted" title={m.recipe_names ?? ""}>
+                          {m.recipe_count > 0 ? `${m.recipe_count} — ${m.recipe_names}` : "—"}
+                        </td>
+                        <td className="px-3 py-2 tabular text-muted">{m.price_count || "—"}</td>
+                        <td className="px-3 py-2 text-right">
+                          <a
+                            href={`/producten/${m.product_id}/bewerken`}
+                            className="text-teal hover:underline"
+                          >
+                            Instellen →
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Nog te controleren (uit import)</CardTitle>

@@ -22,6 +22,8 @@ interface BreakdownLine {
   unit_name: string | null;
   line_cost: number | null;
   quantity_in_recipe_unit: number | null;
+  conversion_missing: boolean | null;
+  product_id: string | null;
 }
 
 /**
@@ -320,9 +322,38 @@ export function HalfproductIngredientenModule({
           <tbody>
             {breakdown.map((line) => (
               <tr key={line.sort_order} className="border-t border-border">
-                <td className="px-2 py-3 font-medium">{line.ingredient_name ?? "—"}</td>
+                <td className="px-2 py-3 font-medium">
+                  {line.ingredient_name ?? "—"}
+                  {line.conversion_missing && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-copper/10 px-2 py-0.5 text-xs font-normal text-copper">
+                      <TriangleAlert className="h-3 w-3" />
+                      {line.product_id ? (
+                        <a
+                          href={`/producten/${line.product_id}/bewerken`}
+                          className="underline"
+                          title="Stel bij dit ingrediënt 'Gemiddeld gewicht/inhoud per stuk' in"
+                        >
+                          geen gemiddeld gewicht per stuk ingesteld
+                        </a>
+                      ) : (
+                        "eenheid niet om te rekenen"
+                      )}
+                    </span>
+                  )}
+                </td>
                 <td className="px-2 py-3 tabular">
                   {(line.quantity * effectiveScale).toLocaleString("nl-NL", { maximumFractionDigits: 3 })}
+                  {line.quantity_in_recipe_unit !== null &&
+                    line.unit_name !== unitName &&
+                    unitName && (
+                      <span className="ml-1 text-xs text-muted">
+                        ≈{" "}
+                        {(line.quantity_in_recipe_unit * effectiveScale).toLocaleString("nl-NL", {
+                          maximumFractionDigits: 1,
+                        })}{" "}
+                        {unitName}
+                      </span>
+                    )}
                 </td>
                 <td className="px-2 py-3 text-muted">{line.unit_name ?? "—"}</td>
                 <td className="px-2 py-3 tabular text-muted">
@@ -354,9 +385,10 @@ export function HalfproductIngredientenModule({
                 {displayUnitName ?? ""}
               </span>
               {linesWithConvertedQty.length < breakdown.length && (
-                <span className="ml-1 text-xs text-muted">
-                  ({breakdown.length - linesWithConvertedQty.length} ingrediënt(en) met
-                  afwijkende eenheid niet meegeteld)
+                <span className="ml-1 inline-flex items-center gap-1 text-xs font-medium text-copper">
+                  <TriangleAlert className="h-3 w-3" />
+                  onvolledig — {breakdown.length - linesWithConvertedQty.length} ingrediënt(en)
+                  kunnen niet omgerekend worden (zie waarschuwing bij de regel)
                 </span>
               )}
               <span className="mx-2 text-muted">·</span>

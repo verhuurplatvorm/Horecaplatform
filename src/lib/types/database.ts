@@ -224,6 +224,16 @@ export type RecipeIngredient = {
   note: string | null;
 }
 
+export type ProductMissingUnitBridge = {
+  product_id: string;
+  group_id: string;
+  product_name: string;
+  base_dimension: UnitDimension;
+  recipe_count: number;
+  recipe_names: string | null;
+  price_count: number;
+}
+
 export type CurrentProductCost = {
   product_id: string;
   company_id: string;
@@ -772,6 +782,10 @@ export type Database = {
       };
     };
     Views: {
+      products_missing_unit_bridge: {
+        Row: ProductMissingUnitBridge;
+        Relationships: [];
+      };
       current_product_cost: {
         Row: CurrentProductCost;
         Relationships: [];

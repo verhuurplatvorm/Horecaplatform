@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import type { StockMovementType, Unit } from "@/lib/types/database";
+import { convertQuantity } from "@/lib/units/convert";
 
 interface SearchResult {
   type: "ingrediënt" | "halfproduct";
   id: string;
   name: string;
   baseUnitId: string | null;
+  avgUnitQuantity: number | null;
+  avgUnitId: string | null;
 }
 
 const MOVEMENT_TYPES: { value: StockMovementType; label: string; sign: "+" | "-" | "±" }[] = [
@@ -64,12 +67,12 @@ export default function NieuweVoorraadmutatiePage() {
         await Promise.all([
           supabase
             .from("products")
-            .select("id, name, custom_name, base_unit_id")
+            .select("id, name, custom_name, base_unit_id, avg_unit_quantity, avg_unit_id")
             .ilike("name", `%${query}%`)
             .limit(8),
           supabase
             .from("products")
-            .select("id, name, custom_name, base_unit_id")
+            .select("id, name, custom_name, base_unit_id, avg_unit_quantity, avg_unit_id")
             .ilike("custom_name", `%${query}%`)
             .limit(8),
           supabase
@@ -82,7 +85,14 @@ export default function NieuweVoorraadmutatiePage() {
       if (cancelled) return;
       const productsById = new Map<
         string,
-        { id: string; name: string; custom_name: string | null; base_unit_id: string | null }
+        {
+          id: string;
+          name: string;
+          custom_name: string | null;
+          base_unit_id: string | null;
+          avg_unit_quantity: number | null;
+          avg_unit_id: string | null;
+        }
       >();
       for (const p of [...(byName ?? []), ...(byCustomName ?? [])]) {
         productsById.set(p.id, p);
@@ -93,12 +103,16 @@ export default function NieuweVoorraadmutatiePage() {
           id: p.id,
           name: p.custom_name?.trim() || p.name,
           baseUnitId: p.base_unit_id,
+          avgUnitQuantity: p.avg_unit_quantity,
+          avgUnitId: p.avg_unit_id,
         })),
         ...(halfproducts ?? []).map((r) => ({
           type: "halfproduct" as const,
           id: r.id,
           name: r.name,
           baseUnitId: r.base_unit_id,
+          avgUnitQuantity: null,
+          avgUnitId: null,
         })),
       ]);
     }, 250);
@@ -108,10 +122,10 @@ export default function NieuweVoorraadmutatiePage() {
     };
   }, [query, selected]);
 
-  const unitsForSelected = selected?.baseUnitId
-    ? units.filter(
-        (u) => u.dimension === units.find((x) => x.id === selected.baseUnitId)?.dimension
-      )
+  const unitsById = new Map(units.map((u) => [u.id, u]));
+  const selectedBaseUnit = selected?.baseUnitId ? unitsById.get(selected.baseUnitId) : null;
+  const unitsForSelected = selectedBaseUnit
+    ? units.filter((u) => convertQuantity(1, u, selectedBaseUnit, selected, unitsById) !== null)
     : units;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -129,12 +143,17 @@ export default function NieuweVoorraadmutatiePage() {
 
     const chosenUnit = units.find((u) => u.id === unitId);
     const baseUnit = units.find((u) => u.id === selected.baseUnitId);
-    if (!chosenUnit || !baseUnit || chosenUnit.dimension !== baseUnit.dimension) {
-      setError("De gekozen eenheid past niet bij dit artikel.");
+    const rawQtyOrNull =
+      chosenUnit && baseUnit
+        ? convertQuantity(Number(quantity), chosenUnit, baseUnit, selected, unitsById)
+        : null;
+    if (rawQtyOrNull === null) {
+      setError(
+        "De gekozen eenheid past niet bij dit artikel. Stel eventueel bij het ingrediënt een gemiddeld gewicht/inhoud per stuk in."
+      );
       return;
     }
-    const factor = chosenUnit.factor_to_base / baseUnit.factor_to_base;
-    const rawQty = Number(quantity) * factor;
+    const rawQty = rawQtyOrNull;
 
     const sign = MOVEMENT_TYPES.find((m) => m.value === movementType)?.sign;
     const signedQty =

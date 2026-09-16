@@ -17,6 +17,8 @@ interface ProductRow {
   customName: string | null;
   base_unit: string;
   base_unit_id: string | null;
+  avg_unit_quantity: number | null;
+  avg_unit_name: string | null;
   article_number: string | null;
   ean_code: string | null;
   is_active: boolean;
@@ -81,6 +83,8 @@ export default function ProductenPage() {
         custom_name: string | null;
         base_unit: string;
         base_unit_id: string | null;
+        avg_unit_quantity: number | null;
+        avg_unit_id: string | null;
         article_number: string | null;
         ean_code: string | null;
         is_active: boolean;
@@ -93,7 +97,7 @@ export default function ProductenPage() {
         const { data, error: pageError } = await supabase
           .from("products")
           .select(
-            "id, name, custom_name, base_unit, base_unit_id, article_number, ean_code, is_active, manual_price_per_base_unit"
+            "id, name, custom_name, base_unit, base_unit_id, avg_unit_quantity, avg_unit_id, article_number, ean_code, is_active, manual_price_per_base_unit"
           )
           .order("name")
           .range(from, from + PAGE_SIZE - 1);
@@ -196,6 +200,10 @@ export default function ProductenPage() {
               customName: p.custom_name,
               base_unit: p.base_unit,
               base_unit_id: p.base_unit_id,
+              avg_unit_quantity: p.avg_unit_quantity,
+              avg_unit_name: p.avg_unit_id
+                ? units.find((u) => u.id === p.avg_unit_id)?.name ?? null
+                : null,
               article_number: p.article_number,
               ean_code: p.ean_code,
               is_active: p.is_active,
@@ -469,6 +477,14 @@ export default function ProductenPage() {
                         currentLabel={p.base_unit}
                         onSave={(unitId) => updateBaseUnit(p.id, unitId)}
                       />
+                      {p.avg_unit_quantity && p.avg_unit_name && (
+                        <div
+                          className="mt-0.5 text-xs text-teal"
+                          title="Gemiddeld gewicht/inhoud per stuk — gebruikt om stuks en gram/ml naar elkaar om te rekenen"
+                        >
+                          1 stuk = {p.avg_unit_quantity} {p.avg_unit_name}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <InlineEditCell
