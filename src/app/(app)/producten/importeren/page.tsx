@@ -50,6 +50,7 @@ export default function ProductenImporterenPage() {
     flaggedBySourceCount: number;
     contentDerivedCount?: number;
     packagingReusedCount?: number;
+    avgWeightBridgedCount?: number;
     priceChanges?: {
       productName: string;
       supplierName: string;
@@ -189,6 +190,14 @@ export default function ProductenImporterenPage() {
                     ingrediënt (bv. &quot;stuk&quot; terwijl het ingrediënt in ml rekent) — de nieuwe prijs
                     is overgenomen met behoud van de bestaande verpakkingseenheid. Gemarkeerd
                     onder &quot;Te controleren&quot;.
+                  </li>
+                )}
+                {(result.avgWeightBridgedCount ?? 0) > 0 && (
+                  <li className="text-copper">
+                    {result.avgWeightBridgedCount} daarvan gaf een eenheid die niet past bij het
+                    ingrediënt, maar kon omgerekend worden via het ingestelde gemiddelde
+                    gewicht/inhoud per stuk (bv. verpakking in stuks, ingrediënt in gram).
+                    Gemarkeerd onder &quot;Te controleren&quot;.
                   </li>
                 )}
                 {result.skippedNoSupplier > 0 && (

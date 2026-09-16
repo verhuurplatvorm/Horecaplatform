@@ -74,6 +74,8 @@ export async function POST(request: Request) {
     article_number: string | null;
     ean_code: string | null;
     base_unit_id: string | null;
+    avg_unit_quantity: number | null;
+    avg_unit_id: string | null;
   }[] = [];
   {
     const PAGE_SIZE = 1000;
@@ -81,7 +83,7 @@ export async function POST(request: Request) {
     while (true) {
       const { data } = await supabase
         .from("products")
-        .select("id, name, article_number, ean_code, base_unit_id")
+        .select("id, name, article_number, ean_code, base_unit_id, avg_unit_quantity, avg_unit_id")
         .eq("group_id", groupId)
         .range(from, from + PAGE_SIZE - 1);
       if (!data || data.length === 0) break;
@@ -159,7 +161,7 @@ export async function POST(request: Request) {
           is_active: row.isAvailable,
         }))
       )
-      .select("id, name, article_number, base_unit_id, ean_code");
+      .select("id, name, article_number, base_unit_id, ean_code, avg_unit_quantity, avg_unit_id");
     return { inserted, insertError };
   }
 
@@ -299,6 +301,7 @@ export async function POST(request: Request) {
   let flaggedBySourceCount = 0;
   let contentDerivedCount = 0;
   let packagingReusedCount = 0;
+  let avgWeightBridgedCount = 0;
   let flaggedForReview = 0;
   let skippedMissingPriceOrPackaging = 0;
   let skippedNoProductMatch = 0;
@@ -326,6 +329,7 @@ export async function POST(request: Request) {
     let finalCount = row.packagingUnitCount;
     let finalDescription: string | null = row.packagingDescription;
     let packagingReusedFromExisting = false;
+    let avgWeightBridged = false;
 
     const supplierId = supplierResolution[row.supplierNameRaw]!;
     const dedupKey = `${supplierId}:${productId}:${companyId || "null"}`;
@@ -337,6 +341,31 @@ export async function POST(request: Request) {
       if (packagingUnit && productUnit) {
         if (packagingUnit.dimension === productUnit.dimension) {
           finalCount = (row.packagingUnitCount * packagingUnit.factor_to_base) / productUnit.factor_to_base;
+        } else if (
+          product.avg_unit_quantity &&
+          product.avg_unit_id &&
+          unitById.get(product.avg_unit_id)?.dimension === productUnit.dimension &&
+          (packagingUnit.dimension === "aantal" || productUnit.dimension === "aantal")
+        ) {
+          // Dimensie klopt niet, maar het product heeft een gemiddeld
+          // stuksgewicht/-inhoud ingesteld die precies deze twee
+          // dimensies overbrugt (bv. verpakking in stuks, basiseenheid
+          // in gram, "1 stuk = 80 gram" bekend) — reken via die brug om
+          // in plaats van te gokken of over te slaan.
+          const avgUnit = unitById.get(product.avg_unit_id)!;
+          if (packagingUnit.dimension === "aantal") {
+            // Verpakking in stuks → omrekenen naar de basiseenheid via
+            // het gemiddelde gewicht/inhoud per stuk.
+            const quantityInAvgUnit = row.packagingUnitCount * product.avg_unit_quantity;
+            finalCount = (quantityInAvgUnit * avgUnit.factor_to_base) / productUnit.factor_to_base;
+          } else {
+            // Verpakking in gewicht/inhoud, basiseenheid is stuks →
+            // omrekenen naar aantal stuks via hetzelfde gemiddelde.
+            const quantityInAvgUnit =
+              (row.packagingUnitCount * packagingUnit.factor_to_base) / avgUnit.factor_to_base;
+            finalCount = quantityInAvgUnit / product.avg_unit_quantity;
+          }
+          avgWeightBridged = true;
         } else if (existing) {
           // Dimensie klopt niet (bv. het bestand levert "1 stuk" terwijl
           // het ingrediënt in ml rekent), maar er bestaat al een actieve
@@ -398,6 +427,7 @@ export async function POST(request: Request) {
     if (row.flaggedBySource) flaggedBySourceCount++;
     if (row.contentDerivedFromName) contentDerivedCount++;
     if (packagingReusedFromExisting) packagingReusedCount++;
+    if (avgWeightBridged) avgWeightBridgedCount++;
 
     supplierProductsToInsert.push({
       supplier_id: supplierId,
@@ -413,13 +443,15 @@ export async function POST(request: Request) {
       // gewoon meegenomen, maar blijven gemarkeerd zodat je ze later in
       // je eigen tempo kunt doorlopen via "Ingrediënten opschonen". Datzelfde
       // geldt voor regels waar de inhoud uit de ingrediëntnaam is afgeleid
-      // (bv. "2x5l") of waar de bestaande verpakkingseenheid is
-      // hergebruikt omdat het bestand een niet-passende eenheid gaf —
-      // goede aannames, maar wel om na te lopen.
+      // (bv. "2x5l"), waar de bestaande verpakkingseenheid is hergebruikt
+      // omdat het bestand een niet-passende eenheid gaf, of waar het
+      // gemiddelde stuksgewicht is gebruikt om stuks naar gram/ml om te
+      // rekenen — goede aannames, maar wel om na te lopen.
       flagged_for_review:
         row.flaggedBySource ||
         row.contentDerivedFromName === true ||
-        packagingReusedFromExisting,
+        packagingReusedFromExisting ||
+        avgWeightBridged,
       valid_from: today,
     });
   }
@@ -477,7 +509,7 @@ export async function POST(request: Request) {
     skippedMissingPriceOrPackaging +
     skippedNoProductMatch;
   console.log(
-    `[product-import] Klaar: ${productsCreated} nieuwe ingrediënten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle, ${contentDerivedCount} met inhoud uit de ingrediëntnaam afgeleid en ${packagingReusedCount} met hergebruikte bestaande verpakkingseenheid), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder ingrediëntmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
+    `[product-import] Klaar: ${productsCreated} nieuwe ingrediënten, ${productCreationFailures} product(en) echt niet aan te maken, ${pricesInserted} prijzen opgeslagen (waarvan ${flaggedBySourceCount} gemarkeerd voor latere controle, ${contentDerivedCount} met inhoud uit de ingrediëntnaam afgeleid, ${packagingReusedCount} met hergebruikte bestaande verpakkingseenheid en ${avgWeightBridgedCount} omgerekend via een gemiddeld stuksgewicht), ${alreadyUpToDate} ongewijzigd (al identiek aanwezig, overgeslagen), ${flaggedForReview} met afwijkende dimensie overgeslagen, ${skippedNoSupplier} zonder gekoppelde leverancier overgeslagen, ${skippedMissingPriceOrPackaging} zonder prijs/verpakking overgeslagen, ${skippedNoProductMatch} zonder ingrediëntmatch overgeslagen. Totaal verantwoord: ${accountedFor}/${rows.length}.`
   );
   if (accountedFor !== rows.length) {
     console.error(
@@ -494,6 +526,7 @@ export async function POST(request: Request) {
     flaggedBySourceCount,
     contentDerivedCount,
     packagingReusedCount,
+    avgWeightBridgedCount,
     // Detailoverzicht (afgekapt op 2000 regels per lijst om de respons
     // hanteerbaar te houden bij zeer grote imports)
     priceChanges: priceChanges.slice(0, 2000),

@@ -118,6 +118,10 @@ export function ProductForm({
   const [baseUnitId, setBaseUnitId] = useState(
     initialProduct?.base_unit_id ?? ""
   );
+  const [avgUnitQuantity, setAvgUnitQuantity] = useState(
+    initialProduct?.avg_unit_quantity?.toString() ?? ""
+  );
+  const [avgUnitId, setAvgUnitId] = useState(initialProduct?.avg_unit_id ?? "");
   const [eanCode, setEanCode] = useState(
     initialProduct?.ean_code ?? prefillEanCode ?? ""
   );
@@ -362,6 +366,9 @@ export function ProductForm({
       // invoer voor gratis ingrediënten zoals kraanwater.
       manual_price_per_base_unit:
         manualPrice.trim() === "" ? null : Number(manualPrice),
+      avg_unit_quantity:
+        avgUnitQuantity.trim() === "" || !avgUnitId ? null : Number(avgUnitQuantity),
+      avg_unit_id: avgUnitQuantity.trim() === "" ? null : avgUnitId || null,
       min_stock_quantity: minStock ? Number(minStock) : null,
       reorder_quantity: reorderQty ? Number(reorderQty) : null,
       allergens: Array.from(allergens),
@@ -626,6 +633,46 @@ export function ProductForm({
                 </optgroup>
               ))}
             </select>
+          </Field>
+
+          <Field label="Gemiddeld gewicht/inhoud per stuk (optioneel)">
+            <div className="flex max-w-xs items-center gap-2">
+              <span className="whitespace-nowrap text-sm text-muted">1 stuk =</span>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={avgUnitQuantity}
+                onChange={(e) => setAvgUnitQuantity(e.target.value)}
+                placeholder="bv. 80"
+                className="input"
+              />
+              <select
+                value={avgUnitId}
+                onChange={(e) => setAvgUnitId(e.target.value)}
+                className="input"
+              >
+                <option value="">eenheid…</option>
+                {Object.entries(unitsByDimension)
+                  .filter(([dimension]) => dimension !== "aantal")
+                  .map(([dimension, list]) => (
+                    <optgroup key={dimension} label={dimension}>
+                      {list.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+              </select>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Voor ingrediënten die zowel per stuk als per gewicht/inhoud voorkomen,
+              zoals een komkommer (per stuk ingekocht, in recepten gebruikt in gram).
+              Wordt gebruikt als brug wanneer een verpakking of receptregel in een
+              andere eenheid staat dan de basiseenheid hierboven — anders blijft die
+              regel onbeantwoord staan.
+            </p>
           </Field>
 
           <Field
