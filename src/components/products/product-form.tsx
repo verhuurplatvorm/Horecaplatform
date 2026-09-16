@@ -122,6 +122,9 @@ export function ProductForm({
     initialProduct?.avg_unit_quantity?.toString() ?? ""
   );
   const [avgUnitId, setAvgUnitId] = useState(initialProduct?.avg_unit_id ?? "");
+  const [netUnitQuantity, setNetUnitQuantity] = useState(
+    initialProduct?.net_unit_quantity?.toString() ?? ""
+  );
   const [eanCode, setEanCode] = useState(
     initialProduct?.ean_code ?? prefillEanCode ?? ""
   );
@@ -369,6 +372,10 @@ export function ProductForm({
       avg_unit_quantity:
         avgUnitQuantity.trim() === "" || !avgUnitId ? null : Number(avgUnitQuantity),
       avg_unit_id: avgUnitQuantity.trim() === "" ? null : avgUnitId || null,
+      net_unit_quantity:
+        netUnitQuantity.trim() === "" || avgUnitQuantity.trim() === ""
+          ? null
+          : Number(netUnitQuantity),
       min_stock_quantity: minStock ? Number(minStock) : null,
       reorder_quantity: reorderQty ? Number(reorderQty) : null,
       allergens: Array.from(allergens),
@@ -668,11 +675,54 @@ export function ProductForm({
             </div>
             <p className="mt-1 text-xs text-muted">
               Voor ingrediënten die zowel per stuk als per gewicht/inhoud voorkomen,
-              zoals een komkommer (per stuk ingekocht, in recepten gebruikt in gram).
-              Wordt gebruikt als brug wanneer een verpakking of receptregel in een
-              andere eenheid staat dan de basiseenheid hierboven — anders blijft die
-              regel onbeantwoord staan.
+              zoals een avocado (per stuk ingekocht, in recepten gebruikt in gram).
+              Dit is het <strong>bruto</strong> gewicht/inhoud — het hele stuk zoals je
+              het inkoopt. Wordt gebruikt om hoeveelheden om te rekenen.
             </p>
+          </Field>
+
+          <Field label="Netto bruikbaar per stuk (optioneel)">
+            <div className="flex max-w-xs items-center gap-2">
+              <span className="whitespace-nowrap text-sm text-muted">waarvan bruikbaar</span>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={netUnitQuantity}
+                onChange={(e) => setNetUnitQuantity(e.target.value)}
+                placeholder="bv. 130"
+                disabled={!avgUnitQuantity.trim()}
+                className="input"
+              />
+              <span className="whitespace-nowrap text-sm text-muted">
+                {units.find((u) => u.id === avgUnitId)?.name ?? ""}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Wat er na schoonmaken/snijden overblijft (1 avocado van 180 g levert
+              130 g bruikbaar). Hiermee rekent de <strong>kostprijs</strong>: de volle
+              inkoopprijs wordt gedeeld door het bruikbare deel. Leeg laten = gelijk aan
+              bruto.
+            </p>
+            {netUnitQuantity.trim() !== "" && avgUnitQuantity.trim() !== "" && (
+              <>
+                {Number(netUnitQuantity) > Number(avgUnitQuantity) ? (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-danger">
+                    <TriangleAlert className="h-3.5 w-3.5" />
+                    Netto kan niet groter zijn dan bruto.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-teal">
+                    Komt overeen met{" "}
+                    {(
+                      (1 - Number(netUnitQuantity) / Number(avgUnitQuantity)) * 100
+                    ).toFixed(1)}
+                    % snijverlies — het standaard verliespercentage hieronder wordt
+                    daarom genegeerd voor dit ingrediënt, zodat verlies niet dubbel telt.
+                  </p>
+                )}
+              </>
+            )}
           </Field>
 
           <Field

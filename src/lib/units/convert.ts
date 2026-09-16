@@ -9,8 +9,11 @@ export type UnitLike = Pick<Unit, "id" | "dimension" | "factor_to_base">;
  * Beide velden leeg = geen brug bekend.
  */
 export interface UnitBridge {
+  /** BRUTO per stuk (1 avocado = 180 gram) — voor hoeveelheden. */
   avgUnitQuantity: number | null | undefined;
   avgUnitId: string | null | undefined;
+  /** NETTO bruikbaar per stuk (1 avocado = 130 gram) — kostprijsbasis. Leeg = gelijk aan bruto. */
+  netUnitQuantity?: number | null | undefined;
 }
 
 /**
@@ -33,7 +36,12 @@ export function convertQuantity(
   from: UnitLike,
   to: UnitLike,
   bridge: UnitBridge | null | undefined,
-  unitsById: Map<string, UnitLike>
+  unitsById: Map<string, UnitLike>,
+  /**
+   * true = rekenen met netto bruikbaar (kostprijs), false = bruto
+   * (hoeveelheden). Zie migratie 0060 voor de onderbouwing.
+   */
+  forCost = false
 ): number | null {
   if (!Number.isFinite(quantity)) return null;
   if (from.id === to.id) return quantity;
@@ -52,17 +60,22 @@ export function convertQuantity(
   const avgUnit = unitsById.get(bridge.avgUnitId);
   if (!avgUnit || avgUnit.dimension === "aantal") return null;
 
+  // Kostprijs rekent met netto bruikbaar; hoeveelheden met bruto.
+  const bridgeQty = forCost
+    ? bridge.netUnitQuantity ?? bridge.avgUnitQuantity
+    : bridge.avgUnitQuantity;
+  if (!bridgeQty || bridgeQty <= 0) return null;
+
   if (fromIsCount) {
     // stuks → gewicht/inhoud: eerst naar avg-eenheid, dan naar doel.
     if (avgUnit.dimension !== to.dimension || !to.factor_to_base) return null;
-    const inAvgUnit = quantity * bridge.avgUnitQuantity;
-    return (inAvgUnit * avgUnit.factor_to_base) / to.factor_to_base;
+    return (quantity * bridgeQty * avgUnit.factor_to_base) / to.factor_to_base;
   }
 
   // gewicht/inhoud → stuks: eerst naar avg-eenheid, dan delen door 1 stuk.
   if (avgUnit.dimension !== from.dimension || !avgUnit.factor_to_base) return null;
   const inAvgUnit = (quantity * from.factor_to_base) / avgUnit.factor_to_base;
-  return inAvgUnit / bridge.avgUnitQuantity;
+  return inAvgUnit / bridgeQty;
 }
 
 /** Gemak: is er überhaupt een conversie mogelijk tussen deze twee eenheden? */
@@ -73,4 +86,22 @@ export function canConvert(
   unitsById: Map<string, UnitLike>
 ): boolean {
   return convertQuantity(1, from, to, bridge, unitsById) !== null;
+}
+
+/**
+ * Verliespercentage voor een receptregel — spiegelt
+ * public.product_effective_loss_pct. Een expliciet percentage op de regel
+ * wint altijd; anders vervalt het standaardverlies van het product zodra
+ * er een netto bruikbaar is ingesteld (dat verlies zit daar al in).
+ */
+export function effectiveLossPct(
+  lineLossPct: number | null | undefined,
+  bridge: UnitBridge | null | undefined,
+  productDefaultLossPct: number | null | undefined
+): number {
+  if (lineLossPct !== null && lineLossPct !== undefined && Number.isFinite(lineLossPct)) {
+    return lineLossPct;
+  }
+  if (bridge?.netUnitQuantity) return 0;
+  return productDefaultLossPct ?? 0;
 }

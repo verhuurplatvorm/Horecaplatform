@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
-import { convertQuantity } from "@/lib/units/convert";
+import { convertQuantity, effectiveLossPct } from "@/lib/units/convert";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
 import type {
@@ -153,6 +153,8 @@ export function RecipeForm({
         baseUnitId: string | null;
         avgUnitQuantity: number | null;
         avgUnitId: string | null;
+        netUnitQuantity: number | null;
+        defaultLossPct: number | null;
         allergens: string[];
         traces: string[];
         nutritionPer100: Record<string, number> | null;
@@ -267,7 +269,7 @@ export function RecipeForm({
           .maybeSingle(),
         supabase
           .from("products")
-          .select("base_unit_id, avg_unit_quantity, avg_unit_id, allergens, contains_traces, nutrition_per_100")
+          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, contains_traces, nutrition_per_100")
           .eq("id", productId)
           .single(),
         supabase
@@ -302,6 +304,8 @@ export function RecipeForm({
         baseUnitId: product?.base_unit_id ?? null,
         avgUnitQuantity: product?.avg_unit_quantity ?? null,
         avgUnitId: product?.avg_unit_id ?? null,
+        netUnitQuantity: product?.net_unit_quantity ?? null,
+        defaultLossPct: product?.default_loss_percentage ?? null,
         allergens: product?.allergens ?? [],
         traces: product?.contains_traces ?? [],
         nutritionPer100: product?.nutrition_per_100 ?? null,
@@ -347,6 +351,33 @@ export function RecipeForm({
   // basiseenheid van het ingrediënt — én, als het ingrediënt een brug
   // heeft ("1 stuk = 95 gram"), ook "stuk" bij een gewicht/inhoud-basis
   // of juist de brug-dimensie bij een stuk-basis.
+  /**
+   * Beschrijft in gewone taal welke conversiefactor de kostprijs van een
+   * regel bepaalt — alleen relevant als de regel-eenheid in een andere
+   * dimensie staat dan de basiseenheid van het ingrediënt.
+   */
+  function describeConversion(
+    info:
+      | {
+          baseUnitId: string | null;
+          avgUnitQuantity: number | null;
+          avgUnitId: string | null;
+          netUnitQuantity: number | null;
+        }
+      | undefined,
+    lineUnit: { dimension: string } | null | undefined,
+    unitMap: Map<string, Unit>
+  ): string | null {
+    if (!info?.avgUnitQuantity || !info.avgUnitId || !lineUnit) return null;
+    const baseUnit = info.baseUnitId ? unitMap.get(info.baseUnitId) : null;
+    if (!baseUnit || baseUnit.dimension === lineUnit.dimension) return null;
+    const avgUnitName = unitMap.get(info.avgUnitId)?.name ?? "";
+    if (info.netUnitQuantity) {
+      return `1 stuk = ${info.netUnitQuantity} ${avgUnitName} bruikbaar (van ${info.avgUnitQuantity} ${avgUnitName} bruto)`;
+    }
+    return `1 stuk = ${info.avgUnitQuantity} ${avgUnitName}`;
+  }
+
   function unitsForDimension(referenceUnitId: string | null, productRefId?: string | null) {
     if (!referenceUnitId) return units;
     const ref = unitsById.get(referenceUnitId);
@@ -373,9 +404,16 @@ export function RecipeForm({
         if (!priceInfo) return null;
         const baseUnit = priceInfo.baseUnitId ? unitsById.get(priceInfo.baseUnitId) : null;
         if (!chosenUnit || !baseUnit) return null;
-        const qtyInBase = convertQuantity(qty, chosenUnit, baseUnit, priceInfo, unitsById);
+        // Kostprijs rekent met NETTO bruikbaar (forCost = true): de volle
+        // inkoopprijs wordt gedragen door het bruikbare deel.
+        const qtyInBase = convertQuantity(qty, chosenUnit, baseUnit, priceInfo, unitsById, true);
         if (qtyInBase === null) return null;
-        const lossPct = parseFloat(row.lossPercentage) || 0;
+        const explicitLoss = row.lossPercentage.trim() === "" ? null : parseFloat(row.lossPercentage);
+        const lossPct = effectiveLossPct(
+          Number.isFinite(explicitLoss as number) ? (explicitLoss as number) : null,
+          priceInfo,
+          priceInfo.defaultLossPct
+        );
         return qtyInBase * priceInfo.pricePerBaseUnit * (1 + lossPct / 100);
       }
 
@@ -1143,6 +1181,15 @@ export function RecipeForm({
                   ? productPrices.get(row.refId)?.packagingDescription ?? null
                   : null
               }
+              conversionNote={
+                row.type === "ingrediënt" && row.refId
+                  ? describeConversion(
+                      productPrices.get(row.refId),
+                      row.unitId ? unitsById.get(row.unitId) : null,
+                      unitsById
+                    )
+                  : null
+              }
               isDuplicate={duplicateIndexes.has(i)}
               isIncomplete={incompleteLineIndexes.includes(i)}
               companyId={referenceCompanyId}
@@ -1664,6 +1711,7 @@ function IngredientLine({
   priceDirection,
   purchasePrice,
   packagingDescription,
+  conversionNote,
   isDuplicate,
   isIncomplete,
   companyId,
@@ -1681,6 +1729,7 @@ function IngredientLine({
   priceDirection?: "up" | "down" | null;
   purchasePrice?: number | null;
   packagingDescription?: string | null;
+  conversionNote?: string | null;
   isDuplicate: boolean;
   isIncomplete: boolean;
   companyId: string | null;
@@ -1761,6 +1810,14 @@ function IngredientLine({
                   {canViewFinancial &&
                     purchasePrice != null &&
                     ` · € ${purchasePrice.toFixed(2)} inkoop`}
+                </p>
+              )}
+              {conversionNote && (
+                <p
+                  className="ml-5 text-xs text-teal"
+                  title="Deze omrekening is gebruikt om de kostprijs van deze regel te bepalen"
+                >
+                  omgerekend met {conversionNote}
                 </p>
               )}
             </div>

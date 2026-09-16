@@ -113,6 +113,7 @@ export type Product = {
   manual_price_per_base_unit: number | null;
   avg_unit_quantity: number | null;
   avg_unit_id: string | null;
+  net_unit_quantity: number | null;
   min_stock_quantity: number | null;
   reorder_quantity: number | null;
   is_active: boolean;

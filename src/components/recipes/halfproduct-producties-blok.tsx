@@ -24,6 +24,8 @@ interface BreakdownLine {
   quantity_in_recipe_unit: number | null;
   conversion_missing: boolean | null;
   product_id: string | null;
+  conversion_note: string | null;
+  applied_loss_pct: number | null;
 }
 
 /**
@@ -324,6 +326,14 @@ export function HalfproductIngredientenModule({
               <tr key={line.sort_order} className="border-t border-border">
                 <td className="px-2 py-3 font-medium">
                   {line.ingredient_name ?? "—"}
+                  {line.conversion_note && !line.conversion_missing && (
+                    <span
+                      className="ml-2 text-xs font-normal text-teal"
+                      title="Deze omrekening bepaalde de kostprijs van deze regel"
+                    >
+                      ({line.conversion_note})
+                    </span>
+                  )}
                   {line.conversion_missing && (
                     <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-copper/10 px-2 py-0.5 text-xs font-normal text-copper">
                       <TriangleAlert className="h-3 w-3" />
