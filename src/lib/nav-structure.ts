@@ -40,6 +40,7 @@ export const NAV_TABS: NavTab[] = [
     items: [
       { href: "/recepturen", label: "Recepten (Gerechten)", icon: BookOpen, moduleKey: "recepturen" },
       { href: "/halfproducten", label: "Halfproducten", icon: SoupIcon, moduleKey: "halfproducten" },
+      { href: "/menus", label: "Menu's & buffetten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
       { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
     ],
   },

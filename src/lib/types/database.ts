@@ -171,6 +171,51 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type EventMenuStatus = "concept" | "definitief" | "uitgevoerd" | "vervallen";
+
+export type EventMenu = {
+  id: string;
+  group_id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  category: string | null;
+  menu_type: string | null;
+  service_date: string | null;
+  status: EventMenuStatus;
+  pos_reference: string | null;
+  notes: string | null;
+  person_count: number;
+  fixed_costs: number;
+  desired_foodcost_pct: number | null;
+  sales_price_per_person: number | null;
+  vat_rate: number;
+  is_template: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EventMenuSection = {
+  id: string;
+  menu_id: string;
+  name: string;
+  sort_order: number;
+}
+
+export type EventMenuLine = {
+  id: string;
+  menu_id: string;
+  section_id: string | null;
+  recipe_id: string | null;
+  product_id: string | null;
+  quantity_per_person: number;
+  unit_id: string | null;
+  is_fixed: boolean;
+  note: string | null;
+  sort_order: number;
+}
+
 export type RecipeRevision = {
   id: string;
   recipe_id: string;
@@ -659,6 +704,24 @@ export type Database = {
         Update: Partial<HalfproductFolder>;
         Relationships: [];
       };
+      event_menus: {
+        Row: EventMenu;
+        Insert: Partial<EventMenu>;
+        Update: Partial<EventMenu>;
+        Relationships: [];
+      };
+      event_menu_sections: {
+        Row: EventMenuSection;
+        Insert: Partial<EventMenuSection>;
+        Update: Partial<EventMenuSection>;
+        Relationships: [];
+      };
+      event_menu_lines: {
+        Row: EventMenuLine;
+        Insert: Partial<EventMenuLine>;
+        Update: Partial<EventMenuLine>;
+        Relationships: [];
+      };
       recipe_revisions: {
         Row: RecipeRevision;
         Insert: Partial<RecipeRevision>;
@@ -872,6 +935,14 @@ export type Database = {
       match_supplier_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
+      };
+      calculate_event_menu_cost: {
+        Args: { p_menu_id: string; p_company_id: string };
+        Returns: number;
+      };
+      explode_menu_to_products: {
+        Args: { p_menu_id: string };
+        Returns: { product_id: string; quantity_in_base: number }[];
       };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
