@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 
 /**
@@ -17,10 +17,17 @@ import { useCallback } from "react";
  */
 export function useReturnNavigation(fallbackHref: string) {
   const router = useRouter();
-  const params = useSearchParams();
-  const returnTo = params.get("terug");
 
   return useCallback(() => {
+    // Het adres pas bij de klik uitlezen. Met useSearchParams() zou elke
+    // pagina die deze hook gebruikt in een Suspense-grens moeten staan,
+    // en dat is hier niet nodig: we hebben de waarde alleen op dat ene
+    // moment nodig, niet tijdens het renderen.
+    const returnTo =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("terug")
+        : null;
+
     if (returnTo) {
       // Alleen interne adressen; een volledige URL van buitenaf negeren we.
       if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
@@ -33,7 +40,7 @@ export function useReturnNavigation(fallbackHref: string) {
       return;
     }
     router.push(fallbackHref);
-  }, [returnTo, router, fallbackHref]);
+  }, [router, fallbackHref]);
 }
 
 /**
