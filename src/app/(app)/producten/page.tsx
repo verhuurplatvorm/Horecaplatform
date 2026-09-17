@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
+import { Download, Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,9 @@ import { Modal } from "@/components/ui/modal";
 import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
+import { ConfigurableTable } from "@/components/ui/configurable-table";
+import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 interface ProductRow {
   id: string;
@@ -29,6 +32,15 @@ interface ProductRow {
   packagingDescription: string | null;
   supplierName: string | null;
   validFrom: string | null;
+  productNumber: number | null;
+  brand: string | null;
+  productGroup: string | null;
+  note: string | null;
+  supplierArticleCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+  flaggedForReview: boolean;
+  previousPurchasePrice: number | null;
 }
 
 interface UsageInfo {
@@ -39,7 +51,67 @@ interface UsageInfo {
 }
 
 export default function ProductenPage() {
+  const router = useRouter();
   const { can } = usePermissions();
+  // Prijsalarm: drempel per groep, ingesteld in de database (0061).
+  const [alertThreshold, setAlertThreshold] = useState(10);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("groups")
+      .select("price_alert_threshold_pct")
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.price_alert_threshold_pct != null) {
+          setAlertThreshold(Number(data.price_alert_threshold_pct));
+        }
+      });
+  }, []);
+
+  /** Exporteert wat er nu zichtbaar is (inclusief actieve zoekterm). */
+  function exportCsv() {
+    const header = [
+      "ID","Naam","Leveranciersartikelnr.","Merk","Leverancier","Categorie",
+      "Prijs per verpakking","Verpakking","Inhoud","Eenheid","Prijs per basiseenheid",
+      "Prijswijziging %","Laatste prijswijziging","Beschikbaar","EAN","Notitie",
+    ];
+    const lines = filteredRows.map((r) => {
+      const d = priceDelta(r);
+      return [
+        r.productNumber ?? "", r.customName?.trim() || r.name, r.supplierArticleCode ?? "",
+        r.brand ?? "", r.supplierName ?? "", r.productGroup ?? "",
+        r.purchasePrice?.toFixed(2) ?? "", r.packagingDescription ?? "",
+        r.packagingUnitCount ?? "", r.base_unit, r.pricePerBaseUnit?.toFixed(4) ?? "",
+        d ? d.pct.toFixed(2) : "",
+        r.validFrom ? new Date(r.validFrom).toLocaleDateString("nl-NL") : "",
+        r.is_active ? "Ja" : "Nee", r.ean_code ?? "", r.note ?? "",
+      ];
+    });
+    const csv = [header, ...lines]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ingredienten.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Prijsverschil t.o.v. de vorige actieve prijs, of null als er geen vorige is. */
+  function priceDelta(r: ProductRow) {
+    if (r.purchasePrice === null || r.previousPurchasePrice === null) return null;
+    if (r.previousPurchasePrice === 0) return null;
+    return {
+      old: r.previousPurchasePrice,
+      next: r.purchasePrice,
+      euro: r.purchasePrice - r.previousPurchasePrice,
+      pct: ((r.purchasePrice - r.previousPurchasePrice) / r.previousPurchasePrice) * 100,
+    };
+  }
+
   const canViewFinancial = can("producten").canViewFinancial;
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +161,12 @@ export default function ProductenPage() {
         ean_code: string | null;
         is_active: boolean;
         manual_price_per_base_unit: number | null;
+        product_number: number | null;
+        brand: string | null;
+        product_group: string | null;
+        description: string | null;
+        created_at: string;
+        updated_at: string;
       }[] = [];
       let from = 0;
       let fetchError: { message: string } | null = null;
@@ -97,7 +175,7 @@ export default function ProductenPage() {
         const { data, error: pageError } = await supabase
           .from("products")
           .select(
-            "id, name, custom_name, base_unit, base_unit_id, avg_unit_quantity, avg_unit_id, article_number, ean_code, is_active, manual_price_per_base_unit"
+            "id, name, custom_name, base_unit, base_unit_id, avg_unit_quantity, avg_unit_id, article_number, ean_code, is_active, manual_price_per_base_unit, product_number, brand, product_group, description, created_at, updated_at"
           )
           .order("name")
           .range(from, from + PAGE_SIZE - 1);
@@ -135,6 +213,8 @@ export default function ProductenPage() {
         packaging_unit_count: number | null;
         packaging_description: string | null;
         valid_from: string;
+        supplier_article_code: string | null;
+        flagged_for_review: boolean;
         suppliers: { name: string } | null;
       }[] = [];
       for (let i = 0; i < productIds.length; i += PRICE_BATCH_SIZE) {
@@ -142,7 +222,7 @@ export default function ProductenPage() {
         const { data, error: priceError } = await supabase
           .from("supplier_products")
           .select(
-            "id, product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, suppliers(name)"
+            "id, product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, supplier_article_code, flagged_for_review, suppliers(name)"
           )
           .in("product_id", batchIds)
           .is("valid_to", null)
@@ -165,6 +245,8 @@ export default function ProductenPage() {
           packagingDescription: string | null;
           supplierName: string;
           validFrom: string;
+          supplierArticleCode: string | null;
+          flaggedForReview: boolean;
         }
       >();
       for (const row of currentPrices ?? []) {
@@ -182,7 +264,25 @@ export default function ProductenPage() {
           packagingDescription: row.packaging_description,
           supplierName,
           validFrom: row.valid_from,
+          supplierArticleCode: row.supplier_article_code,
+          flaggedForReview: row.flagged_for_review,
         });
+      }
+
+      // Vorige prijs per ingrediënt, voor de prijsverandering-kolommen.
+      const prevPriceByProduct = new Map<string, number>();
+      for (let i = 0; i < productIds.length; i += PRICE_BATCH_SIZE) {
+        const { data } = await supabase
+          .from("price_change_history")
+          .select("product_id, old_purchase_price, valid_from")
+          .in("product_id", productIds.slice(i, i + PRICE_BATCH_SIZE))
+          .not("old_purchase_price", "is", null)
+          .order("valid_from", { ascending: false });
+        for (const h of data ?? []) {
+          if (!prevPriceByProduct.has(h.product_id) && h.old_purchase_price != null) {
+            prevPriceByProduct.set(h.product_id, h.old_purchase_price);
+          }
+        }
       }
 
       if (!cancelled) {
@@ -218,6 +318,15 @@ export default function ProductenPage() {
                 ? "Eigen prijs"
                 : price?.supplierName ?? null,
               validFrom: price?.validFrom ?? null,
+              productNumber: p.product_number,
+              brand: p.brand,
+              productGroup: p.product_group,
+              note: p.description,
+              supplierArticleCode: price?.supplierArticleCode ?? p.article_number,
+              createdAt: p.created_at,
+              updatedAt: p.updated_at,
+              flaggedForReview: price?.flaggedForReview ?? false,
+              previousPurchasePrice: prevPriceByProduct.get(p.id) ?? null,
             };
           })
         );
@@ -358,9 +467,6 @@ export default function ProductenPage() {
     });
   }
 
-  const allVisibleSelected =
-    filteredRows.length > 0 && filteredRows.every((r) => selectedIds.has(r.id));
-
   return (
     <>
       <Topbar title="Centrale ingrediëntendatabase" />
@@ -376,6 +482,10 @@ export default function ProductenPage() {
               className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
             />
           </div>
+          <Button variant="secondary" onClick={exportCsv}>
+            <Download className="h-4 w-4" />
+            Exporteren
+          </Button>
           <Link href="/producten/importeren">
             <Button variant="secondary">
               <Upload className="h-4 w-4" />
@@ -416,163 +526,210 @@ export default function ProductenPage() {
           )}
         </div>
 
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-<table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="w-10 px-5 py-3 font-medium">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleAllVisible}
-                      aria-label="Alles selecteren"
-                    />
-                  </th>
-                  <th className="px-5 py-3 font-medium">Artikel</th>
-                  <th className="px-5 py-3 font-medium">Leverancier</th>
-                  <th className="px-5 py-3 font-medium">Eenheid</th>
-                  <th className="px-5 py-3 font-medium">Verpakkingseenheid</th>
-                  {canViewFinancial && (
-                    <>
-                      <th className="px-5 py-3 font-medium">Aankoopprijs</th>
-                      <th className="px-5 py-3 font-medium">Actuele inkoopprijs</th>
-                    </>
-                  )}
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((p) => (
-                  <tr key={p.id} className="border-t border-border hover:bg-background">
-                    <td className="px-5 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(p.id)}
-                        onChange={() => toggleOne(p.id)}
-                        aria-label={`Selecteer ${p.name}`}
-                      />
-                    </td>
-                    <td className="px-5 py-3 font-medium">
-                      <Link
-                        href={`/producten/${p.id}/bewerken`}
-                        className="hover:text-teal hover:underline"
-                      >
-                        {p.name}
-                      </Link>
-                      {p.customName && p.customName !== p.name && (
-                        <p className="text-xs text-muted">Eigen naam: {p.customName}</p>
-                      )}
-                      {p.article_number && (
-                        <p className="text-xs text-muted">Art.nr. {p.article_number}</p>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-muted">{p.supplierName ?? "—"}</td>
-                    <td className="px-5 py-3">
-                      <UnitEditCell
-                        units={units}
-                        currentUnitId={p.base_unit_id}
-                        currentLabel={p.base_unit}
-                        onSave={(unitId) => updateBaseUnit(p.id, unitId)}
-                      />
-                      {p.avg_unit_quantity && p.avg_unit_name && (
-                        <div
-                          className="mt-0.5 text-xs text-teal"
-                          title="Gemiddeld gewicht/inhoud per stuk — gebruikt om stuks en gram/ml naar elkaar om te rekenen"
-                        >
-                          1 stuk = {p.avg_unit_quantity} {p.avg_unit_name}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <InlineEditCell
-                        value={p.packagingUnitCount !== null ? String(p.packagingUnitCount) : null}
-                        placeholder="—"
-                        suffix={` ${p.base_unit}`}
-                        hint={p.packagingDescription ?? undefined}
-                        type="number"
-                        disabled={!p.priceRowId}
-                        onSave={(value) => {
-                          const num = Number(value);
-                          if (!value || !Number.isFinite(num) || num <= 0) return;
-                          updatePriceField(p.priceRowId, { packaging_unit_count: num });
-                        }}
-                      />
-                    </td>
-                    {canViewFinancial && (
-                      <>
-                        <td className="px-5 py-3">
-                          <InlineEditCell
-                            value={p.purchasePrice !== null ? p.purchasePrice.toFixed(2) : null}
-                            placeholder="—"
-                            prefix="€ "
-                            type="number"
-                            disabled={!p.priceRowId}
-                            onSave={(value) => {
-                              const num = Number(value);
-                              if (!value || !Number.isFinite(num) || num <= 0) return;
-                              updatePriceField(p.priceRowId, { purchase_price: num });
-                            }}
-                          />
-                        </td>
-                        <td className="px-5 py-3 tabular">
-                          {p.pricePerBaseUnit !== null ? (
-                            <div>
-                              <div className="text-foreground">
-                                € {p.pricePerBaseUnit.toFixed(4)} / {p.base_unit}
-                              </div>
-                              {p.validFrom && (
-                                <div className="text-xs text-muted">
-                                  sinds {new Date(p.validFrom).toLocaleDateString("nl-NL")}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted">Geen prijs bekend</span>
-                          )}
-                        </td>
-                      </>
+        <ConfigurableTable<ProductRow>
+          storageKey="ingredienten"
+          rows={filteredRows}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) =>
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          onToggleSelectAll={(ids) =>
+            setSelectedIds((prev) =>
+              ids.every((i) => prev.has(i)) ? new Set() : new Set(ids)
+            )
+          }
+          onRowClick={(row) => router.push(`/producten/${row.id}/bewerken`)}
+          emptyLabel={
+            loading ? "Ingrediënten laden…" : "Geen ingrediënten gevonden."
+          }
+          rowClassName={(row) => (!row.is_active ? "opacity-50" : undefined)}
+          columns={[
+            {
+              key: "flag",
+              label: "!",
+              width: 40,
+              noFilter: true,
+              value: (r) => (r.flaggedForReview ? "1" : "0"),
+              render: (r) =>
+                r.flaggedForReview ? (
+                  <TriangleAlert
+                    className="h-4 w-4 text-copper"
+                    aria-label="Niet herkend — controleer dit ingrediënt"
+                  />
+                ) : null,
+            },
+            { key: "nr", label: "ID", width: 60, align: "right", value: (r) => r.productNumber },
+            {
+              key: "naam",
+              label: "Naam",
+              width: 230,
+              sticky: true,
+              value: (r) => r.customName?.trim() || r.name,
+            },
+            {
+              key: "artnr",
+              label: "Leveranciersartikelnr.",
+              width: 130,
+              value: (r) => r.supplierArticleCode,
+            },
+            { key: "merk", label: "Merk", width: 110, value: (r) => r.brand },
+            { key: "lev", label: "Leverancier", width: 140, value: (r) => r.supplierName },
+            { key: "cat", label: "Categorie", width: 130, value: (r) => r.productGroup },
+            {
+              key: "prijsverp",
+              label: "Prijs per verpakking",
+              width: 110,
+              align: "right",
+              value: (r) => r.purchasePrice,
+              render: (r) =>
+                r.purchasePrice !== null ? `€ ${r.purchasePrice.toFixed(2)}` : "—",
+            },
+            {
+              key: "verp",
+              label: "Verpakking",
+              width: 130,
+              value: (r) => r.packagingDescription,
+            },
+            {
+              key: "inhoud",
+              label: "Inhoud verpakking",
+              width: 100,
+              align: "right",
+              value: (r) => r.packagingUnitCount,
+            },
+            { key: "eenheid", label: "Eenheid", width: 90, value: (r) => r.base_unit },
+            {
+              key: "prijsbasis",
+              label: "Prijs per basiseenheid",
+              width: 120,
+              align: "right",
+              value: (r) => r.pricePerBaseUnit,
+              render: (r) =>
+                r.pricePerBaseUnit !== null
+                  ? `€ ${r.pricePerBaseUnit.toFixed(4)} / ${r.base_unit}`
+                  : "—",
+            },
+            {
+              key: "deltapct",
+              label: "Prijswijziging %",
+              width: 130,
+              align: "right",
+              value: (r) => priceDelta(r)?.pct ?? null,
+              render: (r) => {
+                const d = priceDelta(r);
+                if (!d) return "—";
+                const alarm = Math.abs(d.pct) >= alertThreshold;
+                return (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1",
+                      d.pct > 0 ? "text-danger" : "text-success",
+                      alarm && "font-semibold"
                     )}
-                    <td className="px-5 py-3">
-                      <span
-                        className={
-                          p.is_active
-                            ? "rounded-full bg-success/10 px-2 py-0.5 text-xs text-success"
-                            : "rounded-full bg-muted/10 px-2 py-0.5 text-xs text-muted"
-                        }
-                      >
-                        {p.is_active ? "Actief" : "Inactief"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      <button
-                        onClick={() => setDeletingRow(p)}
-                        title="Ingrediënt verwijderen"
-                        className="text-muted hover:text-danger"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredRows.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={canViewFinancial ? 9 : 7} className="px-5 py-6 text-center text-muted">
-                      {error
-                        ? "Kan ingrediënten niet laden — controleer de Supabase-koppeling."
-                        : q
-                        ? "Geen ingrediënten gevonden voor deze zoekopdracht."
-                        : "Nog geen ingrediënten in de centrale database. Voeg het eerste artikel toe."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-</div>
-          </CardContent>
-        </Card>
+                    title={
+                      alarm
+                        ? `Boven de prijsalarm-drempel van ${alertThreshold}%`
+                        : undefined
+                    }
+                  >
+                    {alarm && <TriangleAlert className="h-3 w-3" />}
+                    {d.pct > 0 ? "+" : ""}
+                    {d.pct.toFixed(2)}%
+                  </span>
+                );
+              },
+            },
+            {
+              key: "deltaeur",
+              label: "Prijswijziging €",
+              width: 150,
+              align: "right",
+              value: (r) => priceDelta(r)?.euro ?? null,
+              render: (r) => {
+                const d = priceDelta(r);
+                if (!d) return "—";
+                return (
+                  <span className="whitespace-nowrap text-xs">
+                    <span className="text-muted line-through">
+                      € {d.old.toFixed(2)}
+                    </span>{" "}
+                    → € {d.next.toFixed(2)}
+                  </span>
+                );
+              },
+            },
+            {
+              key: "laatste",
+              label: "Laatste prijswijziging",
+              width: 120,
+              value: (r) => r.validFrom,
+              render: (r) =>
+                r.validFrom ? new Date(r.validFrom).toLocaleDateString("nl-NL") : "—",
+            },
+            {
+              key: "gemaakt",
+              label: "Aangemaakt op",
+              width: 110,
+              hiddenByDefault: true,
+              value: (r) => r.createdAt,
+              render: (r) => new Date(r.createdAt).toLocaleDateString("nl-NL"),
+            },
+            {
+              key: "gewijzigd",
+              label: "Gewijzigd op",
+              width: 110,
+              hiddenByDefault: true,
+              value: (r) => r.updatedAt,
+              render: (r) => new Date(r.updatedAt).toLocaleDateString("nl-NL"),
+            },
+            {
+              key: "historie",
+              label: "Prijshistorie",
+              width: 90,
+              noFilter: true,
+              value: () => "",
+              render: (r) => (
+                <Link
+                  href={`/producten/${r.id}/bewerken#prijzen`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-teal hover:underline"
+                >
+                  bekijk
+                </Link>
+              ),
+            },
+            {
+              key: "actief",
+              label: "Beschikbaar",
+              width: 90,
+              value: (r) => (r.is_active ? "Ja" : "Nee"),
+            },
+            {
+              key: "status",
+              label: "Status",
+              width: 110,
+              value: (r) =>
+                r.flaggedForReview
+                  ? "Te controleren"
+                  : r.pricePerBaseUnit === null
+                    ? "Geen prijs"
+                    : "In orde",
+            },
+            {
+              key: "notitie",
+              label: "Notitie",
+              width: 160,
+              hiddenByDefault: true,
+              value: (r) => r.note,
+            },
+            { key: "ean", label: "EAN-code", width: 130, value: (r) => r.ean_code },
+          ]}
+        />
       </main>
 
       {confirming && (
@@ -800,155 +957,4 @@ function BulkDeleteModal({
   );
 }
 
-function UnitEditCell({
-  units,
-  currentUnitId,
-  currentLabel,
-  onSave,
-}: {
-  units: { id: string; key: string; name: string; dimension: string }[];
-  currentUnitId: string | null;
-  currentLabel: string;
-  onSave: (unitId: string) => void | Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
 
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (units.length === 0) {
-            window.alert(
-              "De eenhedenlijst kon niet geladen worden — herlaad de pagina en probeer opnieuw."
-            );
-            return;
-          }
-          setEditing(true);
-        }}
-        className="rounded px-1 py-0.5 text-left text-muted hover:bg-background hover:underline"
-        title="Klik om de eenheid te wijzigen"
-      >
-        {currentLabel}
-      </button>
-    );
-  }
-
-  const byDimension: Record<string, typeof units> = {};
-  for (const u of units) {
-    (byDimension[u.dimension] ??= []).push(u);
-  }
-
-  return (
-    <select
-      autoFocus
-      value={currentUnitId ?? ""}
-      onChange={async (e) => {
-        if (e.target.value && e.target.value !== currentUnitId) {
-          await onSave(e.target.value);
-        }
-        setEditing(false);
-      }}
-      onBlur={() => {
-        // Kleine vertraging: op sommige browsers vuurt blur nét vóór
-        // change, waardoor de keuze anders verloren zou gaan.
-        setTimeout(() => setEditing(false), 200);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") setEditing(false);
-      }}
-      className="h-8 rounded-md border border-teal bg-surface px-2 text-sm"
-    >
-      <option value="">Kies…</option>
-      {Object.entries(byDimension).map(([dimension, list]) => (
-        <optgroup key={dimension} label={dimension}>
-          {list.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-  );
-}
-
-function InlineEditCell({
-  value,
-  placeholder,
-  prefix,
-  suffix,
-  hint,
-  type = "text",
-  disabled,
-  onSave,
-}: {
-  value: string | null;
-  placeholder: string;
-  prefix?: string;
-  suffix?: string;
-  hint?: string;
-  type?: "text" | "number";
-  disabled?: boolean;
-  onSave: (value: string) => void | Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value ?? "");
-  const [saving, setSaving] = useState(false);
-
-  if (disabled) {
-    return <span className="text-muted">{value ?? placeholder}</span>;
-  }
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(value ?? "");
-          setEditing(true);
-        }}
-        className="rounded px-1 py-0.5 text-left hover:bg-background hover:underline"
-        title="Klik om te bewerken"
-      >
-        {value !== null && value !== "" ? (
-          <>
-            {prefix}
-            {value}
-            {suffix}
-          </>
-        ) : (
-          <span className="text-muted">{placeholder}</span>
-        )}
-        {hint && <span className="ml-1 text-xs text-muted">({hint})</span>}
-      </button>
-    );
-  }
-
-  async function commit() {
-    setSaving(true);
-    await onSave(draft);
-    setSaving(false);
-    setEditing(false);
-  }
-
-  return (
-    <input
-      autoFocus
-      type={type}
-      step={type === "number" ? "any" : undefined}
-      value={draft}
-      disabled={saving}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          (e.target as HTMLInputElement).blur();
-        }
-        if (e.key === "Escape") setEditing(false);
-      }}
-      className="h-8 w-28 rounded-md border border-teal bg-surface px-2 text-sm"
-    />
-  );
-}
