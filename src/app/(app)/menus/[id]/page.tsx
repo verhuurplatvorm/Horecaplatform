@@ -123,8 +123,12 @@ export default function MenuDetailPage({
       return;
     }
     setMenu({ ...menu, ...patch });
-    // Aantal personen raakt alle berekeningen — opnieuw ophalen.
-    if (patch.person_count !== undefined) load();
+    // Aantal personen én vaste kosten zitten allebei in de totale
+    // kostprijs die de database berekent; na een wijziging moet die
+    // opnieuw opgehaald worden, anders blijft er een oud totaal staan.
+    if (patch.person_count !== undefined || patch.fixed_costs !== undefined) {
+      load();
+    }
   }
 
   /**
@@ -205,6 +209,10 @@ export default function MenuDetailPage({
     if (last && last[0] === l.section_name) last[1].push(l);
     else sectionGroups.push([l.section_name, [l]]);
   }
+
+  // Optellen uit de regels zelf, zodat dit nooit uit de pas loopt met
+  // een totaal dat nog opgehaald moet worden.
+  const variableCost = lines.reduce((sum, l) => sum + (l.total_cost ?? 0), 0);
 
   const costPerPerson =
     totalCost !== null && menu.person_count > 0 ? totalCost / menu.person_count : null;
@@ -632,10 +640,18 @@ export default function MenuDetailPage({
                 <CardTitle>Calculatie bij {menu.person_count} personen</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <Row label="Variabele kosten (ingrediënten en gerechten)"
-                  value={`€ ${((totalCost ?? 0) - menu.fixed_costs).toFixed(2)}`} />
+                <Row
+                  label="Variabele kosten (ingrediënten en gerechten)"
+                  value={`€ ${variableCost.toFixed(2)}`}
+                />
                 <div className="flex items-center justify-between">
-                  <span className="text-muted">Vaste kosten</span>
+                  <span className="text-muted">
+                    Vaste kosten{" "}
+                    <span className="text-xs">
+                      (komen bovenop de variabele kosten, schalen niet mee met het
+                      aantal personen)
+                    </span>
+                  </span>
                   <input
                     type="number"
                     step="0.01"
@@ -698,11 +714,20 @@ export default function MenuDetailPage({
                   </>
                 )}
                 {costPerPerson !== null && (
-                  <p className="rounded-md bg-teal/5 p-3">
-                    <strong>€ {(totalCost ?? 0).toFixed(2)}</strong> totale kosten ÷{" "}
-                    <strong>{menu.person_count} personen</strong> ={" "}
-                    <strong>€ {costPerPerson.toFixed(2)} per persoon</strong>
-                  </p>
+                  <div className="space-y-1 rounded-md bg-teal/5 p-3">
+                    {menu.fixed_costs > 0 && (
+                      <p>
+                        € {variableCost.toFixed(2)} variabel + €{" "}
+                        {menu.fixed_costs.toFixed(2)} vast ={" "}
+                        <strong>€ {(totalCost ?? 0).toFixed(2)}</strong> totale kosten
+                      </p>
+                    )}
+                    <p>
+                      <strong>€ {(totalCost ?? 0).toFixed(2)}</strong> totale kosten ÷{" "}
+                      <strong>{menu.person_count} personen</strong> ={" "}
+                      <strong>€ {costPerPerson.toFixed(2)} per persoon</strong>
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
