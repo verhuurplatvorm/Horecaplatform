@@ -171,6 +171,16 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type RecipeRevision = {
+  id: string;
+  recipe_id: string;
+  version: number;
+  snapshot: Record<string, unknown>;
+  changed_by: string | null;
+  changed_at: string;
+  change_note: string | null;
+}
+
 export type AuditLogEntry = {
   id: number;
   group_id: string | null;
@@ -192,6 +202,11 @@ export type Recipe = {
   name: string;
   category: string | null;
   halfproduct_folder_id: string | null;
+  labour_minutes_kitchen: number | null;
+  labour_minutes_other: number | null;
+  labour_cost_per_hour: number | null;
+  production_location: string | null;
+  synonyms: string[];
   preparation: string | null;
   plating_instructions: string | null;
   photo_url: string | null;
@@ -642,6 +657,12 @@ export type Database = {
         Row: HalfproductFolder;
         Insert: Partial<HalfproductFolder>;
         Update: Partial<HalfproductFolder>;
+        Relationships: [];
+      };
+      recipe_revisions: {
+        Row: RecipeRevision;
+        Insert: Partial<RecipeRevision>;
+        Update: Partial<RecipeRevision>;
         Relationships: [];
       };
       audit_log: {

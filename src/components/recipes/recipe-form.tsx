@@ -20,6 +20,7 @@ import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { convertQuantity, effectiveLossPct } from "@/lib/units/convert";
+import { RecipeHistory } from "@/components/recipes/recipe-history";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
 import type {
@@ -74,7 +75,7 @@ export function RecipeForm({
   const canViewFinancial = can(
     recipeKind === "halfproduct" ? "halfproducten" : "recepturen"
   ).canViewFinancial;
-  const [formTab, setFormTab] = useState<"ingredienten" | "gegevens" | "gebruikt">("ingredienten");
+  const [formTab, setFormTab] = useState<"algemeen" | "financieel" | "voeding" | "gebruikt" | "historie">("algemeen");
   const [name, setName] = useState(initialRecipe?.name ?? "");
   const [category, setCategory] = useState(initialRecipe?.category ?? "");
   const [preparation, setPreparation] = useState(
@@ -95,6 +96,21 @@ export function RecipeForm({
   );
   const [yieldQuantity, setYieldQuantity] = useState(
     initialRecipe?.yield_quantity?.toString() ?? ""
+  );
+  const [labourKitchen, setLabourKitchen] = useState(
+    initialRecipe?.labour_minutes_kitchen?.toString() ?? ""
+  );
+  const [labourOther, setLabourOther] = useState(
+    initialRecipe?.labour_minutes_other?.toString() ?? ""
+  );
+  const [labourRate, setLabourRate] = useState(
+    initialRecipe?.labour_cost_per_hour?.toString() ?? ""
+  );
+  const [productionLocation, setProductionLocation] = useState(
+    initialRecipe?.production_location ?? ""
+  );
+  const [recipeSynonyms, setRecipeSynonyms] = useState(
+    (initialRecipe?.synonyms ?? []).join(", ")
   );
   const [storageMethod, setStorageMethod] = useState(
     initialRecipe?.storage_method ?? ""
@@ -799,6 +815,11 @@ export function RecipeForm({
       portion_size: recipeKind === "gerecht" ? 1 : null,
       base_unit_id: recipeKind === "halfproduct" ? baseUnitId || null : null,
       yield_quantity: recipeKind === "halfproduct" ? Number(yieldQuantity) || null : null,
+      labour_minutes_kitchen: labourKitchen ? Number(labourKitchen) : null,
+      labour_minutes_other: labourOther ? Number(labourOther) : null,
+      labour_cost_per_hour: labourRate ? Number(labourRate) : null,
+      production_location: productionLocation.trim() || null,
+      synonyms: recipeSynonyms.split(",").map((x) => x.trim()).filter(Boolean),
       storage_method: recipeKind === "halfproduct" ? storageMethod.trim() || null : null,
       shelf_life_days: recipeKind === "halfproduct" && shelfLifeDays ? Number(shelfLifeDays) : null,
       sales_price: recipeKind === "gerecht" && salesPrice ? Number(salesPrice) : null,
@@ -1076,6 +1097,63 @@ export function RecipeForm({
                   className="input"
                 />
               </Field>
+              <Field label="Productielocatie">
+                <input
+                  value={productionLocation}
+                  onChange={(e) => setProductionLocation(e.target.value)}
+                  placeholder="bv. Centrale keuken"
+                  className="input"
+                />
+              </Field>
+
+              <Field label="Arbeid keuken (minuten)">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={labourKitchen}
+                  onChange={(e) => setLabourKitchen(e.target.value)}
+                  className="input"
+                />
+              </Field>
+
+              <Field label="Overige arbeid (minuten)">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={labourOther}
+                  onChange={(e) => setLabourOther(e.target.value)}
+                  className="input"
+                />
+              </Field>
+
+              <Field
+                label="Uurtarief arbeid (€)"
+                hint="Leeg laten = arbeid telt niet mee in de kostprijs"
+              >
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={labourRate}
+                  onChange={(e) => setLabourRate(e.target.value)}
+                  className="input"
+                />
+              </Field>
+
+              <Field
+                label="Synoniemen"
+                hint="Andere benamingen, gescheiden door komma's"
+                span2
+              >
+                <input
+                  value={recipeSynonyms}
+                  onChange={(e) => setRecipeSynonyms(e.target.value)}
+                  className="input"
+                />
+              </Field>
+
               <Field label="Bewaarmethode" span2>
                 <input
                   value={storageMethod}
@@ -1264,6 +1342,44 @@ export function RecipeForm({
               </p>
             </div>
           </div>
+
+          {/* Arbeid telt alleen mee als er een uurtarief is ingevuld. */}
+          {Number(labourRate) > 0 &&
+            (Number(labourKitchen) > 0 || Number(labourOther) > 0) && (
+              <div className="rounded-md border border-border bg-background p-3 text-sm">
+                <p className="text-muted">
+                  Arbeid:{" "}
+                  {(Number(labourKitchen) || 0) + (Number(labourOther) || 0)} min ×{" "}
+                  € {Number(labourRate).toFixed(2)} / uur ={" "}
+                  <strong className="text-foreground">
+                    €{" "}
+                    {(
+                      (((Number(labourKitchen) || 0) + (Number(labourOther) || 0)) / 60) *
+                      Number(labourRate)
+                    ).toFixed(2)}
+                  </strong>
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  Arbeidskosten worden apart getoond en tellen niet mee in de
+                  ingrediëntkostprijs hierboven.
+                </p>
+              </div>
+            )}
+
+          {/* Maakt zichtbaar hoe de kostprijs per eenheid tot stand komt. */}
+          {recipeKind === "halfproduct" && yieldQuantityNum > 0 && (
+            <p className="rounded-md bg-teal/5 p-3 text-sm">
+              <strong>€ {totalCost.toFixed(2)}</strong> totale kosten ÷{" "}
+              <strong>
+                {yieldQuantityNum} {baseUnitName ?? "basiseenheid"}
+              </strong>{" "}
+              opbrengst ={" "}
+              <strong>
+                € {(totalCost / yieldQuantityNum).toFixed(4)} per{" "}
+                {baseUnitName ?? "basiseenheid"}
+              </strong>
+            </p>
+          )}
 
           <div className="grid grid-cols-1 gap-4 border-t border-border pt-3 sm:grid-cols-3">
             <Stat label="Totale kostprijs" value={`€ ${totalCost.toFixed(4)}`} emphasis />
@@ -1485,9 +1601,11 @@ export function RecipeForm({
     >
       {(() => {
         const tabs: { key: typeof formTab; label: string }[] = [
-          { key: "ingredienten", label: "Ingrediënten & kostprijs" },
-          { key: "gegevens", label: "Basisgegevens & allergenen" },
-          ...(gebruiktInCard ? [{ key: "gebruikt" as const, label: "Gebruikt in" }] : []),
+          { key: "algemeen", label: "Algemeen" },
+          ...(canViewFinancial ? [{ key: "financieel" as const, label: "Financieel" }] : []),
+          { key: "voeding", label: "Voedingswaarden & allergenen" },
+          ...(gebruiktInCard ? [{ key: "gebruikt" as const, label: "Gebruik" }] : []),
+          ...(isEdit ? [{ key: "historie" as const, label: "Historie" }] : []),
         ];
         return (
           <div className="flex gap-1 border-b border-border">
@@ -1509,20 +1627,26 @@ export function RecipeForm({
         );
       })()}
 
-      {formTab === "ingredienten" && (
+      {/* Algemeen: wat het is, wat erin zit, hoe het gemaakt wordt.
+          De overige tabs blijven gemonteerd (verborgen) zodat één keer
+          opslaan alle velden bewaart, ongeacht welke tab open staat. */}
+      <div className={formTab === "algemeen" ? "space-y-4" : "hidden"}>
+        {basisgegevensCard}
+        {ingredientenCard}
+      </div>
+      <div className={formTab === "voeding" ? "space-y-4" : "hidden"}>
+        {allergenenCard}
+      </div>
+      {formTab === "financieel" && (
         <div className="space-y-4">
-          {ingredientenCard}
           {canViewFinancial ? kostprijsCard : geenFinancieelInzichtCard}
-        </div>
-      )}
-      {formTab === "gegevens" && (
-        <div className="space-y-4">
-          {basisgegevensCard}
-          {allergenenCard}
         </div>
       )}
       {formTab === "gebruikt" && gebruiktInCard && (
         <div className="space-y-4">{gebruiktInCard}</div>
+      )}
+      {formTab === "historie" && initialRecipe && (
+        <RecipeHistory recipeId={initialRecipe.id} />
       )}
       {errorBlock}
       {buttonsBlock}
@@ -1568,11 +1692,13 @@ function Field({
   label,
   required,
   span2,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
   span2?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -1581,6 +1707,7 @@ function Field({
         {label} {required && <span className="text-danger">*</span>}
       </label>
       {children}
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </div>
   );
 }
