@@ -936,6 +936,26 @@ export type Database = {
         Args: { p_group_id: string; p_name: string };
         Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
       };
+      get_event_menu_breakdown: {
+        Args: { p_menu_id: string; p_company_id: string };
+        Returns: {
+          line_id: string;
+          section_name: string;
+          section_sort: number;
+          display_name: string;
+          line_type: string;
+          quantity_per_person: number;
+          unit_name: string | null;
+          is_fixed: boolean;
+          total_quantity: number;
+          unit_price: number | null;
+          unit_price_label: string | null;
+          cost_per_person: number | null;
+          total_cost: number | null;
+          note: string | null;
+          sort_order: number;
+        }[];
+      };
       calculate_event_menu_cost: {
         Args: { p_menu_id: string; p_company_id: string };
         Returns: number;

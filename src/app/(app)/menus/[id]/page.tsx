@@ -1,8 +1,8 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { Fragment, use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Trash2, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Save, Trash2, Users } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,10 +23,22 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
-interface LineWithName extends EventMenuLine {
-  displayName: string;
-  unitName: string | null;
-  lineCost: number | null;
+interface BreakdownLine {
+  line_id: string;
+  section_name: string;
+  section_sort: number;
+  display_name: string;
+  line_type: string;
+  quantity_per_person: number;
+  unit_name: string | null;
+  is_fixed: boolean;
+  total_quantity: number;
+  unit_price: number | null;
+  unit_price_label: string | null;
+  cost_per_person: number | null;
+  total_cost: number | null;
+  note: string | null;
+  sort_order: number;
 }
 
 export default function MenuDetailPage({
@@ -44,18 +56,17 @@ export default function MenuDetailPage({
   const [tab, setTab] = useState<TabKey>("algemeen");
   const [menu, setMenu] = useState<EventMenu | null>(null);
   const [sections, setSections] = useState<EventMenuSection[]>([]);
-  const [lines, setLines] = useState<LineWithName[]>([]);
+  const [lines, setLines] = useState<BreakdownLine[]>([]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [totalCost, setTotalCost] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: m }, { data: secs }, { data: ls }, { data: units }] = await Promise.all([
+    const [{ data: m }, { data: secs }] = await Promise.all([
       supabase.from("event_menus").select("*").eq("id", id).single(),
       supabase.from("event_menu_sections").select("*").eq("menu_id", id).order("sort_order"),
-      supabase.from("event_menu_lines").select("*").eq("menu_id", id).order("sort_order"),
-      supabase.from("units").select("*"),
     ]);
     if (!m) {
       setLoading(false);
@@ -64,44 +75,27 @@ export default function MenuDetailPage({
     setMenu(m as EventMenu);
     setSections((secs as EventMenuSection[]) ?? []);
 
-    const unitName = new Map(((units as Unit[]) ?? []).map((u) => [u.id, u.name]));
-    const rawLines = (ls as EventMenuLine[]) ?? [];
-    const recipeIds = rawLines.map((l) => l.recipe_id).filter(Boolean) as string[];
-    const productIds = rawLines.map((l) => l.product_id).filter(Boolean) as string[];
-
-    const [{ data: recipes }, { data: products }] = await Promise.all([
-      recipeIds.length
-        ? supabase.from("recipes").select("id, name").in("id", recipeIds)
-        : Promise.resolve({ data: [] }),
-      productIds.length
-        ? supabase.from("products").select("id, name, custom_name").in("id", productIds)
-        : Promise.resolve({ data: [] }),
-    ]);
-    const recipeName = new Map((recipes ?? []).map((r) => [r.id, r.name]));
-    const productName = new Map(
-      (products ?? []).map((p) => [p.id, p.custom_name?.trim() || p.name])
-    );
-
-    setLines(
-      rawLines.map((l) => ({
-        ...l,
-        displayName: l.recipe_id
-          ? recipeName.get(l.recipe_id) ?? "onbekend gerecht"
-          : productName.get(l.product_id ?? "") ?? "onbekend ingrediënt",
-        unitName: l.unit_id ? unitName.get(l.unit_id) ?? null : null,
-        lineCost: null,
-      }))
-    );
-
-    if (canViewFinancial && referenceCompanyId) {
-      const { data: cost } = await supabase.rpc("calculate_event_menu_cost", {
-        p_menu_id: id,
-        p_company_id: referenceCompanyId,
-      });
+    // Samenstelling mét kostprijzen komt uit één databasefunctie, die
+    // dezelfde prijsbronnen en conversies gebruikt als de rest van het
+    // platform. Hier wordt dus niets opnieuw uitgerekend.
+    if (referenceCompanyId) {
+      const [{ data: breakdown }, { data: cost }] = await Promise.all([
+        supabase.rpc("get_event_menu_breakdown", {
+          p_menu_id: id,
+          p_company_id: referenceCompanyId,
+        }),
+        supabase.rpc("calculate_event_menu_cost", {
+          p_menu_id: id,
+          p_company_id: referenceCompanyId,
+        }),
+      ]);
+      setLines((breakdown as BreakdownLine[]) ?? []);
       setTotalCost((cost as number | null) ?? null);
+    } else {
+      setLines([]);
     }
     setLoading(false);
-  }, [id, referenceCompanyId, canViewFinancial]);
+  }, [id, referenceCompanyId]);
 
   useEffect(() => {
     load();
@@ -147,6 +141,14 @@ export default function MenuDetailPage({
         </main>
       </>
     );
+  }
+
+  // Regels groeperen per onderdeel, in de volgorde die de database geeft.
+  const sectionGroups: [string, BreakdownLine[]][] = [];
+  for (const l of lines) {
+    const last = sectionGroups[sectionGroups.length - 1];
+    if (last && last[0] === l.section_name) last[1].push(l);
+    else sectionGroups.push([l.section_name, [l]]);
   }
 
   const costPerPerson =
@@ -337,57 +339,128 @@ export default function MenuDetailPage({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                        <th className="px-4 py-2 font-medium">Onderdeel</th>
                         <th className="px-4 py-2 font-medium">Naam</th>
-                        <th className="px-4 py-2 font-medium">Per persoon</th>
-                        <th className="px-4 py-2 font-medium">Vast</th>
-                        <th className="px-4 py-2 font-medium">Totaal</th>
-                        <th className="px-4 py-2 font-medium"></th>
+                        <th className="px-4 py-2 font-medium">Type</th>
+                        <th className="px-4 py-2 text-right font-medium">Per persoon</th>
+                        <th className="px-4 py-2 font-medium">Eenheid</th>
+                        <th className="px-4 py-2 text-right font-medium">Totaal</th>
+                        {canViewFinancial && (
+                          <>
+                            <th className="px-4 py-2 text-right font-medium">Eenheidsprijs</th>
+                            <th className="px-4 py-2 text-right font-medium">Kostprijs p.p.</th>
+                            <th className="px-4 py-2 text-right font-medium">Totale kostprijs</th>
+                          </>
+                        )}
+                        <th className="px-4 py-2"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {lines.map((l) => {
-                        const section = sections.find((s) => s.id === l.section_id);
-                        const total =
-                          l.quantity_per_person * (l.is_fixed ? 1 : menu.person_count);
+                      {sectionGroups.map(([sectionName, group]) => {
+                        const isCollapsed = collapsed.has(sectionName);
+                        const subtotal = group.reduce((sum, l) => sum + (l.total_cost ?? 0), 0);
                         return (
-                          <tr key={l.id} className="border-t border-border">
-                            <td className="px-4 py-2 text-muted">
-                              {section?.name ?? "—"}
-                            </td>
-                            <td className="px-4 py-2 font-medium">
-                              {l.displayName}
-                              {l.note && (
-                                <span className="ml-2 text-xs font-normal text-muted">
-                                  {l.note}
-                                </span>
+                          <Fragment key={sectionName}>
+                            <tr className="border-t border-border bg-background">
+                              <td colSpan={canViewFinancial ? 8 : 5} className="px-4 py-2">
+                                <button
+                                  onClick={() =>
+                                    setCollapsed((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(sectionName)) next.delete(sectionName);
+                                      else next.add(sectionName);
+                                      return next;
+                                    })
+                                  }
+                                  className="flex items-center gap-1.5 font-medium hover:text-teal"
+                                >
+                                  {isCollapsed ? (
+                                    <ChevronRight className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                  {sectionName}
+                                  <span className="text-xs font-normal text-muted">
+                                    ({group.length})
+                                  </span>
+                                </button>
+                              </td>
+                              {canViewFinancial && (
+                                <td className="px-4 py-2 text-right tabular font-medium">
+                                  € {subtotal.toFixed(2)}
+                                </td>
                               )}
-                            </td>
-                            <td className="px-4 py-2 tabular">
-                              {l.quantity_per_person} {l.unitName}
-                            </td>
-                            <td className="px-4 py-2 text-muted">
-                              {l.is_fixed ? "ja" : "—"}
-                            </td>
-                            <td className="px-4 py-2 tabular font-medium">
-                              {total.toLocaleString("nl-NL", { maximumFractionDigits: 2 })}{" "}
-                              {l.unitName}
-                            </td>
-                            <td className="px-4 py-2">
-                              <button
-                                onClick={() => deleteLine(l.id)}
-                                title="Regel verwijderen"
-                                className="text-muted hover:text-danger"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
+                              <td />
+                            </tr>
+                            {!isCollapsed &&
+                              group.map((l) => (
+                                <tr key={l.line_id} className="border-t border-border">
+                                  <td className="px-4 py-2 pl-8 font-medium">
+                                    {l.display_name}
+                                    {l.note && (
+                                      <span className="ml-2 text-xs font-normal text-muted">
+                                        {l.note}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2 text-muted">
+                                    {l.line_type}
+                                    {l.is_fixed && (
+                                      <span className="ml-1 rounded bg-teal/10 px-1.5 py-0.5 text-xs text-teal">
+                                        vast
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2 text-right tabular">
+                                    {l.is_fixed ? "—" : l.quantity_per_person}
+                                  </td>
+                                  <td className="px-4 py-2 text-muted">{l.unit_name}</td>
+                                  <td className="px-4 py-2 text-right tabular font-medium">
+                                    {l.total_quantity.toLocaleString("nl-NL", {
+                                      maximumFractionDigits: 2,
+                                    })}{" "}
+                                    <span className="text-xs font-normal text-muted">
+                                      {l.unit_name}
+                                    </span>
+                                  </td>
+                                  {canViewFinancial && (
+                                    <>
+                                      <td className="px-4 py-2 text-right tabular text-muted">
+                                        {l.unit_price !== null
+                                          ? `€ ${l.unit_price.toFixed(4)} / ${l.unit_price_label ?? ""}`
+                                          : "—"}
+                                      </td>
+                                      <td className="px-4 py-2 text-right tabular">
+                                        {l.cost_per_person !== null
+                                          ? `€ ${l.cost_per_person.toFixed(2)}`
+                                          : "—"}
+                                      </td>
+                                      <td className="px-4 py-2 text-right tabular font-medium">
+                                        {l.total_cost !== null
+                                          ? `€ ${l.total_cost.toFixed(2)}`
+                                          : "—"}
+                                      </td>
+                                    </>
+                                  )}
+                                  <td className="px-4 py-2">
+                                    <button
+                                      onClick={() => deleteLine(l.line_id)}
+                                      title="Regel verwijderen"
+                                      className="text-muted hover:text-danger"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                          </Fragment>
                         );
                       })}
                       {lines.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                          <td
+                            colSpan={canViewFinancial ? 9 : 6}
+                            className="px-4 py-8 text-center text-muted"
+                          >
                             Nog niets toegevoegd. Voeg gerechten, halfproducten of losse
                             ingrediënten toe.
                           </td>
@@ -396,6 +469,40 @@ export default function MenuDetailPage({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Altijd zichtbare samenvatting onder de samenstelling. */}
+                {canViewFinancial && lines.length > 0 && (
+                  <div className="grid gap-3 border-t border-border bg-background px-4 py-3 sm:grid-cols-5">
+                    <Summary label="Totale kostprijs" value={`€ ${(totalCost ?? 0).toFixed(2)}`} />
+                    <Summary
+                      label="Kostprijs p.p."
+                      value={costPerPerson !== null ? `€ ${costPerPerson.toFixed(2)}` : "—"}
+                    />
+                    <Summary
+                      label="Verkoopprijs p.p."
+                      value={
+                        menu.sales_price_per_person
+                          ? `€ ${menu.sales_price_per_person.toFixed(2)}`
+                          : "niet ingevuld"
+                      }
+                    />
+                    <Summary
+                      label="Foodcost %"
+                      value={foodcostPct !== null ? `${foodcostPct.toFixed(1)}%` : "—"}
+                      tone={
+                        foodcostPct === null ? undefined : foodcostPct > 33 ? "bad" : "good"
+                      }
+                    />
+                    <Summary
+                      label="Brutomarge"
+                      value={
+                        salesExclVat !== null && costPerPerson !== null
+                          ? `€ ${((salesExclVat - costPerPerson) * menu.person_count).toFixed(2)}`
+                          : "—"
+                      }
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -543,6 +650,31 @@ function Row({
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function Summary({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "good" | "bad";
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+      <p
+        className={cn(
+          "tabular text-base font-semibold",
+          tone === "bad" && "text-danger",
+          tone === "good" && "text-success"
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }
