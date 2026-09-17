@@ -7,6 +7,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { cn } from "@/lib/utils";
 
 const FOODCOST_WARNING_THRESHOLD = 33; // %
@@ -26,6 +27,8 @@ interface SalesProductRow {
 }
 
 export default function VerkoopproductenPage() {
+  const { can } = usePermissions();
+  const canViewFinancial = can("verkoopproducten").canViewFinancial;
   const [rows, setRows] = useState<SalesProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -127,9 +130,13 @@ export default function VerkoopproductenPage() {
                   <th className="px-5 py-3 font-medium">Bron</th>
                   <th className="px-5 py-3 font-medium">Bedrijf</th>
                   <th className="px-5 py-3 font-medium">Verkoopprijs</th>
-                  <th className="px-5 py-3 font-medium">Kostprijs</th>
-                  <th className="px-5 py-3 font-medium">Foodcost%</th>
-                  <th className="px-5 py-3 font-medium">Marge</th>
+                  {canViewFinancial && (
+                    <>
+                      <th className="px-5 py-3 font-medium">Kostprijs</th>
+                      <th className="px-5 py-3 font-medium">Foodcost%</th>
+                      <th className="px-5 py-3 font-medium">Marge</th>
+                    </>
+                  )}
                   <th className="px-5 py-3 font-medium">Status</th>
                 </tr>
               </thead>
@@ -177,31 +184,35 @@ export default function VerkoopproductenPage() {
                       <td className="px-5 py-3 tabular">
                         € {sp.sales_price_incl_vat.toFixed(2)}
                       </td>
-                      <td className="px-5 py-3 tabular">
-                        {loading
-                          ? "…"
-                          : sp.costPrice !== null
-                          ? `€ ${sp.costPrice.toFixed(2)}`
-                          : "onbekend"}
-                      </td>
-                      <td className="px-5 py-3 tabular">
-                        {foodCostPct !== null ? (
-                          <span
-                            className={cn(
-                              foodCostPct > FOODCOST_WARNING_THRESHOLD
-                                ? "text-danger"
-                                : "text-success"
+                      {canViewFinancial && (
+                        <>
+                          <td className="px-5 py-3 tabular">
+                            {loading
+                              ? "…"
+                              : sp.costPrice !== null
+                              ? `€ ${sp.costPrice.toFixed(2)}`
+                              : "onbekend"}
+                          </td>
+                          <td className="px-5 py-3 tabular">
+                            {foodCostPct !== null ? (
+                              <span
+                                className={cn(
+                                  foodCostPct > FOODCOST_WARNING_THRESHOLD
+                                    ? "text-danger"
+                                    : "text-success"
+                                )}
+                              >
+                                {foodCostPct.toFixed(1)}%
+                              </span>
+                            ) : (
+                              "—"
                             )}
-                          >
-                            {foodCostPct.toFixed(1)}%
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-5 py-3 tabular">
-                        {marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
-                      </td>
+                          </td>
+                          <td className="px-5 py-3 tabular">
+                            {marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
+                          </td>
+                        </>
+                      )}
                       <td className="px-5 py-3">
                         <span
                           className={
@@ -218,7 +229,7 @@ export default function VerkoopproductenPage() {
                 })}
                 {rows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={canViewFinancial ? 8 : 5} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan verkoopproducten niet laden — controleer de Supabase-koppeling."
                         : "Nog geen verkoopproducten. Zet een verkoopprijs op een gerecht, of maak er hier handmatig een aan."}

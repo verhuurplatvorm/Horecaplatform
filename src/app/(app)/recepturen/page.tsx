@@ -299,7 +299,7 @@ export default function RecepturenPage() {
               className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
             />
           </div>
-          <Link href="/halfproducten/importeren">
+          <Link href="/recepten/importeren">
             <Button variant="secondary">
               <Upload className="h-4 w-4" />
               Importeren (Excel)

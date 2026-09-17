@@ -27,6 +27,8 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
   const [street, setStreet] = useState(initialSupplier?.address?.street ?? "");
   const [zip, setZip] = useState(initialSupplier?.address?.zip ?? "");
   const [city, setCity] = useState(initialSupplier?.address?.city ?? "");
+  const [vatNumber, setVatNumber] = useState(initialSupplier?.vat_number ?? "");
+  const [kvkNumber, setKvkNumber] = useState(initialSupplier?.kvk_number ?? "");
   const [paymentTermsDays, setPaymentTermsDays] = useState(
     initialSupplier?.payment_terms_days?.toString() ?? ""
   );
@@ -76,6 +78,8 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
         street.trim() || zip.trim() || city.trim()
           ? { street: street.trim(), zip: zip.trim(), city: city.trim() }
           : null,
+      vat_number: vatNumber.trim() || null,
+      kvk_number: kvkNumber.trim() || null,
       payment_terms_days: paymentTermsDays ? Number(paymentTermsDays) : null,
       minimum_order_amount: minimumOrderAmount ? Number(minimumOrderAmount) : null,
       delivery_days: Array.from(deliveryDays),
@@ -227,6 +231,21 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Btw-nummer">
+              <input
+                value={vatNumber}
+                onChange={(e) => setVatNumber(e.target.value)}
+                placeholder="bv. NL123456789B01"
+                className="input"
+              />
+            </Field>
+            <Field label="KvK-nummer">
+              <input
+                value={kvkNumber}
+                onChange={(e) => setKvkNumber(e.target.value)}
+                className="input"
+              />
+            </Field>
             <Field label="Betaaltermijn (dagen)">
               <input
                 type="number"

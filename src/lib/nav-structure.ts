@@ -69,8 +69,9 @@ export const NAV_TABS: NavTab[] = [
     key: "financieel",
     label: "Financieel",
     items: [
-      { href: "/financieel", label: "Overzicht", icon: LineChart, moduleKey: "leveranciers" },
       { href: "/financieel/bedrijven", label: "Per bedrijf", icon: Building2, moduleKey: "leveranciers" },
+      // Stond eerder alleen op de opgeheven /financieel-hubpagina.
+      { href: "/dashboard/prijzen", label: "Prijsontwikkeling", icon: LineChart, moduleKey: "leveranciers" },
       { href: "/leveranciers/prijzen/wijzigingen", label: "Prijswijzigingen", icon: History, moduleKey: "leveranciers" },
       { href: "/leveranciers/facturen", label: "Facturen", icon: FileText, moduleKey: "leveranciers" },
     ],

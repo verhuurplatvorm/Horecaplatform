@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Package, Truck, BookOpen, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { Building2, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { KpiTile } from "@/components/kpi-tile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,41 @@ interface SetupCounts {
 }
 
 export default function DashboardPage() {
+  const [attention, setAttention] = useState<
+    { label: string; count: number; href: string }[]
+  >([]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    async function run() {
+      const [{ count: missingBridge }, { count: flaggedPrices }] = await Promise.all([
+        supabase
+          .from("products_missing_unit_bridge")
+          .select("product_id", { count: "exact", head: true }),
+        supabase
+          .from("supplier_products")
+          .select("id", { count: "exact", head: true })
+          .eq("flagged_for_review", true)
+          .is("valid_to", null),
+      ]);
+      const items: { label: string; count: number; href: string }[] = [];
+      if (missingBridge)
+        items.push({
+          label: "Ingrediënten zonder gewicht/inhoud per stuk",
+          count: missingBridge,
+          href: "/producten/opschonen",
+        });
+      if (flaggedPrices)
+        items.push({
+          label: "Leveranciersprijzen om te controleren",
+          count: flaggedPrices,
+          href: "/producten/opschonen",
+        });
+      setAttention(items);
+    }
+    run();
+  }, []);
+
   const { companies, activeCompanyIds, scope, loading } = useCompanyScope();
   const [counts, setCounts] = useState<SetupCounts | null>(null);
 
@@ -141,57 +177,39 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <ShortcutCard
-            icon={TrendingUp}
-            title="Prijzendashboard"
-            description="Stijgers, dalers en de impact op halfproducten en gerechten."
-            href="/dashboard/prijzen"
-          />
-          <ShortcutCard
-            icon={Package}
-            title="Centrale ingrediëntendatabase"
-            description="Beheer ingrediënten en artikelen die door meerdere bedrijven worden gebruikt."
-            href="/producten"
-          />
-          <ShortcutCard
-            icon={Truck}
-            title="Leveranciers"
-            description="Centrale en lokale leveranciers, prijzen en contractafspraken."
-            href="/leveranciers"
-          />
-          <ShortcutCard
-            icon={BookOpen}
-            title="Recepturen"
-            description="Centrale standaarden en lokale varianten, met automatische kostprijs."
-            href="/recepturen"
-          />
-        </div>
+        {/* Vervangt vier snelkoppelingen die alleen de tabbalk hierboven
+            dupliceerden: dit toont wat er daadwerkelijk aandacht vraagt. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Vraagt aandacht</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {attention.length === 0 ? (
+              <p className="text-sm text-muted">
+                Niets te doen — geen ingrediënten zonder conversie, geen prijzen om te
+                controleren.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {attention.map((a) => (
+                  <li key={a.href}>
+                    <Link
+                      href={a.href}
+                      className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-background"
+                    >
+                      <span className="flex items-center gap-2">
+                        <TriangleAlert className="h-4 w-4 shrink-0 text-copper" />
+                        {a.label}
+                      </span>
+                      <span className="tabular font-medium text-copper">{a.count}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </main>
     </>
-  );
-}
-
-function ShortcutCard({
-  icon: Icon,
-  title,
-  description,
-  href,
-}: {
-  icon: typeof Package;
-  title: string;
-  description: string;
-  href: string;
-}) {
-  return (
-    <a href={href}>
-      <Card className="h-full transition-colors hover:border-teal">
-        <CardContent className="pt-5">
-          <Icon className="h-5 w-5 text-teal" />
-          <p className="mt-3 font-medium text-foreground">{title}</p>
-          <p className="mt-1 text-sm text-muted">{description}</p>
-        </CardContent>
-      </Card>
-    </a>
   );
 }

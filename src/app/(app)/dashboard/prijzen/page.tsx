@@ -6,6 +6,7 @@ import { TrendingDown, TrendingUp, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { PriceChangeHistory } from "@/lib/types/database";
@@ -38,6 +39,8 @@ interface RecipeChange {
 }
 
 export default function PrijzenDashboardPage() {
+  const { can, loading: permsLoading } = usePermissions();
+  const canViewFinancial = can("leveranciers").canViewFinancial;
   const { activeCompanyIds, companies, loading: scopeLoading } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
   const referenceCompanyName = companies.find((c) => c.id === referenceCompanyId)?.name;
@@ -176,6 +179,14 @@ export default function PrijzenDashboardPage() {
     <>
       <Topbar title="Prijzendashboard" />
       <main className="p-6 space-y-6">
+        {!permsLoading && !canViewFinancial && (
+          <p className="rounded-md bg-copper/10 p-3 text-sm text-copper">
+            Je rol heeft geen toegang tot financiële gegevens. Dit scherm toont
+            kostprijzen, marges en foodcost en is daarom afgeschermd.
+          </p>
+        )}
+        {(permsLoading || canViewFinancial) && (
+        <>
         {!referenceCompanyId ? (
           <p className="text-sm text-muted">
             Selecteer een bedrijf via de bedrijfsselector rechtsboven.
@@ -248,6 +259,8 @@ export default function PrijzenDashboardPage() {
 
             {loading && <p className="text-sm text-muted">Bijwerken…</p>}
           </>
+        )}
+        </>
         )}
       </main>
     </>

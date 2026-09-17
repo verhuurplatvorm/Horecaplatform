@@ -1414,7 +1414,7 @@ export function RecipeForm({
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Gebruikt in</CardTitle>
           <div className="flex gap-2">
-            <Link href={`/halfproducten/${initialRecipe.id}/producties`}>
+            <Link href="#producties">
               <Button type="button" variant="secondary" size="sm">
                 Producties
               </Button>

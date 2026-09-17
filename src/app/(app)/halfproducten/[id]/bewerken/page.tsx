@@ -59,7 +59,9 @@ export default async function BewerkHalfproductPage({
           lockedKind="halfproduct"
         />
         <UsedInOverview recipeId={id} />
-        <ProductiesGeschiedenis recipeId={id} unitName={unitName} />
+        <div id="producties" className="scroll-mt-20">
+          <ProductiesGeschiedenis recipeId={id} unitName={unitName} />
+        </div>
       </main>
     </>
   );

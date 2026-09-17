@@ -2,327 +2,102 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { Search } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
-import type { RecipeIngredient, Unit } from "@/lib/types/database";
 
 interface HalfproductLite {
   id: string;
   name: string;
-  base_unit_id: string | null;
-  yield_quantity: number | null;
 }
 
-interface PreviewLine {
-  name: string;
-  quantity: number;
-  unitName: string;
-}
-
-export default function NieuweProductiePage() {
+/**
+ * Productie registreren gebeurde op drie plekken tegelijk, elk met een
+ * eigen ingrediënt- en kostprijsberekening: dit scherm, het schaalblok op
+ * het halfproduct zelf, en het stickerscherm. Dat is nu teruggebracht tot
+ * één invoerplek: het blok op het halfproduct, want alleen dáár kun je
+ * schalen op een gewenste hoeveelheid óf op een beschikbaar ingrediënt,
+ * en alleen dáár loopt de kostprijs via de centrale conversieregel
+ * (inclusief netto bruikbaar gewicht).
+ *
+ * Dit scherm is daarom een kiezer geworden: zoek het halfproduct en ga
+ * meteen naar de juiste plek. De route blijft bestaan zodat de knop op
+ * /voorraad en bestaande bladwijzers blijven werken.
+ */
+export default function ProductieKiezenPage() {
   const router = useRouter();
-  const { activeCompanyIds } = useCompanyScope();
-  const companyId = activeCompanyIds[0] ?? null;
-
-  const [units, setUnits] = useState<Unit[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HalfproductLite[]>([]);
-  const [selected, setSelected] = useState<HalfproductLite | null>(null);
-  const [quantity, setQuantity] = useState("");
-  const [note, setNote] = useState("");
-  const [producedBy, setProducedBy] = useState("");
-  const [preview, setPreview] = useState<PreviewLine[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [createdMovementId, setCreatedMovementId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("units")
-      .select("*")
-      .then(({ data }) => setUnits((data as Unit[]) ?? []));
-  }, []);
-
-  useEffect(() => {
-    if (query.trim().length < 2 || selected) return;
     let cancelled = false;
     const timeout = setTimeout(async () => {
+      setLoading(true);
       const supabase = createClient();
-      const { data } = await supabase
+      let q = supabase
         .from("recipes")
-        .select("id, name, base_unit_id, yield_quantity")
+        .select("id, name")
         .eq("recipe_kind", "halfproduct")
-        .ilike("name", `%${query}%`)
-        .limit(8);
-      if (!cancelled) setResults((data as HalfproductLite[]) ?? []);
+        .order("name")
+        .limit(15);
+      if (query.trim()) q = q.ilike("name", `%${query.trim()}%`);
+      const { data } = await q;
+      if (!cancelled) {
+        setResults((data as HalfproductLite[]) ?? []);
+        setLoading(false);
+      }
     }, 250);
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [query, selected]);
-
-  // Preview van te verbruiken ingrediënten (informatief; de daadwerkelijke
-  // afboeking gebeurt server-side door register_recipe_production).
-  useEffect(() => {
-    if (!selected || !quantity.trim() || Number(quantity) <= 0) return;
-    let cancelled = false;
-
-    async function run() {
-      const supabase = createClient();
-      const { data: ingredients } = await supabase
-        .from("recipe_ingredients")
-        .select("*")
-        .eq("recipe_id", selected!.id);
-      if (cancelled || !ingredients) return;
-
-      const lines: PreviewLine[] = [];
-      for (const ri of ingredients as RecipeIngredient[]) {
-        const unit = units.find((u) => u.id === ri.unit_id);
-        let name = "onbekend";
-        if (ri.product_id) {
-          const { data: p } = await supabase
-            .from("products")
-            .select("name")
-            .eq("id", ri.product_id)
-            .single();
-          name = p?.name ?? name;
-        } else if (ri.sub_recipe_id) {
-          const { data: r } = await supabase
-            .from("recipes")
-            .select("name")
-            .eq("id", ri.sub_recipe_id)
-            .single();
-          name = r?.name ?? name;
-        }
-        lines.push({
-          name,
-          quantity: ri.quantity * Number(quantity),
-          unitName: unit?.name ?? "",
-        });
-      }
-      if (!cancelled) setPreview(lines);
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [selected, quantity, units]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    if (!companyId) {
-      setError("Selecteer eerst een bedrijf via de bedrijfsselector.");
-      return;
-    }
-    if (!selected || !quantity.trim() || Number(quantity) <= 0) {
-      setError("Kies een halfproduct en een geproduceerde hoeveelheid.");
-      return;
-    }
-    if (!producedBy.trim()) {
-      setError("Naam producent is verplicht.");
-      return;
-    }
-
-    setSaving(true);
-    const supabase = createClient();
-    const { data: movementId, error: rpcError } = await supabase.rpc(
-      "register_recipe_production",
-      {
-        p_recipe_id: selected.id,
-        p_company_id: companyId,
-        p_quantity: Number(quantity),
-        p_produced_by: producedBy.trim(),
-        p_note: note.trim() || undefined,
-      }
-    );
-    setSaving(false);
-
-    if (rpcError) {
-      setError("Registreren mislukt: " + rpcError.message);
-      return;
-    }
-
-    setSuccess(true);
-    setCreatedMovementId(movementId as string);
-  }
-
-  const baseUnitName = selected?.base_unit_id
-    ? units.find((u) => u.id === selected.base_unit_id)?.name
-    : null;
+  }, [query]);
 
   return (
     <>
       <Topbar title="Productie registreren" />
-      <main className="max-w-xl p-6">
+      <main className="max-w-2xl space-y-4 p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Nieuwe productie</CardTitle>
+            <CardTitle>Kies het halfproduct</CardTitle>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Halfproduct
-                </label>
-                {selected ? (
-                  <div className="flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2 text-sm">
-                    <span>{selected.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelected(null);
-                        setQuery("");
-                      }}
-                      className="text-xs text-teal hover:underline"
-                    >
-                      Wijzigen
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Zoek halfproduct…"
-                      className="input"
-                    />
-                    {selected === null && query.trim().length >= 2 && results.length > 0 && (
-                      <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg">
-                        {results.map((r) => (
-                          <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => setSelected(r)}
-                            className="block w-full truncate px-3 py-2 text-left text-sm hover:bg-background"
-                          >
-                            {r.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Geproduceerde hoeveelheid{" "}
-                  {baseUnitName && (
-                    <span className="text-muted">(in {baseUnitName})</span>
-                  )}
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="input"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Naam producent <span className="text-danger">*</span>
-                </label>
-                <input
-                  required
-                  value={producedBy}
-                  onChange={(e) => setProducedBy(e.target.value)}
-                  className="input"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Opmerking
-                </label>
-                <input value={note} onChange={(e) => setNote(e.target.value)} className="input" />
-              </div>
-
-              {selected && quantity.trim() && Number(quantity) > 0 && preview.length > 0 && (
-                <div className="rounded-md border border-border bg-background p-3">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-                    Dit trekt automatisch af van de voorraad:
-                  </p>
-                  <ul className="space-y-1 text-sm">
-                    {preview.map((line, i) => (
-                      <li key={i} className="flex justify-between">
-                        <span>{line.name}</span>
-                        <span className="tabular text-muted">
-                          {line.quantity.toLocaleString("nl-NL", {
-                            maximumFractionDigits: 2,
-                          })}{" "}
-                          {line.unitName}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted">
+              Registreren doe je op het halfproduct zelf — daar kun je de hoeveelheid
+              schalen (of laten berekenen op basis van een beschikbaar ingrediënt), zie je
+              de bijbehorende ingrediënten en kostprijs, en druk je direct de sticker af.
+            </p>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Zoek een halfproduct…"
+                className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
+              />
+            </div>
+            <div className="divide-y divide-border rounded-md border border-border">
+              {results.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => router.push(`/halfproducten/${r.id}/bewerken`)}
+                  className="block w-full truncate px-3 py-2.5 text-left text-sm hover:bg-background"
+                >
+                  {r.name}
+                </button>
+              ))}
+              {results.length === 0 && (
+                <p className="px-3 py-6 text-center text-sm text-muted">
+                  {loading ? "Zoeken…" : "Geen halfproducten gevonden."}
+                </p>
               )}
-
-              {error && <p className="text-sm text-danger">{error}</p>}
-              {success && (
-                <div className="rounded-md border border-success/30 bg-success/5 p-3">
-                  <p className="text-sm text-success">
-                    Productie geregistreerd, voorraad bijgewerkt.
-                  </p>
-                  <div className="mt-2 flex gap-2">
-                    {selected && createdMovementId && (
-                      <Link
-                        href={`/halfproducten/${selected.id}/sticker/nieuw?movementId=${createdMovementId}`}
-                      >
-                        <Button type="button" size="sm">
-                          Sticker afdrukken
-                        </Button>
-                      </Link>
-                    )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => router.push("/voorraad")}
-                    >
-                      Naar voorraad
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button type="submit" disabled={saving || success}>
-                  {saving ? "Bezig…" : "Productie registreren"}
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => router.push("/voorraad")}>
-                  Annuleren
-                </Button>
-              </div>
-            </form>
+            </div>
           </CardContent>
         </Card>
       </main>
-
-      <style jsx>{`
-        .input {
-          display: block;
-          width: 100%;
-          height: 2.5rem;
-          border-radius: 0.375rem;
-          border: 1px solid var(--border);
-          background: var(--surface);
-          padding: 0 0.75rem;
-          font-size: 0.875rem;
-        }
-      `}</style>
     </>
   );
 }

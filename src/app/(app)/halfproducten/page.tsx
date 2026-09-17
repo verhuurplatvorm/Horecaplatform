@@ -524,7 +524,7 @@ export default function HalfproductenPage() {
               <Download className="h-4 w-4" />
               Exporteren
             </Button>
-            <Link href="/halfproducten/importeren">
+            <Link href="/recepten/importeren">
               <Button variant="secondary">
                 <Upload className="h-4 w-4" />
                 Importeren (Excel)
