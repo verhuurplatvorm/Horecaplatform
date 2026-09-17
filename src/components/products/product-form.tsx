@@ -58,6 +58,8 @@ interface PackagingRow {
 }
 
 export interface ProductFormProps {
+  /** Welke sectie van het formulier zichtbaar is; de rest blijft in het formulier zitten zodat één keer opslaan alles bewaart. */
+  activeTab?: "algemeen" | "allergenen" | "voorraad";
   /** Bij bewerken: het bestaande ingrediënt. Leeg = nieuw ingrediënt. */
   initialProduct?: Product;
   initialPackagings?: ProductPackaging[];
@@ -89,6 +91,7 @@ export function ProductForm({
   mode = "page",
   onSaved,
   onCancel,
+  activeTab = "algemeen",
 }: ProductFormProps) {
   const router = useRouter();
   const isEdit = Boolean(initialProduct);
@@ -122,6 +125,11 @@ export function ProductForm({
     initialProduct?.avg_unit_quantity?.toString() ?? ""
   );
   const [avgUnitId, setAvgUnitId] = useState(initialProduct?.avg_unit_id ?? "");
+  const [storageLocation, setStorageLocation] = useState(
+    initialProduct?.storage_location ?? ""
+  );
+  const [imageUrl, setImageUrl] = useState(initialProduct?.image_url ?? "");
+  const [synonyms, setSynonyms] = useState((initialProduct?.synonyms ?? []).join(", "));
   const [netUnitQuantity, setNetUnitQuantity] = useState(
     initialProduct?.net_unit_quantity?.toString() ?? ""
   );
@@ -372,6 +380,12 @@ export function ProductForm({
       avg_unit_quantity:
         avgUnitQuantity.trim() === "" || !avgUnitId ? null : Number(avgUnitQuantity),
       avg_unit_id: avgUnitQuantity.trim() === "" ? null : avgUnitId || null,
+      storage_location: storageLocation.trim() || null,
+      image_url: imageUrl.trim() || null,
+      synonyms: synonyms
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
       net_unit_quantity:
         netUnitQuantity.trim() === "" || avgUnitQuantity.trim() === ""
           ? null
@@ -537,6 +551,7 @@ export function ProductForm({
         </div>
       )}
 
+      {activeTab === "algemeen" && (
       <Card>
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>
@@ -600,6 +615,35 @@ export function ProductForm({
               className="input"
             />
           </Field>
+          <Field label="Opslaglocatie" hint="bv. Koeling 2, Droogvoorraad">
+            <input
+              value={storageLocation}
+              onChange={(e) => setStorageLocation(e.target.value)}
+              className="input"
+            />
+          </Field>
+
+          <Field
+            label="Synoniemen"
+            hint="Andere benamingen, gescheiden door komma's — worden meegenomen in het zoeken"
+          >
+            <input
+              value={synonyms}
+              onChange={(e) => setSynonyms(e.target.value)}
+              placeholder="bv. aubergine, eierplant"
+              className="input"
+            />
+          </Field>
+
+          <Field label="Productafbeelding (URL)" span2>
+            <input
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://…"
+              className="input"
+            />
+          </Field>
+
           <Field label="EAN-code">
             <input
               value={eanCode}
@@ -617,6 +661,9 @@ export function ProductForm({
         </CardContent>
       </Card>
 
+      )}
+
+      {activeTab === "algemeen" && (
       <Card>
         <CardHeader>
           <CardTitle>Eenheid &amp; verpakkingen</CardTitle>
@@ -725,6 +772,22 @@ export function ProductForm({
             )}
           </Field>
 
+          {initialProduct && (
+            <div className="sm:col-span-2 rounded-md border border-border bg-background p-3">
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
+                Prijs per basiseenheid
+              </p>
+              <PriceBreakdownLine
+                avgUnitQuantity={avgUnitQuantity}
+                netUnitQuantity={netUnitQuantity}
+                baseUnitName={
+                  units.find((u) => u.id === baseUnitId)?.name ?? "basiseenheid"
+                }
+                avgUnitName={units.find((u) => u.id === avgUnitId)?.name ?? ""}
+              />
+            </div>
+          )}
+
           <Field
             label={`Eigen kostprijs per ${
               units.find((u) => u.id === baseUnitId)?.name ?? "basiseenheid"
@@ -803,7 +866,9 @@ export function ProductForm({
         </CardContent>
       </Card>
 
-      {!isEdit && (
+      )}
+
+      {!isEdit && activeTab === "algemeen" && (
         <Card>
           <CardHeader>
             <CardTitle>Inkoopprijs (optioneel)</CardTitle>
@@ -864,6 +929,7 @@ export function ProductForm({
         </Card>
       )}
 
+      {activeTab === "allergenen" && (
       <Card>
         <CardHeader>
           <CardTitle>Allergenen &amp; dieetkenmerken</CardTitle>
@@ -928,6 +994,9 @@ export function ProductForm({
         </CardContent>
       </Card>
 
+      )}
+
+      {activeTab === "allergenen" && (
       <Card>
         <CardHeader>
           <CardTitle>Voedingswaarden (per 100 basiseenheden)</CardTitle>
@@ -954,6 +1023,9 @@ export function ProductForm({
         </CardContent>
       </Card>
 
+      )}
+
+      {activeTab === "voorraad" && (
       <Card>
         <CardHeader>
           <CardTitle>Inkoop &amp; voorraad (optioneel)</CardTitle>
@@ -1012,6 +1084,8 @@ export function ProductForm({
           </Field>
         </CardContent>
       </Card>
+
+      )}
 
       {error && <p className="text-sm text-danger">{error}</p>}
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
@@ -1080,6 +1154,57 @@ function Field({
       </label>
       {children}
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * Laat in gewone taal zien hoe de prijs per basiseenheid tot stand komt,
+ * inclusief de stuk-conversie en het netto bruikbare deel. Puur
+ * toelichtend — de echte berekening gebeurt centraal in de database.
+ */
+function PriceBreakdownLine({
+  avgUnitQuantity,
+  netUnitQuantity,
+  baseUnitName,
+  avgUnitName,
+}: {
+  avgUnitQuantity: string;
+  netUnitQuantity: string;
+  baseUnitName: string;
+  avgUnitName: string;
+}) {
+  const bruto = Number(avgUnitQuantity);
+  const netto = Number(netUnitQuantity);
+
+  if (!avgUnitQuantity.trim() || !Number.isFinite(bruto) || bruto <= 0) {
+    return (
+      <p className="text-sm text-muted">
+        De prijs per {baseUnitName} volgt uit de inkoopprijs gedeeld door de inhoud van
+        de verpakking. Zie het tabblad <strong>Prijs &amp; historie</strong> voor de
+        actuele prijs per leverancier.
+      </p>
+    );
+  }
+
+  const bruikbaar = netUnitQuantity.trim() && Number.isFinite(netto) && netto > 0 ? netto : bruto;
+  const verlies = bruikbaar < bruto ? ((1 - bruikbaar / bruto) * 100).toFixed(1) : null;
+
+  return (
+    <div className="space-y-1 text-sm">
+      <p className="text-foreground">
+        1 stuk = <strong>{bruto} {avgUnitName}</strong> bruto
+        {bruikbaar !== bruto && (
+          <>
+            , waarvan <strong>{bruikbaar} {avgUnitName}</strong> bruikbaar
+          </>
+        )}
+      </p>
+      <p className="text-muted">
+        Kostprijs rekent met het bruikbare deel: inkoopprijs per stuk ÷ {bruikbaar}{" "}
+        {avgUnitName} = prijs per {avgUnitName}.
+        {verlies && ` Dat is ${verlies}% snijverlies.`}
+      </p>
     </div>
   );
 }

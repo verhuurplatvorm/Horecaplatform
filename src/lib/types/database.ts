@@ -116,6 +116,9 @@ export type Product = {
   avg_unit_id: string | null;
   net_unit_quantity: number | null;
   product_number: number | null;
+  storage_location: string | null;
+  image_url: string | null;
+  synonyms: string[];
   min_stock_quantity: number | null;
   reorder_quantity: number | null;
   is_active: boolean;
