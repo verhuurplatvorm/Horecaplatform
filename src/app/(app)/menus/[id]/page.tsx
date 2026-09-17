@@ -58,6 +58,17 @@ export default function MenuDetailPage({
   const [sections, setSections] = useState<EventMenuSection[]>([]);
   const [lines, setLines] = useState<BreakdownLine[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [units, setUnits] = useState<Unit[]>([]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("units")
+      .select("*")
+      .order("dimension")
+      .order("sort_order")
+      .then(({ data }) => setUnits((data as Unit[]) ?? []));
+  }, []);
   const [totalCost, setTotalCost] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -114,6 +125,50 @@ export default function MenuDetailPage({
     setMenu({ ...menu, ...patch });
     // Aantal personen raakt alle berekeningen — opnieuw ophalen.
     if (patch.person_count !== undefined) load();
+  }
+
+  /**
+   * Eén regel bijwerken. Na opslaan wordt de samenstelling opnieuw
+   * opgehaald, zodat de kostprijzen meteen kloppen — die komen immers
+   * uit de database en niet uit een berekening hier.
+   */
+  async function updateLine(lineId: string, patch: Partial<EventMenuLine>) {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("event_menu_lines")
+      .update(patch)
+      .eq("id", lineId);
+    if (error) {
+      window.alert("Wijzigen mislukt: " + error.message);
+      return;
+    }
+    load();
+  }
+
+  /** Onderdeel wijzigen: bestaande sectie hergebruiken of aanmaken. */
+  async function updateSection(lineId: string, name: string) {
+    const supabase = createClient();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      await updateLine(lineId, { section_id: null });
+      return;
+    }
+    const { data: existing } = await supabase
+      .from("event_menu_sections")
+      .select("id")
+      .eq("menu_id", id)
+      .eq("name", trimmed)
+      .maybeSingle();
+    let sectionId = existing?.id ?? null;
+    if (!sectionId) {
+      const { data: created } = await supabase
+        .from("event_menu_sections")
+        .insert({ menu_id: id, name: trimmed })
+        .select("id")
+        .single();
+      sectionId = created?.id ?? null;
+    }
+    await updateLine(lineId, { section_id: sectionId });
   }
 
   async function deleteLine(lineId: string) {
@@ -335,11 +390,17 @@ export default function MenuDetailPage({
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
+                <datalist id="menu-secties">
+                  {sections.map((sec) => (
+                    <option key={sec.id} value={sec.name} />
+                  ))}
+                </datalist>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
                         <th className="px-4 py-2 font-medium">Naam</th>
+                        <th className="px-4 py-2 font-medium">Onderdeel</th>
                         <th className="px-4 py-2 font-medium">Type</th>
                         <th className="px-4 py-2 text-right font-medium">Per persoon</th>
                         <th className="px-4 py-2 font-medium">Eenheid</th>
@@ -361,7 +422,7 @@ export default function MenuDetailPage({
                         return (
                           <Fragment key={sectionName}>
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={canViewFinancial ? 8 : 5} className="px-4 py-2">
+                              <td colSpan={canViewFinancial ? 9 : 6} className="px-4 py-2">
                                 <button
                                   onClick={() =>
                                     setCollapsed((prev) => {
@@ -396,24 +457,80 @@ export default function MenuDetailPage({
                                 <tr key={l.line_id} className="border-t border-border">
                                   <td className="px-4 py-2 pl-8 font-medium">
                                     {l.display_name}
-                                    {l.note && (
-                                      <span className="ml-2 text-xs font-normal text-muted">
-                                        {l.note}
-                                      </span>
-                                    )}
+                                    <input
+                                      defaultValue={l.note ?? ""}
+                                      onBlur={(e) => {
+                                        const v = e.target.value.trim() || null;
+                                        if (v !== (l.note ?? null))
+                                          updateLine(l.line_id, { note: v });
+                                      }}
+                                      placeholder="opmerking…"
+                                      className="mt-0.5 block w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs font-normal text-muted hover:border-border focus:border-teal focus:bg-surface"
+                                    />
+                                  </td>
+                                  <td className="px-4 py-2">
+                                    <input
+                                      defaultValue={
+                                        l.section_name === "Overig" ? "" : l.section_name
+                                      }
+                                      onBlur={(e) => {
+                                        const v = e.target.value.trim();
+                                        const current =
+                                          l.section_name === "Overig" ? "" : l.section_name;
+                                        if (v !== current) updateSection(l.line_id, v);
+                                      }}
+                                      placeholder="bv. Koud buffet"
+                                      list="menu-secties"
+                                      className="w-32 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-muted hover:border-border focus:border-teal focus:bg-surface"
+                                    />
                                   </td>
                                   <td className="px-4 py-2 text-muted">
                                     {l.line_type}
-                                    {l.is_fixed && (
-                                      <span className="ml-1 rounded bg-teal/10 px-1.5 py-0.5 text-xs text-teal">
-                                        vast
-                                      </span>
-                                    )}
+                                    <label
+                                      className="ml-2 inline-flex cursor-pointer items-center gap-1 text-xs"
+                                      title="Vaste hoeveelheid: telt één keer voor het hele menu"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={l.is_fixed}
+                                        onChange={(e) =>
+                                          updateLine(l.line_id, { is_fixed: e.target.checked })
+                                        }
+                                      />
+                                      vast
+                                    </label>
                                   </td>
-                                  <td className="px-4 py-2 text-right tabular">
-                                    {l.is_fixed ? "—" : l.quantity_per_person}
+                                  <td className="px-4 py-2 text-right">
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      min="0"
+                                      defaultValue={l.quantity_per_person}
+                                      onBlur={(e) => {
+                                        const v = Number(e.target.value);
+                                        if (v > 0 && v !== l.quantity_per_person)
+                                          updateLine(l.line_id, { quantity_per_person: v });
+                                      }}
+                                      className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-sm tabular hover:border-border focus:border-teal focus:bg-surface"
+                                    />
                                   </td>
-                                  <td className="px-4 py-2 text-muted">{l.unit_name}</td>
+                                  <td className="px-4 py-2">
+                                    <select
+                                      value={
+                                        units.find((u) => u.name === l.unit_name)?.id ?? ""
+                                      }
+                                      onChange={(e) =>
+                                        updateLine(l.line_id, { unit_id: e.target.value })
+                                      }
+                                      className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-muted hover:border-border focus:border-teal focus:bg-surface"
+                                    >
+                                      {units.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                          {u.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
                                   <td className="px-4 py-2 text-right tabular font-medium">
                                     {l.total_quantity.toLocaleString("nl-NL", {
                                       maximumFractionDigits: 2,
@@ -458,7 +575,7 @@ export default function MenuDetailPage({
                       {lines.length === 0 && (
                         <tr>
                           <td
-                            colSpan={canViewFinancial ? 9 : 6}
+                            colSpan={canViewFinancial ? 10 : 7}
                             className="px-4 py-8 text-center text-muted"
                           >
                             Nog niets toegevoegd. Voeg gerechten, halfproducten of losse

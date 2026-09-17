@@ -7,6 +7,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { useCompanyScope } from "@/components/company-context";
 import type { Unit } from "@/lib/types/database";
 
 interface Hit {
@@ -30,6 +31,8 @@ export default function RegelToevoegenPage({
   const { id } = use(params);
   const router = useRouter();
 
+  const { activeCompanyIds } = useCompanyScope();
+  const referenceCompanyId = activeCompanyIds[0] ?? null;
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [selected, setSelected] = useState<Hit | null>(null);
@@ -40,13 +43,75 @@ export default function RegelToevoegenPage({
   const [sectionName, setSectionName] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  // Prijs van het gekozen item, zodat je meteen ziet wat een regel kost
+  // voordat je 'm toevoegt. Komt uit dezelfde bronnen als elders.
+  const [unitPrice, setUnitPrice] = useState<number | null>(null);
+  const [priceUnitName, setPriceUnitName] = useState<string | null>(null);
+  const [personCount, setPersonCount] = useState(1);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.from("units").select("*").order("sort_order").then(({ data }) => {
       setUnits((data as Unit[]) ?? []);
     });
-  }, []);
+    supabase
+      .from("event_menus")
+      .select("person_count")
+      .eq("id", id)
+      .maybeSingle()
+      .then(({ data }) => setPersonCount(data?.person_count ?? 1));
+  }, [id]);
+
+  // Prijs per basiseenheid van het gekozen item ophalen.
+  useEffect(() => {
+    if (!selected || !referenceCompanyId) {
+      setUnitPrice(null);
+      return;
+    }
+    let cancelled = false;
+    async function run() {
+      const supabase = createClient();
+      const item = selected!;
+      if (item.kind === "ingrediënt") {
+        const { data } = await supabase
+          .from("current_product_cost")
+          .select("price_per_base_unit")
+          .eq("product_id", item.id)
+          .eq("company_id", referenceCompanyId)
+          .maybeSingle();
+        if (!cancelled) setUnitPrice(data?.price_per_base_unit ?? null);
+      } else {
+        const [{ data: cost }, { data: recipe }] = await Promise.all([
+          supabase.rpc("calculate_recipe_cost", {
+            p_recipe_id: item.id,
+            p_company_id: referenceCompanyId,
+          }),
+          supabase
+            .from("recipes")
+            .select("yield_quantity")
+            .eq("id", item.id)
+            .maybeSingle(),
+        ]);
+        const y = recipe?.yield_quantity ?? 0;
+        if (!cancelled) {
+          setUnitPrice(
+            typeof cost === "number" && y > 0 ? (cost as number) / y : null
+          );
+        }
+      }
+      if (!cancelled) {
+        setPriceUnitName(
+          item.baseUnitId
+            ? units.find((u) => u.id === item.baseUnitId)?.name ?? null
+            : null
+        );
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, referenceCompanyId, units]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -174,15 +239,76 @@ export default function RegelToevoegenPage({
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between rounded-md bg-teal/5 px-3 py-2">
-                  <span className="font-medium">{selected.name}</span>
-                  <button
-                    onClick={() => setSelected(null)}
-                    className="text-xs text-muted hover:text-foreground"
-                  >
-                    Anders kiezen
-                  </button>
+                <div className="rounded-md bg-teal/5 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{selected.name}</span>
+                    <button
+                      onClick={() => setSelected(null)}
+                      className="text-xs text-muted hover:text-foreground"
+                    >
+                      Anders kiezen
+                    </button>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {selected.kind}
+                    {unitPrice !== null && priceUnitName && (
+                      <>
+                        {" · "}
+                        <span className="font-medium text-foreground">
+                          € {unitPrice.toFixed(4)} per {priceUnitName}
+                        </span>
+                      </>
+                    )}
+                    {unitPrice === null && " · geen actuele prijs bekend"}
+                  </p>
                 </div>
+
+                {/* Wat deze regel gaat kosten, live terwijl je typt. */}
+                {unitPrice !== null && Number(quantity) > 0 && (
+                  <div className="rounded-md border border-border bg-background p-3 text-sm">
+                    {(() => {
+                      const chosenUnit = units.find((u) => u.id === unitId);
+                      const baseUnit = units.find((u) => u.id === selected.baseUnitId);
+                      // Alleen omrekenen binnen dezelfde dimensie; een
+                      // stuk-conversie hangt van het product af en wordt
+                      // pas bij het opslaan door de database bepaald.
+                      const factor =
+                        chosenUnit && baseUnit && chosenUnit.dimension === baseUnit.dimension
+                          ? chosenUnit.factor_to_base / baseUnit.factor_to_base
+                          : null;
+                      if (factor === null) {
+                        return (
+                          <p className="text-muted">
+                            De kostprijs verschijnt zodra de regel is toegevoegd — voor
+                            deze eenheid is een productspecifieke omrekening nodig.
+                          </p>
+                        );
+                      }
+                      const perLine = Number(quantity) * factor * unitPrice;
+                      const total = isFixed ? perLine : perLine * personCount;
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted">
+                              {isFixed ? "Kosten (vast)" : "Kostprijs per persoon"}
+                            </span>
+                            <span className="tabular font-medium">
+                              € {(isFixed ? total / personCount : perLine).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted">
+                              Totaal bij {personCount} personen
+                            </span>
+                            <span className="tabular font-semibold">
+                              € {total.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-sm font-medium">
