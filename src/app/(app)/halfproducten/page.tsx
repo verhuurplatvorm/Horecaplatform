@@ -400,6 +400,87 @@ export default function HalfproductenPage() {
     setSelectedIds(new Set());
   }
 
+  /**
+   * Meerdere halfproducten tegelijk verwijderen. Halfproducten die nog
+   * in een recept, op een menukaart of als verkoopproduct gebruikt
+   * worden, slaan we over — die zou je anders onder een gerecht vandaan
+   * trekken.
+   */
+  async function bulkDelete() {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    setBulkBusy(true);
+    const supabase = createClient();
+
+    const [{ data: onMenus }, { data: asIngredient }, { data: salesLinks }] =
+      await Promise.all([
+        supabase.from("menu_items").select("recipe_id").in("recipe_id", ids),
+        supabase.from("recipe_ingredients").select("sub_recipe_id").in("sub_recipe_id", ids),
+        supabase.from("sales_product_components").select("recipe_id").in("recipe_id", ids),
+      ]);
+
+    const blocked = new Map<string, string[]>();
+    const note = (id: string, reason: string) => {
+      if (!blocked.has(id)) blocked.set(id, []);
+      const list = blocked.get(id)!;
+      if (!list.includes(reason)) list.push(reason);
+    };
+    for (const r of onMenus ?? []) if (r.recipe_id) note(r.recipe_id, "staat op een menukaart");
+    for (const r of asIngredient ?? [])
+      if (r.sub_recipe_id) note(r.sub_recipe_id, "wordt in een recept gebruikt");
+    for (const r of salesLinks ?? [])
+      if (r.recipe_id) note(r.recipe_id, "heeft een verkoopproduct");
+
+    const deletable = ids.filter((id) => !blocked.has(id));
+    const nameById = new Map(rows.map((r) => [r.id, r.name]));
+
+    if (deletable.length === 0) {
+      setBulkBusy(false);
+      window.alert(
+        "Geen van de geselecteerde halfproducten kan verwijderd worden — ze worden " +
+          "allemaal nog ergens gebruikt. Haal ze daar eerst weg."
+      );
+      return;
+    }
+
+    let message = `${deletable.length} halfproduct(en) definitief verwijderen?\n\n`;
+    message +=
+      "De ingrediëntregels en eventuele productiehistorie worden ook verwijderd. " +
+      "Dit kan niet ongedaan gemaakt worden.";
+    if (blocked.size > 0) {
+      const preview = [...blocked.entries()]
+        .slice(0, 8)
+        .map(([id, reasons]) => `• ${nameById.get(id) ?? id} — ${reasons.join(", ")}`)
+        .join("\n");
+      message +=
+        `\n\n${blocked.size} worden OVERGESLAGEN omdat ze nog in gebruik zijn:\n` +
+        preview +
+        (blocked.size > 8 ? `\n… en nog ${blocked.size - 8} andere` : "");
+    }
+
+    if (!window.confirm(message)) {
+      setBulkBusy(false);
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("recipes")
+      .delete()
+      .in("id", deletable);
+    setBulkBusy(false);
+    if (deleteError) {
+      window.alert("Verwijderen mislukt: " + deleteError.message);
+      return;
+    }
+    setRows((prev) => prev.filter((r) => !deletable.includes(r.id)));
+    setSelectedIds(new Set());
+    if (blocked.size > 0) {
+      window.alert(
+        `${deletable.length} verwijderd. ${blocked.size} overgeslagen omdat ze nog in gebruik zijn.`
+      );
+    }
+  }
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -569,6 +650,15 @@ export default function HalfproductenPage() {
                 className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-background"
               >
                 Archiveren
+              </button>
+              <button
+                disabled={bulkBusy}
+                onClick={bulkDelete}
+                title="Definitief verwijderen — halfproducten die nog gebruikt worden, worden overgeslagen"
+                className="flex items-center gap-1 rounded-md border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
+              >
+                <Trash2 className="h-3 w-3" />
+                Verwijderen
               </button>
               <button
                 disabled={bulkBusy}
