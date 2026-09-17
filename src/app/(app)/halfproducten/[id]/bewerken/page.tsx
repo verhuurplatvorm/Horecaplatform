@@ -7,6 +7,7 @@ import {
   ProductiesGeschiedenis,
 } from "@/components/recipes/halfproduct-producties-blok";
 import { UsedInOverview } from "@/components/recipes/used-in-overview";
+import { HalfproductHeader } from "@/components/recipes/halfproduct-header";
 import { createClient } from "@/lib/supabase/server";
 import type { Recipe, RecipeIngredient } from "@/lib/types/database";
 
@@ -39,10 +40,28 @@ export default async function BewerkHalfproductPage({
     unitName = unit?.name ?? null;
   }
 
+  let folderName: string | null = null;
+  if (recipe.halfproduct_folder_id) {
+    const { data: folder } = await supabase
+      .from("halfproduct_folders")
+      .select("name")
+      .eq("id", recipe.halfproduct_folder_id)
+      .maybeSingle();
+    folderName = folder?.name ?? null;
+  }
+
   return (
     <>
-      <Topbar title={`Bewerken: ${recipe.name}`} />
+      <Topbar title="Halfproduct" />
       <main className="max-w-6xl space-y-4 p-6">
+        <HalfproductHeader
+          recipeId={id}
+          name={recipe.name}
+          folderName={folderName}
+          status={recipe.status}
+          yieldQuantity={recipe.yield_quantity}
+          baseUnitName={unitName}
+        />
         <div className="flex items-center gap-2 rounded-md border border-copper/30 bg-copper/10 px-3 py-2 text-sm text-copper">
           <PackageX className="h-4 w-4 shrink-0" />
           Halfproduct — alleen intern, niet verkoopbaar. Wordt nooit op een

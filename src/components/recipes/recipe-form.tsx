@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { convertQuantity, effectiveLossPct } from "@/lib/units/convert";
 import { RecipeHistory } from "@/components/recipes/recipe-history";
+import { RecipeFinancialTable } from "@/components/recipes/recipe-financial-table";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
 import type {
@@ -54,6 +55,11 @@ export interface RecipeFormProps {
    * verbergt de Soort-keuze. */
   lockedKind?: RecipeKind;
 }
+
+const EU_ALLERGENS = [
+  "gluten","schaaldieren","eieren","vis","pinda","soja","melk",
+  "noten","selderij","mosterd","sesam","sulfiet","lupine","weekdieren",
+] as const;
 
 export function RecipeForm({
   initialRecipe,
@@ -194,6 +200,12 @@ export function RecipeForm({
     >
   >(new Map());
 
+  // Weergave van de voedingswaarden: het hele halfproduct, per 100
+  // basiseenheden, of per portie. Puur een deelfactor — de onderliggende
+  // berekening blijft dezelfde.
+  const [nutritionView, setNutritionView] = useState<"totaal" | "per100" | "portie">(
+    "totaal"
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -539,7 +551,33 @@ export function RecipeForm({
       }
     }
     for (const a of contains) traces.delete(a);
-    return { contains: [...contains].sort(), traces: [...traces].sort() };
+
+    // Een ingrediënt zonder ingevulde allergeengegevens maakt het hele
+    // halfproduct onzeker: dan is "bevat niet" niet hard te maken.
+    let hasUnknownSource = false;
+    for (const row of rows) {
+      if (!row.refId) continue;
+      if (row.type === "ingrediënt") {
+        const info = productPrices.get(row.refId);
+        if (!info || (info.allergens.length === 0 && info.traces.length === 0)) {
+          hasUnknownSource = true;
+        }
+      }
+    }
+    const known = new Set([...contains, ...traces]);
+    const free = hasUnknownSource
+      ? []
+      : EU_ALLERGENS.filter((a) => !known.has(a));
+    const unknown = hasUnknownSource
+      ? EU_ALLERGENS.filter((a) => !known.has(a))
+      : [];
+
+    return {
+      contains: [...contains].sort(),
+      traces: [...traces].sort(),
+      free: [...free].sort(),
+      unknown: [...unknown].sort(),
+    };
   }, [rows, productPrices, halfproductCosts]);
 
   const nutritionTotals = useMemo(() => {
@@ -1497,27 +1535,123 @@ export function RecipeForm({
                 <p className="text-sm text-muted">Geen bekende sporen</p>
               )}
             </div>
+            <div>
+              <p className="mb-1 text-sm font-medium text-foreground">Bevat niet</p>
+              {allergenSummary.free.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {allergenSummary.free.map((a) => (
+                    <span
+                      key={a}
+                      className="rounded-full bg-success/10 px-2 py-0.5 text-xs capitalize text-success"
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">
+                  Niet vast te stellen zolang er ingrediënten zonder
+                  allergeengegevens in het recept zitten.
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-medium text-foreground">Onbekend</p>
+              {allergenSummary.unknown.length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allergenSummary.unknown.map((a) => (
+                      <span
+                        key={a}
+                        className="rounded-full bg-muted/10 px-2 py-0.5 text-xs capitalize text-muted"
+                      >
+                        {a}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-copper">
+                    Eén of meer ingrediënten hebben nog geen allergenen ingevuld —
+                    daardoor is voor deze allergenen niet te zeggen of ze voorkomen.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted">
+                  Alle 14 allergenen zijn bekend voor dit recept.
+                </p>
+              )}
+            </div>
           </div>
 
           {Object.keys(nutritionTotals).length > 0 && (
             <div>
-              <p className="mb-2 text-sm font-medium text-foreground">
-                Voedingswaarden{" "}
-                {recipeKind === "gerecht" ? "per portie" : "per volledige batch"}
-              </p>
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                {Object.entries(nutritionTotals).map(([key, value]) => (
-                  <div key={key}>
-                    <p className="text-xs capitalize text-muted">
-                      {key.replace(/_/g, " ")}
-                    </p>
-                    <p className="tabular font-medium text-foreground">
-                      {value.toFixed(1)}
-                      {key === "energie" ? " kcal" : " g"}
-                    </p>
-                  </div>
-                ))}
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-foreground">Voedingswaarden</p>
+                <div className="flex gap-1 rounded-md border border-border bg-background p-0.5">
+                  {(
+                    [
+                      ["totaal", "Hele halfproduct"],
+                      ["per100", `Per 100 ${baseUnitName ?? "eenheden"}`],
+                      ["portie", "Per portie"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setNutritionView(key)}
+                      className={`rounded px-2 py-1 text-xs transition-colors ${
+                        nutritionView === key
+                          ? "bg-surface font-medium text-foreground shadow-sm"
+                          : "text-muted hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
+              {(() => {
+                // Deelfactor bepalen; bij ontbrekende opbrengst of
+                // portiegrootte tonen we het totaal met een uitleg in
+                // plaats van een misleidend getal.
+                const yieldQ = yieldQuantityNum;
+                let factor = 1;
+                let note: string | null = null;
+                if (nutritionView === "per100") {
+                  if (yieldQ > 0) factor = 100 / yieldQ;
+                  else note = "Vul een opbrengst in om per 100 te kunnen rekenen.";
+                } else if (nutritionView === "portie") {
+                  // Halfproducten kennen (nog) geen portiegrootte; dan is
+                  // "per portie" niet te berekenen zonder te gokken.
+                  const portion = Number(initialRecipe?.portion_size ?? 0);
+                  if (portion > 0 && yieldQ > 0) factor = portion / yieldQ;
+                  else
+                    note =
+                      "Er is geen portiegrootte vastgelegd voor dit halfproduct, dus per portie is niet te berekenen. Hieronder staat het totaal.";
+                }
+                return (
+                  <>
+                    {note && <p className="mb-2 text-xs text-copper">{note}</p>}
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      {Object.entries(nutritionTotals).map(([key, value]) => (
+                        <div key={key}>
+                          <p className="text-xs capitalize text-muted">
+                            {key.replace(/_/g, " ")}
+                          </p>
+                          <p className="tabular font-medium text-foreground">
+                            {(value * (note ? 1 : factor)).toFixed(1)}
+                            {key === "energie" ? " kcal" : " g"}
+                          </p>
+                          {key === "energie" && (
+                            <p className="text-xs text-muted">
+                              {(value * (note ? 1 : factor) * 4.184).toFixed(0)} kJ
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </CardContent>
@@ -1586,6 +1720,7 @@ export function RecipeForm({
 
   return (
     <form
+      id="recipe-form"
       onSubmit={(e) => handleSubmit(e)}
       onKeyDown={(e) => {
         // Enter in een los invoerveld (bv. Hoeveelheid) mag het hele
@@ -1639,7 +1774,28 @@ export function RecipeForm({
       </div>
       {formTab === "financieel" && (
         <div className="space-y-4">
-          {canViewFinancial ? kostprijsCard : geenFinancieelInzichtCard}
+          {canViewFinancial ? (
+            <>
+              {kostprijsCard}
+              {initialRecipe && (
+                <RecipeFinancialTable
+                  recipeId={initialRecipe.id}
+                  yieldQuantity={yieldQuantityNum || initialRecipe.yield_quantity}
+                  baseUnitName={baseUnitName}
+                  wastePercentage={Number(wastePct) || 0}
+                  marginFreeCosts={marginFreeCostsNum || 0}
+                  labourCost={
+                    Number(labourRate) > 0
+                      ? (((Number(labourKitchen) || 0) + (Number(labourOther) || 0)) / 60) *
+                        Number(labourRate)
+                      : 0
+                  }
+                />
+              )}
+            </>
+          ) : (
+            geenFinancieelInzichtCard
+          )}
         </div>
       )}
       {formTab === "gebruikt" && gebruiktInCard && (
