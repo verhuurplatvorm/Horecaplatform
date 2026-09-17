@@ -171,6 +171,38 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type RecipeImportStatus = "voorbereid" | "uitgevoerd" | "teruggedraaid";
+
+export type RecipeImportBatch = {
+  id: string;
+  group_id: string;
+  company_id: string | null;
+  file_name: string;
+  file_size: number | null;
+  status: RecipeImportStatus;
+  rows_total: number;
+  rows_imported: number;
+  rows_skipped: number;
+  rows_failed: number;
+  errors: unknown[];
+  mappings: unknown[];
+  imported_by: string | null;
+  imported_at: string;
+  rolled_back_at: string | null;
+  rolled_back_by: string | null;
+}
+
+export type RecipeImportRecord = {
+  id: string;
+  batch_id: string;
+  recipe_id: string | null;
+  source_row: number | null;
+  source_external_id: string | null;
+  source_name: string | null;
+  action: "aangemaakt" | "bijgewerkt" | "overgeslagen";
+  source_data: Record<string, unknown> | null;
+}
+
 export type EventMenuStatus = "concept" | "definitief" | "uitgevoerd" | "vervallen";
 
 export type EventMenu = {
@@ -704,6 +736,18 @@ export type Database = {
         Update: Partial<HalfproductFolder>;
         Relationships: [];
       };
+      recipe_import_batches: {
+        Row: RecipeImportBatch;
+        Insert: Partial<RecipeImportBatch>;
+        Update: Partial<RecipeImportBatch>;
+        Relationships: [];
+      };
+      recipe_import_records: {
+        Row: RecipeImportRecord;
+        Insert: Partial<RecipeImportRecord>;
+        Update: Partial<RecipeImportRecord>;
+        Relationships: [];
+      };
       event_menus: {
         Row: EventMenu;
         Insert: Partial<EventMenu>;
@@ -935,6 +979,10 @@ export type Database = {
       match_supplier_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
+      };
+      rollback_recipe_import: {
+        Args: { p_batch_id: string };
+        Returns: number;
       };
       search_products_overview: {
         Args: {

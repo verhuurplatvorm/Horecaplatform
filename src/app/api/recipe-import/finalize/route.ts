@@ -18,6 +18,10 @@ interface FinalizeRecipe {
   folderName?: string | null;
   salesPriceInclVat?: number | null;
   vatRate?: number | null;
+  posReference?: string | null;
+  portionCount?: number | null;
+  wastePercentage?: number | null;
+  sourceFinancials?: Record<string, unknown>;
   ingredients: FinalizeIngredient[];
   linkedRecipeId?: string | null; // koppel aan bestaand i.p.v. nieuw aanmaken
   skip?: boolean;
@@ -43,10 +47,12 @@ export async function POST(request: Request) {
     recipes,
     recipeKind,
     companyId,
+    fileName,
   }: {
     recipes: FinalizeRecipe[];
     recipeKind: "halfproduct" | "gerecht";
     companyId: string | null;
+    fileName?: string | null;
   } = body;
 
   if (!Array.isArray(recipes) || recipes.length === 0) {
@@ -134,10 +140,12 @@ export async function POST(request: Request) {
         // (drag-and-drop / map-keuze). Alleen bij "Gerechten" neemt de
         // import de mapnaam uit het bestand over.
         category: recipeKind === "gerecht" ? recipe.folderName?.trim() || null : null,
-        // De "Btw"-kolom in de Gerechten-export is een btw-BEDRAG (geen
-        // tarief) en wordt daarom bewust niet geïmporteerd; het btw-
-        // tarief houdt de databasestandaard.
         sales_price: recipe.salesPriceInclVat ?? null,
+        // Het btw-TARIEF komt uit "Btw percentage"; de kolom "Btw" is een
+        // bedrag in euro's en wordt niet gebruikt.
+        vat_rate: recipe.vatRate ?? undefined,
+        waste_percentage: recipe.wastePercentage ?? undefined,
+        portion_size: recipe.portionCount ?? undefined,
         recipe_kind: recipeKind,
         status: "concept" as const,
         base_unit_id: unitIdByKey.get(inferBaseUnitKey(recipe.ingredients)) ?? null,
@@ -231,10 +239,56 @@ export async function POST(request: Request) {
     `[recipe-import] Klaar: ${createdCount} aangemaakt, ${linkedCount} gekoppeld aan bestaand, ${failedRecipes} mislukt.`
   );
 
+  // Import vastleggen zodat achteraf te zien is wat er gebeurd is, en
+  // zodat een foutieve import in zijn geheel teruggedraaid kan worden.
+  let batchId: string | null = null;
+  const { data: batch } = await supabase
+    .from("recipe_import_batches")
+    .insert({
+      group_id: groupId,
+      company_id: companyId || null,
+      file_name: fileName ?? "onbekend bestand",
+      status: "uitgevoerd" as const,
+      rows_total: recipes.length,
+      rows_imported: createdCount + linkedCount,
+      rows_skipped: recipes.filter((r) => r.skip).length,
+      rows_failed: failedRecipes,
+      errors: results
+        .filter((r) => r.unmatchedIngredients > 0)
+        .map((r) => ({
+          recept: r.recipeName,
+          melding: `${r.unmatchedIngredients} ingrediënt(en) niet gekoppeld`,
+        })),
+      mappings: results.map((r) => ({
+        recept: r.recipeName,
+        gekoppeld: r.matchedIngredients,
+        totaal: r.totalIngredients,
+      })),
+      imported_by: user.id,
+    })
+    .select("id")
+    .single();
+
+  if (batch) {
+    batchId = batch.id;
+    const records = results
+      .filter((r) => r.recipeId)
+      .map((r) => ({
+        batch_id: batch.id,
+        recipe_id: r.recipeId,
+        source_name: r.recipeName,
+        action: "aangemaakt" as const,
+      }));
+    if (records.length > 0) {
+      await supabase.from("recipe_import_records").insert(records);
+    }
+  }
+
   return NextResponse.json({
     created: createdCount,
     linked: linkedCount,
     failed: failedRecipes,
+    batchId,
     results,
   });
 }

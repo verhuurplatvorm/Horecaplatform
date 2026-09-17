@@ -129,6 +129,7 @@ export default function HalfproductenImporterenPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipeKind,
+          fileName: file?.name ?? null,
           companyId: companyId || null,
           recipes: included.map((r) => ({
             name: r.name,

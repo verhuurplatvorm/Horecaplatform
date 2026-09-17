@@ -18,6 +18,24 @@ export interface ParsedImportRecipe {
   salesPriceInclVat: number | null;
   /** Btw-percentage uit de bron, indien aanwezig. */
   vatRate: number | null;
+  /** Omschrijving uit de bron. */
+  description: string | null;
+  /** Kassanummer, voor koppeling met het kassasysteem en dubbelcontrole. */
+  posReference: string | null;
+  /** Aantal personen/porties waarop het bronrecept is gerekend. */
+  portionCount: number | null;
+  /** Verliespercentage uit de bron. */
+  wastePercentage: number | null;
+  /** Gewenste brutowinstmarge uit de bron. */
+  grossMarginPct: number | null;
+  /** "Soort naam" uit de bron, bv. "Snack Z". */
+  sourceKind: string | null;
+  /**
+   * Financiële cijfers zoals ze in het bronbestand stonden. Puur ter
+   * vergelijking bewaard — onze eigen kostprijsberekening blijft leidend
+   * en overschrijft deze waarden nooit.
+   */
+  sourceFinancials: Record<string, number | string | null>;
   ingredients: ParsedImportIngredient[];
 }
 
@@ -98,6 +116,13 @@ export function parseHalfproductsExcel(buffer: Buffer): ParsedImportRecipe[] {
         folderName: null,
         salesPriceInclVat: null,
         vatRate: null,
+        description: null,
+        posReference: null,
+        portionCount: null,
+        wastePercentage: null,
+        grossMarginPct: null,
+        sourceKind: null,
+        sourceFinancials: {},
         ingredients: [],
       };
       awaitingColumnHeaderRow = true;
@@ -170,6 +195,13 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
     let mapCol = -1;
     let priceCol = -1;
     let vatCol = -1;
+    let descCol = -1;
+    let posCol = -1;
+    let personsCol = -1;
+    let wasteCol = -1;
+    let marginCol = -1;
+    let kindCol = -1;
+    const financialCols: Record<string, number> = {};
     for (let i = 0; i < Math.min(rows.length, 5); i++) {
       const headers = (rows[i] ?? []).map((h) =>
         String(h ?? "").trim().toLowerCase()
@@ -183,7 +215,27 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
         idCol = headers.indexOf("id");
         mapCol = headers.indexOf("mapnaam");
         priceCol = headers.indexOf("kaartprijs");
-        vatCol = headers.indexOf("btw");
+        // Let op: "btw" bestaat óók als kolom met het btw-BEDRAG in euro's.
+        // Het tarief staat in "Btw percentage"; zonder deze volgorde werd
+        // eerder het bedrag (bv. 0,61) als tarief ingelezen.
+        vatCol = headers.findIndex((h) => h.startsWith("btw percentage"));
+        if (vatCol < 0) vatCol = headers.indexOf("btw");
+        descCol = headers.indexOf("omschrijving");
+        posCol = headers.indexOf("kassanummer");
+        personsCol = headers.indexOf("aantal personen");
+        wasteCol = headers.indexOf("verliespercentage");
+        marginCol = headers.indexOf("brutowinstmarge");
+        kindCol = headers.indexOf("soort naam");
+        // Brondata die we alleen bewaren, nooit gebruiken om mee te rekenen.
+        for (const label of [
+          "kosten", "afval", "totale kosten", "winst", "verkoop excl. btw",
+          "btw", "verkoop incl. btw", "kaartmarge", "margeprobleem",
+          "gemaakt op", "gewijzigd op", "gerealiseerde brutowinst",
+          "marge-uitgesloten kosten", "inslag percentage", "kaart inslag",
+        ]) {
+          const idx = headers.indexOf(label);
+          if (idx >= 0) financialCols[label] = idx;
+        }
         break;
       }
     }
@@ -203,13 +255,22 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
         const match = line.match(INGREDIENT_LINE);
         if (!match) continue;
         const quantity = Number(match[1].replace(",", "."));
-        const ingredientName = match[3].trim();
+        let ingredientName = match[3].trim();
+        // Leveranciersartikelnummer staat in de bron tussen hekjes,
+        // bv. "Curry ketchup tube 1x800 ml #68848#". Dat is de meest
+        // betrouwbare koppeling, dus apart houden en uit de naam halen.
+        let articleNumber: string | null = null;
+        const artMatch = ingredientName.match(/#\s*([\w.-]+)\s*#/);
+        if (artMatch) {
+          articleNumber = artMatch[1];
+          ingredientName = ingredientName.replace(artMatch[0], "").trim();
+        }
         if (!Number.isFinite(quantity) || quantity <= 0 || !ingredientName) continue;
         ingredients.push({
           name: ingredientName,
           quantity,
           unitRaw: match[2] ?? "stuk",
-          supplierArticleNumber: null,
+          supplierArticleNumber: articleNumber,
           supplierName: null,
           brand: null,
         });
@@ -222,6 +283,15 @@ function parseGerechtenRowFormat(workbook: XLSX.WorkBook): ParsedImportRecipe[] 
           folderName: mapCol >= 0 ? cell(row, mapCol) : null,
           salesPriceInclVat: priceCol >= 0 ? parseDutchNumber(cell(row, priceCol)) : null,
           vatRate: vatCol >= 0 ? parseDutchNumber(cell(row, vatCol)) : null,
+          description: descCol >= 0 ? decodeEntities(cell(row, descCol) ?? "") || null : null,
+          posReference: posCol >= 0 ? cell(row, posCol) || null : null,
+          portionCount: personsCol >= 0 ? parseDutchNumber(cell(row, personsCol)) : null,
+          wastePercentage: wasteCol >= 0 ? parseDutchNumber(cell(row, wasteCol)) : null,
+          grossMarginPct: marginCol >= 0 ? parseDutchNumber(cell(row, marginCol)) : null,
+          sourceKind: kindCol >= 0 ? cell(row, kindCol) || null : null,
+          sourceFinancials: Object.fromEntries(
+            Object.entries(financialCols).map(([label, idx]) => [label, cell(row, idx) || null])
+          ),
           ingredients,
         });
       }
