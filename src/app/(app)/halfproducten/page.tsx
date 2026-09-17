@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
 import {
   Plus,
@@ -676,7 +677,7 @@ export default function HalfproductenPage() {
                       </td>
                       <td className="px-2 py-3 font-medium">
                         <Link
-                          href={`/halfproducten/${r.id}/bewerken`}
+                          href={withReturnTo(`/halfproducten/${r.id}/bewerken`)}
                           className="hover:text-teal hover:underline"
                         >
                           {r.name}

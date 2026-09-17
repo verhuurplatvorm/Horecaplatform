@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useReturnNavigation } from "@/lib/use-return-navigation";
 import { Plus, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,6 +95,9 @@ export function ProductForm({
   activeTab = "algemeen",
 }: ProductFormProps) {
   const router = useRouter();
+  // Terug naar het scherm waar dit ingrediënt vandaan geopend is
+  // (recept, menu, overzicht) in plaats van altijd de lijst.
+  const goBack = useReturnNavigation("/producten");
   const isEdit = Boolean(initialProduct);
 
   const [units, setUnits] = useState<Unit[]>([]);
@@ -489,7 +493,7 @@ export function ProductForm({
     if (mode === "dialog" && onSaved && finalProduct) {
       onSaved(finalProduct as Product);
     } else {
-      router.push("/producten");
+      goBack();
     }
   }
 
@@ -519,7 +523,7 @@ export function ProductForm({
       );
       return;
     }
-    router.push("/producten");
+    goBack();
   }
 
   return (
@@ -1097,7 +1101,7 @@ export function ProductForm({
         <Button
           type="button"
           variant="secondary"
-          onClick={() => (onCancel ? onCancel() : router.push("/producten"))}
+          onClick={() => (onCancel ? onCancel() : goBack())}
         >
           Annuleren
         </Button>

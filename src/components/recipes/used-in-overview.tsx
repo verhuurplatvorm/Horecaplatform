@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { withReturnTo } from "@/lib/use-return-navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
@@ -82,11 +83,11 @@ export function UsedInOverview({ recipeId }: { recipeId: string }) {
               <tr key={i} className="border-t border-border">
                 <td className="px-5 py-3 font-medium">
                   <Link
-                    href={
+                    href={withReturnTo(
                       r.recipeKind === "gerecht"
                         ? `/recepturen/${r.recipeId}/bewerken`
                         : `/halfproducten/${r.recipeId}/bewerken`
-                    }
+                    )}
                     className="hover:text-teal hover:underline"
                   >
                     {r.recipeName}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
 import { Plus, Search, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
@@ -467,7 +468,7 @@ export default function RecepturenPage() {
                       </td>
                       <td className="px-5 py-3 font-medium">
                         <Link
-                          href={`/recepturen/${r.id}/bewerken`}
+                          href={withReturnTo(`/recepturen/${r.id}/bewerken`)}
                           className="hover:text-teal hover:underline"
                         >
                           {r.name}

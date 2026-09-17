@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
@@ -141,7 +142,7 @@ export function ProductUsageTab({ productId }: { productId: string }) {
                 return (
                   <tr key={`${r.recipeId}-${i}`} className="border-t border-border">
                     <td className="px-5 py-3 font-medium">
-                      <Link href={href} className="hover:text-teal hover:underline">
+                      <Link href={withReturnTo(href)} className="hover:text-teal hover:underline">
                         {r.recipeName}
                       </Link>
                     </td>

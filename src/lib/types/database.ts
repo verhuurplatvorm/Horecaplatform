@@ -936,6 +936,45 @@ export type Database = {
         Args: { p_group_id: string; p_name: string };
         Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
       };
+      search_products_overview: {
+        Args: {
+          p_company_id: string | null;
+          p_search?: string | null;
+          p_limit?: number;
+          p_offset?: number;
+          p_only_active?: boolean;
+        };
+        Returns: {
+          id: string;
+          product_number: number | null;
+          name: string;
+          custom_name: string | null;
+          brand: string | null;
+          product_group: string | null;
+          base_unit: string;
+          base_unit_id: string | null;
+          avg_unit_quantity: number | null;
+          net_unit_quantity: number | null;
+          article_number: string | null;
+          ean_code: string | null;
+          description: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+          manual_price_per_base_unit: number | null;
+          price_row_id: string | null;
+          purchase_price: number | null;
+          price_per_base_unit: number | null;
+          packaging_unit_count: number | null;
+          packaging_description: string | null;
+          supplier_article_code: string | null;
+          supplier_name: string | null;
+          valid_from: string | null;
+          flagged_for_review: boolean;
+          previous_purchase_price: number | null;
+          total_count: number;
+        }[];
+      };
       get_event_menu_breakdown: {
         Args: { p_menu_id: string; p_company_id: string };
         Returns: {

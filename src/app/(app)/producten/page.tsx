@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { createClient } from "@/lib/supabase/client";
+import { withReturnTo } from "@/lib/use-return-navigation";
+import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
 import { ConfigurableTable } from "@/components/ui/configurable-table";
@@ -113,7 +115,11 @@ export default function ProductenPage() {
   }
 
   const canViewFinancial = can("producten").canViewFinancial;
+  const { activeCompanyIds } = useCompanyScope();
+  const referenceCompanyId = activeCompanyIds[0] ?? null;
   const [rows, setRows] = useState<ProductRow[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
@@ -139,205 +145,85 @@ export default function ProductenPage() {
       });
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
+  // Eén pagina tegelijk ophalen via search_products_overview: zoeken,
+  // sorteren en pagineren gebeuren in de database. Daarmee vervalt het
+  // ophalen van de volledige catalogus plus tientallen losse prijs- en
+  // historie-queries; het scherm toont de eerste regels vrijwel meteen.
+  const PAGE_SIZE = 100;
+
+  const fetchPage = useCallback(
+    async (offset: number, search: string, append: boolean) => {
       const supabase = createClient();
+      if (append) setLoadingMore(true);
+      else setLoading(true);
 
-      // Haalt ALLE ingrediënten op in batches van 1000 i.p.v. een harde
-      // limiet van 200 — bij grotere catalogi (zoals Horesca Horecavo
-      // met 400+ artikelen) werd de lijst eerder stilzwijgend afgekapt
-      // zonder enige melding.
-      const PAGE_SIZE = 1000;
-      const allProducts: {
-        id: string;
-        name: string;
-        custom_name: string | null;
-        base_unit: string;
-        base_unit_id: string | null;
-        avg_unit_quantity: number | null;
-        avg_unit_id: string | null;
-        article_number: string | null;
-        ean_code: string | null;
-        is_active: boolean;
-        manual_price_per_base_unit: number | null;
-        product_number: number | null;
-        brand: string | null;
-        product_group: string | null;
-        description: string | null;
-        created_at: string;
-        updated_at: string;
-      }[] = [];
-      let from = 0;
-      let fetchError: { message: string } | null = null;
+      const { data, error: rpcError } = await supabase.rpc("search_products_overview", {
+        p_company_id: referenceCompanyId,
+        p_search: search.trim() || null,
+        p_limit: PAGE_SIZE,
+        p_offset: offset,
+      });
 
-      while (true) {
-        const { data, error: pageError } = await supabase
-          .from("products")
-          .select(
-            "id, name, custom_name, base_unit, base_unit_id, avg_unit_quantity, avg_unit_id, article_number, ean_code, is_active, manual_price_per_base_unit, product_number, brand, product_group, description, created_at, updated_at"
-          )
-          .order("name")
-          .range(from, from + PAGE_SIZE - 1);
-
-        if (pageError) {
-          fetchError = pageError;
-          break;
-        }
-        if (!data || data.length === 0) break;
-        allProducts.push(...data);
-        if (data.length < PAGE_SIZE) break;
-        from += PAGE_SIZE;
-      }
-
-      const products = fetchError ? null : allProducts;
-
-      if (cancelled) return;
-      if (fetchError || !products) {
+      if (rpcError) {
         setError(true);
         setLoading(false);
+        setLoadingMore(false);
         return;
       }
 
-      const productIds = products.map((p) => p.id);
+      const list = (data ?? []) as NonNullable<typeof data>;
+      const mapped: ProductRow[] = list.map((p) => {
+        const usesManualPrice =
+          p.manual_price_per_base_unit !== null && p.price_per_base_unit === null;
+        return {
+          id: p.id,
+          name: p.name,
+          customName: p.custom_name,
+          base_unit: p.base_unit,
+          base_unit_id: p.base_unit_id,
+          avg_unit_quantity: p.avg_unit_quantity,
+          avg_unit_name: null,
+          article_number: p.article_number,
+          ean_code: p.ean_code,
+          is_active: p.is_active,
+          priceRowId: p.price_row_id,
+          pricePerBaseUnit: usesManualPrice
+            ? p.manual_price_per_base_unit
+            : p.price_per_base_unit,
+          purchasePrice: p.purchase_price,
+          packagingUnitCount: p.packaging_unit_count,
+          packagingDescription: p.packaging_description,
+          supplierName: usesManualPrice ? "Eigen prijs" : p.supplier_name,
+          validFrom: p.valid_from,
+          productNumber: p.product_number,
+          brand: p.brand,
+          productGroup: p.product_group,
+          note: p.description,
+          supplierArticleCode: p.supplier_article_code ?? p.article_number,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+          flaggedForReview: p.flagged_for_review,
+          previousPurchasePrice: p.previous_purchase_price,
+        };
+      });
 
-      // In batches ophalen — met 1600+ ingrediënten wordt één enkele
-      // .in()-zoekopdracht met alle product-ID's tientallen kilobytes
-      // groot, wat de zoekopdracht stil laat mislukken (geen leverancier,
-      // prijs of verpakking meer zichtbaar voor ELK product).
-      const PRICE_BATCH_SIZE = 200;
-      const currentPrices: {
-        id: string;
-        product_id: string;
-        purchase_price: number;
-        packaging_unit_count: number | null;
-        packaging_description: string | null;
-        valid_from: string;
-        supplier_article_code: string | null;
-        flagged_for_review: boolean;
-        suppliers: { name: string } | null;
-      }[] = [];
-      for (let i = 0; i < productIds.length; i += PRICE_BATCH_SIZE) {
-        const batchIds = productIds.slice(i, i + PRICE_BATCH_SIZE);
-        const { data, error: priceError } = await supabase
-          .from("supplier_products")
-          .select(
-            "id, product_id, purchase_price, packaging_unit_count, packaging_description, valid_from, supplier_article_code, flagged_for_review, suppliers(name)"
-          )
-          .in("product_id", batchIds)
-          .is("valid_to", null)
-          .order("valid_from", { ascending: false });
-        if (priceError) {
-          console.error("Kan leveranciersprijzen niet ophalen voor batch:", priceError.message);
-          continue;
-        }
-        // @ts-expect-error -- suppliers komt als geneste relatie terug, niet in het handmatige Database-type
-        currentPrices.push(...(data ?? []));
-      }
+      setTotalCount(list.length > 0 ? Number(list[0].total_count) : 0);
+      setRows((prev) => (append ? [...prev, ...mapped] : mapped));
+      setLoading(false);
+      setLoadingMore(false);
+    },
+    [referenceCompanyId]
+  );
 
-      const priceByProduct = new Map<
-        string,
-        {
-          priceRowId: string;
-          pricePerBaseUnit: number;
-          purchasePrice: number;
-          packagingUnitCount: number | null;
-          packagingDescription: string | null;
-          supplierName: string;
-          validFrom: string;
-          supplierArticleCode: string | null;
-          flaggedForReview: boolean;
-        }
-      >();
-      for (const row of currentPrices ?? []) {
-        if (priceByProduct.has(row.product_id)) continue;
-        const pricePerBaseUnit =
-          row.packaging_unit_count && row.packaging_unit_count > 0
-            ? row.purchase_price / row.packaging_unit_count
-            : row.purchase_price;
-        const supplierName: string = row.suppliers?.name ?? "onbekende leverancier";
-        priceByProduct.set(row.product_id, {
-          priceRowId: row.id,
-          pricePerBaseUnit,
-          purchasePrice: row.purchase_price,
-          packagingUnitCount: row.packaging_unit_count,
-          packagingDescription: row.packaging_description,
-          supplierName,
-          validFrom: row.valid_from,
-          supplierArticleCode: row.supplier_article_code,
-          flaggedForReview: row.flagged_for_review,
-        });
-      }
+  // Zoeken met een korte vertraging, zodat er niet bij elke toetsaanslag
+  // een query vertrekt.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchPage(0, query, false);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query, fetchPage, reloadToken]);
 
-      // Vorige prijs per ingrediënt, voor de prijsverandering-kolommen.
-      const prevPriceByProduct = new Map<string, number>();
-      for (let i = 0; i < productIds.length; i += PRICE_BATCH_SIZE) {
-        const { data } = await supabase
-          .from("price_change_history")
-          .select("product_id, old_purchase_price, valid_from")
-          .in("product_id", productIds.slice(i, i + PRICE_BATCH_SIZE))
-          .not("old_purchase_price", "is", null)
-          .order("valid_from", { ascending: false });
-        for (const h of data ?? []) {
-          if (!prevPriceByProduct.has(h.product_id) && h.old_purchase_price != null) {
-            prevPriceByProduct.set(h.product_id, h.old_purchase_price);
-          }
-        }
-      }
-
-      if (!cancelled) {
-        setRows(
-          products.map((p) => {
-            const price = priceByProduct.get(p.id);
-            // Geen actieve leveranciersprijs, maar wél een eigen kostprijs
-            // op het ingrediënt (bv. kraanwater à €0) → toon die als bron
-            // "Eigen prijs". Een leveranciersprijs gaat altijd voor.
-            const usesManualPrice =
-              !price && p.manual_price_per_base_unit != null;
-            return {
-              id: p.id,
-              name: p.name,
-              customName: p.custom_name,
-              base_unit: p.base_unit,
-              base_unit_id: p.base_unit_id,
-              avg_unit_quantity: p.avg_unit_quantity,
-              avg_unit_name: p.avg_unit_id
-                ? units.find((u) => u.id === p.avg_unit_id)?.name ?? null
-                : null,
-              article_number: p.article_number,
-              ean_code: p.ean_code,
-              is_active: p.is_active,
-              priceRowId: price?.priceRowId ?? null,
-              pricePerBaseUnit: usesManualPrice
-                ? p.manual_price_per_base_unit
-                : price?.pricePerBaseUnit ?? null,
-              purchasePrice: price?.purchasePrice ?? null,
-              packagingUnitCount: price?.packagingUnitCount ?? null,
-              packagingDescription: price?.packagingDescription ?? null,
-              supplierName: usesManualPrice
-                ? "Eigen prijs"
-                : price?.supplierName ?? null,
-              validFrom: price?.validFrom ?? null,
-              productNumber: p.product_number,
-              brand: p.brand,
-              productGroup: p.product_group,
-              note: p.description,
-              supplierArticleCode: price?.supplierArticleCode ?? p.article_number,
-              createdAt: p.created_at,
-              updatedAt: p.updated_at,
-              flaggedForReview: price?.flaggedForReview ?? false,
-              previousPurchasePrice: prevPriceByProduct.get(p.id) ?? null,
-            };
-          })
-        );
-        setLoading(false);
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadToken]);
 
   function reload() {
     setReloadToken((t) => t + 1);
@@ -436,14 +322,10 @@ export default function ProductenPage() {
     setDeletingRow(null);
   }
 
-  const q = query.trim().toLowerCase();
-  const filteredRows = q
-    ? rows.filter((r) =>
-        [r.name, r.customName, r.supplierName, r.article_number, r.ean_code]
-          .filter(Boolean)
-          .some((field) => field!.toLowerCase().includes(q))
-      )
-    : rows;
+  // Zoeken gebeurt in de database (search_products_overview), dus hier
+  // niet nog eens filteren. De kolomfilters in de tabel werken wel
+  // gewoon op wat er geladen is.
+  const filteredRows = rows;
 
   function toggleOne(id: string) {
     setSelectedIds((prev) => {
@@ -543,7 +425,7 @@ export default function ProductenPage() {
               ids.every((i) => prev.has(i)) ? new Set() : new Set(ids)
             )
           }
-          onRowClick={(row) => router.push(`/producten/${row.id}/bewerken`)}
+          onRowClick={(row) => router.push(withReturnTo(`/producten/${row.id}/bewerken`))}
           emptyLabel={
             loading ? "Ingrediënten laden…" : "Geen ingrediënten gevonden."
           }
@@ -730,6 +612,20 @@ export default function ProductenPage() {
             { key: "ean", label: "EAN-code", width: 130, value: (r) => r.ean_code },
           ]}
         />
+
+        {rows.length < totalCount && (
+          <div className="flex justify-center">
+            <Button
+              variant="secondary"
+              disabled={loadingMore}
+              onClick={() => fetchPage(rows.length, query, true)}
+            >
+              {loadingMore
+                ? "Laden…"
+                : `Meer laden (${rows.length} van ${totalCount})`}
+            </Button>
+          </div>
+        )}
       </main>
 
       {confirming && (

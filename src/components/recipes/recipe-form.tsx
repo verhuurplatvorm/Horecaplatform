@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useReturnNavigation } from "@/lib/use-return-navigation";
 import Link from "next/link";
 import {
   ArrowDown,
@@ -67,6 +68,13 @@ export function RecipeForm({
   lockedKind,
 }: RecipeFormProps) {
   const router = useRouter();
+  // Terug naar waar dit recept/halfproduct vandaan geopend is — vanuit
+  // een menu, een ander recept of het overzicht.
+  const goBack = useReturnNavigation(
+    (initialRecipe?.recipe_kind ?? lockedKind) === "halfproduct"
+      ? "/halfproducten"
+      : "/recepturen"
+  );
   const isEdit = Boolean(initialRecipe);
   const { activeCompanyIds, scope, companies } = useCompanyScope();
   const { can } = usePermissions();
@@ -928,7 +936,7 @@ export function RecipeForm({
       return;
     }
 
-    router.push(recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen");
+    goBack();
   }
 
   async function handleDelete() {
@@ -970,7 +978,7 @@ export function RecipeForm({
       );
       return;
     }
-    router.push(recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen");
+    goBack();
   }
 
   const basisgegevensCard = (
@@ -1700,7 +1708,7 @@ export function RecipeForm({
       <Button
         type="button"
         variant="secondary"
-        onClick={() => router.push(recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen")}
+        onClick={goBack}
       >
         Annuleren
       </Button>
