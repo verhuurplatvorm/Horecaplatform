@@ -9,4 +9,5 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: "voorraad", label: "Voorraad" },
   { key: "bedrijven", label: "Bedrijven" },
   { key: "gebruikers", label: "Gebruikers & rechten" },
+  { key: "afval", label: "Afvalregistratie" },
 ];

@@ -11,6 +11,7 @@ import {
   SuppliersWidget,
   UnmatchedIngredientsWidget,
   UpcomingMenusWidget,
+  WasteWidget,
 } from "@/components/dashboard/widgets";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -187,6 +188,7 @@ export default function DashboardPage() {
 
           <div className="space-y-4">
             <UpcomingMenusWidget filters={filters} hidden={isHidden("menus")} onHide={hideWidget} />
+            <WasteWidget filters={filters} hidden={isHidden("afval")} onHide={hideWidget} />
             <UnmatchedIngredientsWidget hidden={isHidden("nietherkend")} onHide={hideWidget} />
             <SuppliersWidget hidden={isHidden("leveranciers")} onHide={hideWidget} />
 

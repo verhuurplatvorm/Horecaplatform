@@ -524,3 +524,210 @@ export function SuppliersWidget({
     </DashboardWidget>
   );
 }
+
+/**
+ * Dashboardpaneel Afvalregistratie: waarde, aantallen en wat eruit springt.
+ * Toont uitsluitend werkelijk geregistreerde afvaldata — er wordt niets
+ * geschat en er zit geen voorraad in.
+ */
+export function WasteWidget({
+  filters,
+  onHide,
+  hidden,
+}: {
+  filters: Filters;
+  onHide?: (id: string) => void;
+  hidden?: boolean;
+}) {
+  const [summary, setSummary] = useState<{
+    total_value: number;
+    registration_count: number;
+    total_kg: number;
+    total_liter: number;
+    total_pieces: number;
+    previous_value: number;
+    ingredient_value: number;
+    halfproduct_value: number;
+  } | null>(null);
+  const [topProducts, setTopProducts] = useState<{ name: string; value: number }[]>([]);
+  const [topReasons, setTopReasons] = useState<{ name: string; value: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      setLoading(true);
+      const supabase = createClient();
+      const to = new Date();
+      const from = new Date(to);
+      from.setDate(to.getDate() - filters.days + 1);
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+      const { data: sum } = await supabase.rpc("waste_summary", {
+        p_company_id: filters.companyId,
+        p_from: iso(from),
+        p_to: iso(to),
+      });
+      if (cancelled) return;
+      setSummary(sum?.[0] ?? null);
+
+      // Top producten en redenen uit dezelfde periode.
+      const { data: regs } = await supabase
+        .from("waste_registrations")
+        .select("product_id, recipe_id, reason_id, waste_value")
+        .gte("registered_at", `${iso(from)}T00:00:00`)
+        .eq("is_cancelled", false);
+      if (cancelled || !regs) {
+        setLoading(false);
+        return;
+      }
+
+      const byProduct = new Map<string, number>();
+      const byReason = new Map<string, number>();
+      for (const r of regs) {
+        const key = r.product_id ?? r.recipe_id;
+        if (key) byProduct.set(key, (byProduct.get(key) ?? 0) + (r.waste_value ?? 0));
+        if (r.reason_id)
+          byReason.set(r.reason_id, (byReason.get(r.reason_id) ?? 0) + (r.waste_value ?? 0));
+      }
+
+      const productIds = [...byProduct.keys()];
+      const [{ data: prods }, { data: recs }, { data: reasons }] = await Promise.all([
+        productIds.length
+          ? supabase.from("products").select("id, name, custom_name").in("id", productIds)
+          : Promise.resolve({ data: [] }),
+        productIds.length
+          ? supabase.from("recipes").select("id, name").in("id", productIds)
+          : Promise.resolve({ data: [] }),
+        supabase.from("waste_reasons").select("id, name"),
+      ]);
+      if (cancelled) return;
+
+      const nameById = new Map<string, string>();
+      for (const p of prods ?? []) nameById.set(p.id, p.custom_name?.trim() || p.name);
+      for (const r of recs ?? []) nameById.set(r.id, r.name);
+      const reasonName = new Map((reasons ?? []).map((r) => [r.id, r.name]));
+
+      setTopProducts(
+        [...byProduct.entries()]
+          .map(([id, value]) => ({ name: nameById.get(id) ?? "onbekend", value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5)
+      );
+      setTopReasons(
+        [...byReason.entries()]
+          .map(([id, value]) => ({ name: reasonName.get(id) ?? "onbekend", value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5)
+      );
+      setLoading(false);
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.companyId, filters.days]);
+
+  const delta =
+    summary && summary.previous_value > 0
+      ? ((summary.total_value - summary.previous_value) / summary.previous_value) * 100
+      : null;
+
+  return (
+    <DashboardWidget
+      id="afval"
+      title="Afvalregistratie"
+      href="/afval"
+      hidden={hidden}
+      onHide={onHide}
+    >
+      {loading ? (
+        <p className="px-4 py-6 text-center text-sm text-muted">Laden…</p>
+      ) : !summary || summary.registration_count === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-muted">
+          Nog geen afval geregistreerd in deze periode.
+        </p>
+      ) : (
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <Link href="/afval" className="hover:underline">
+              <span className="tabular text-2xl font-semibold text-danger">
+                € {summary.total_value.toFixed(2)}
+              </span>
+            </Link>
+            {delta !== null && (
+              <span
+                className={cn(
+                  "flex items-center gap-0.5 text-sm",
+                  delta > 0 ? "text-danger" : "text-success"
+                )}
+              >
+                {delta > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                {Math.abs(delta).toFixed(0)}% t.o.v. vorige periode
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <Metric label="Registraties" value={String(summary.registration_count)} />
+            <Metric label="Kilo" value={summary.total_kg.toFixed(1)} />
+            <Metric label="Liter" value={summary.total_liter.toFixed(1)} />
+            <Metric label="Stuks" value={summary.total_pieces.toFixed(0)} />
+          </div>
+
+          {delta !== null && delta > 25 && (
+            <p className="flex items-start gap-1.5 rounded-md bg-copper/10 p-2 text-xs text-copper">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              De afvalwaarde ligt {delta.toFixed(0)}% hoger dan de vorige periode.
+            </p>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="mb-1 text-xs uppercase tracking-wide text-muted">
+                Meeste waarde
+              </p>
+              <ul className="space-y-0.5 text-sm">
+                {topProducts.map((p) => (
+                  <li key={p.name} className="flex justify-between gap-2">
+                    <span className="truncate">{p.name}</span>
+                    <span className="tabular shrink-0 text-muted">
+                      € {p.value.toFixed(2)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-1 text-xs uppercase tracking-wide text-muted">Redenen</p>
+              <ul className="space-y-0.5 text-sm">
+                {topReasons.map((r) => (
+                  <li key={r.name} className="flex justify-between gap-2">
+                    <span className="truncate">{r.name}</span>
+                    <span className="tabular shrink-0 text-muted">
+                      € {r.value.toFixed(2)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted">
+            Ingrediënten € {summary.ingredient_value.toFixed(2)} · halfproducten €{" "}
+            {summary.halfproduct_value.toFixed(2)}
+          </p>
+        </div>
+      )}
+    </DashboardWidget>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-background px-2 py-1.5">
+      <p className="tabular font-semibold">{value}</p>
+      <p className="text-muted">{label}</p>
+    </div>
+  );
+}

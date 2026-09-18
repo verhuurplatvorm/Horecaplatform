@@ -171,6 +171,35 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type WasteReason = {
+  id: string;
+  group_id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type WasteRegistration = {
+  id: string;
+  group_id: string;
+  company_id: string | null;
+  product_id: string | null;
+  recipe_id: string | null;
+  quantity: number;
+  unit_id: string | null;
+  reason_id: string | null;
+  note: string | null;
+  photo_url: string | null;
+  unit_cost: number | null;
+  waste_value: number | null;
+  registered_by: string | null;
+  registered_at: string;
+  corrected_at: string | null;
+  corrected_by: string | null;
+  is_cancelled: boolean;
+}
+
 export type RecipeImportStatus = "voorbereid" | "uitgevoerd" | "teruggedraaid";
 
 export type RecipeImportBatch = {
@@ -736,6 +765,18 @@ export type Database = {
         Update: Partial<HalfproductFolder>;
         Relationships: [];
       };
+      waste_reasons: {
+        Row: WasteReason;
+        Insert: Partial<WasteReason>;
+        Update: Partial<WasteReason>;
+        Relationships: [];
+      };
+      waste_registrations: {
+        Row: WasteRegistration;
+        Insert: Partial<WasteRegistration>;
+        Update: Partial<WasteRegistration>;
+        Relationships: [];
+      };
       recipe_import_batches: {
         Row: RecipeImportBatch;
         Insert: Partial<RecipeImportBatch>;
@@ -992,6 +1033,29 @@ export type Database = {
       match_supplier_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
+      };
+      calculate_waste_value: {
+        Args: {
+          p_product_id: string | null;
+          p_recipe_id: string | null;
+          p_quantity: number;
+          p_unit_id: string | null;
+          p_company_id: string | null;
+        };
+        Returns: { unit_cost: number | null; waste_value: number | null }[];
+      };
+      waste_summary: {
+        Args: { p_company_id?: string | null; p_from?: string | null; p_to?: string | null };
+        Returns: {
+          total_value: number;
+          registration_count: number;
+          total_kg: number;
+          total_liter: number;
+          total_pieces: number;
+          previous_value: number;
+          ingredient_value: number;
+          halfproduct_value: number;
+        }[];
       };
       dashboard_summary: {
         Args: { p_company_id?: string | null };
