@@ -10,7 +10,7 @@ import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { cn } from "@/lib/utils";
-import type { Unit, WasteReason } from "@/lib/types/database";
+import type { ConsumptionType, Unit, WasteReason } from "@/lib/types/database";
 
 interface Target {
   id: string;
@@ -37,6 +37,9 @@ export default function AfvalRegistrerenPage() {
   const [reasons, setReasons] = useState<WasteReason[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
 
+  // Wat leg je vast: weggegooid afval of een personeelsmaaltijd. Zelfde
+  // vastlegging en waardering, maar apart geteld.
+  const [regType, setRegType] = useState<ConsumptionType>("afval");
   const [kind, setKind] = useState<"ingrediënt" | "halfproduct">("ingrediënt");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Target[]>([]);
@@ -171,7 +174,13 @@ export default function AfvalRegistrerenPage() {
     if (!staffId) return setError("Kies eerst wie deze registratie doet.");
     if (!selected) return setError("Kies een ingrediënt of halfproduct.");
     if (!quantity.trim() || Number(quantity) <= 0) return setError("Vul een hoeveelheid in.");
-    if (!reasonId) return setError("Kies een reden.");
+    if (regType === "afval") {
+      if (!reasonId) return setError("Kies een reden.");
+      const chosen = reasons.find((r) => r.id === reasonId);
+      if (chosen?.name.toLowerCase() === "anders" && !note.trim()) {
+        return setError("Vul bij \"Anders\" een korte toelichting in.");
+      }
+    }
 
     setSaving(true);
     setError(null);
@@ -189,7 +198,8 @@ export default function AfvalRegistrerenPage() {
       recipe_id: selected.kind === "halfproduct" ? selected.id : null,
       quantity: Number(quantity),
       unit_id: unitId || null,
-      reason_id: reasonId,
+      registration_type: regType,
+      reason_id: regType === "afval" ? reasonId : null,
       note: note.trim() || null,
       unit_cost: value?.unit_cost ?? null,
       waste_value: value?.waste_value ?? null,
@@ -206,6 +216,10 @@ export default function AfvalRegistrerenPage() {
     router.push("/afval");
   }
 
+  const isOther =
+    regType === "afval" &&
+    reasons.find((r) => r.id === reasonId)?.name.toLowerCase() === "anders";
+
   const unitsForSelected = selected?.baseUnitId
     ? units.filter(
         (u) => u.dimension === units.find((x) => x.id === selected.baseUnitId)?.dimension
@@ -214,8 +228,31 @@ export default function AfvalRegistrerenPage() {
 
   return (
     <>
-      <Topbar title="Afval registreren" />
+      <Topbar title="Registreren" />
       <main className="mx-auto max-w-2xl space-y-4 p-6">
+        {/* Stap 0: wat leg je vast */}
+        <div className="flex gap-2">
+          {(
+            [
+              ["afval", "Afval / derving"],
+              ["personeelsmaaltijd", "Personeelsmaaltijd"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setRegType(key)}
+              className={cn(
+                "flex-1 rounded-lg border px-4 py-3 text-sm",
+                regType === key
+                  ? "border-teal bg-teal/10 font-medium text-teal"
+                  : "border-border bg-surface hover:bg-background"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Stap 1: wie */}
         <Card>
           <CardContent className="pt-4">
@@ -362,35 +399,50 @@ export default function AfvalRegistrerenPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium">Reden</label>
-                <div className="flex flex-wrap gap-2">
-                  {reasons.map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => setReasonId(r.id)}
-                      className={cn(
-                        "rounded-lg border px-3 py-2 text-sm",
-                        reasonId === r.id
-                          ? "border-teal bg-teal/10 font-medium text-teal"
-                          : "border-border hover:bg-background"
-                      )}
-                    >
-                      {r.name}
-                    </button>
-                  ))}
+              {regType === "afval" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Reden</label>
+                  <div className="flex flex-wrap gap-2">
+                    {reasons.map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => setReasonId(r.id)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2 text-sm",
+                          reasonId === r.id
+                            ? "border-teal bg-teal/10 font-medium text-teal"
+                            : "border-border hover:bg-background"
+                        )}
+                      >
+                        {r.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  Opmerking (optioneel)
+                  {isOther ? "Toelichting" : "Opmerking (optioneel)"}
                 </label>
                 <input
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  className="input"
+                  placeholder={
+                    isOther
+                      ? "Beschrijf kort wat er aan de hand was"
+                      : regType === "personeelsmaaltijd"
+                        ? "bv. lunch keukenbrigade"
+                        : ""
+                  }
+                  className={cn("input", isOther && !note.trim() && "border-copper")}
                 />
+                {isOther && (
+                  <p className="mt-1 text-xs text-copper">
+                    Bij &quot;Anders&quot; is een toelichting verplicht — anders wordt deze
+                    categorie een verzamelbak waar later niets meer uit te halen valt.
+                  </p>
+                )}
               </div>
 
               {/* Waarde vóór opslaan zichtbaar. */}
@@ -403,7 +455,8 @@ export default function AfvalRegistrerenPage() {
                     </span>{" "}
                     ={" "}
                     <strong className="text-base text-danger">
-                      € {value.waste_value.toFixed(2)} afvalwaarde
+                      € {value.waste_value.toFixed(2)}{" "}
+                      {regType === "afval" ? "afvalwaarde" : "kosten personeelsmaaltijd"}
                     </strong>
                   </p>
                 ) : (
@@ -420,7 +473,11 @@ export default function AfvalRegistrerenPage() {
               <div className="flex gap-2">
                 <Button onClick={save} disabled={saving} className="h-12 flex-1 text-base">
                   <Check className="h-5 w-5" />
-                  {saving ? "Opslaan…" : "Afval registreren"}
+                  {saving
+                    ? "Opslaan…"
+                    : regType === "afval"
+                      ? "Afval registreren"
+                      : "Maaltijd registreren"}
                 </Button>
                 <Button
                   variant="secondary"

@@ -180,7 +180,10 @@ export type WasteReason = {
   created_at: string;
 }
 
+export type ConsumptionType = "afval" | "personeelsmaaltijd";
+
 export type WasteRegistration = {
+  registration_type: ConsumptionType;
   id: string;
   group_id: string;
   company_id: string | null;
@@ -1045,7 +1048,12 @@ export type Database = {
         Returns: { unit_cost: number | null; waste_value: number | null }[];
       };
       waste_summary: {
-        Args: { p_company_id?: string | null; p_from?: string | null; p_to?: string | null };
+        Args: {
+          p_company_id?: string | null;
+          p_from?: string | null;
+          p_to?: string | null;
+          p_type?: ConsumptionType;
+        };
         Returns: {
           total_value: number;
           registration_count: number;

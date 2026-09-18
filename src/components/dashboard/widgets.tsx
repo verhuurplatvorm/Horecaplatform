@@ -567,6 +567,7 @@ export function WasteWidget({
         p_company_id: filters.companyId,
         p_from: iso(from),
         p_to: iso(to),
+        p_type: "afval",
       });
       if (cancelled) return;
       setSummary(sum?.[0] ?? null);
@@ -576,6 +577,7 @@ export function WasteWidget({
         .from("waste_registrations")
         .select("product_id, recipe_id, reason_id, waste_value")
         .gte("registered_at", `${iso(from)}T00:00:00`)
+        .eq("registration_type", "afval")
         .eq("is_cancelled", false);
       if (cancelled || !regs) {
         setLoading(false);

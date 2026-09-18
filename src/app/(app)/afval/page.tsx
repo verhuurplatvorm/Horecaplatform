@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { WasteReason } from "@/lib/types/database";
+import type { ConsumptionType, WasteReason } from "@/lib/types/database";
 
 interface Row {
   id: string;
@@ -62,6 +62,7 @@ export default function AfvalPage() {
   const { activeCompanyIds } = useCompanyScope();
   const companyId = activeCompanyIds[0] ?? null;
 
+  const [regType, setRegType] = useState<ConsumptionType>("afval");
   const [period, setPeriod] = useState<string>("maand");
   const [reasonId, setReasonId] = useState<string>("");
   const [staffId, setStaffId] = useState<string>("");
@@ -96,6 +97,7 @@ export default function AfvalPage() {
       .lte("registered_at", `${to}T23:59:59`)
       .order("registered_at", { ascending: false })
       .limit(500);
+    q = q.eq("registration_type", regType);
     if (companyId) q = q.eq("company_id", companyId);
     if (reasonId) q = q.eq("reason_id", reasonId);
     if (staffId) q = q.eq("registered_by", staffId);
@@ -142,7 +144,7 @@ export default function AfvalPage() {
       }))
     );
     setLoading(false);
-  }, [period, reasonId, staffId, companyId, reasons, staff]);
+  }, [period, reasonId, staffId, companyId, reasons, staff, regType]);
 
   useEffect(() => {
     load();
@@ -172,18 +174,42 @@ export default function AfvalPage() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = "afvalregistraties.csv";
+    a.download = regType === "afval" ? "afvalregistraties.csv" : "personeelsmaaltijden.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
     <>
-      <Topbar title="Afvalregistratie" />
+      <Topbar title="Afval & personeelsmaaltijden" />
       <main className="space-y-4 p-6">
+        <nav className="flex gap-1 border-b border-border">
+          {(
+            [
+              ["afval", "Afval / derving"],
+              ["personeelsmaaltijd", "Personeelsmaaltijden"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setRegType(key)}
+              className={cn(
+                "border-b-2 px-3 py-2 text-sm",
+                regType === key
+                  ? "border-teal font-medium text-teal"
+                  : "border-transparent text-muted hover:text-foreground"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">
-            Wat is er weggegooid, waarom, en wat kostte dat. Losstaand van voorraad.
+            {regType === "afval"
+              ? "Wat is er weggegooid, waarom, en wat kostte dat. Losstaand van voorraad."
+              : "Wat is er intern door personeel gegeten, en wat kostte dat."}
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={exportCsv}>
@@ -193,7 +219,7 @@ export default function AfvalPage() {
             <Link href="/afval/nieuw">
               <Button>
                 <Plus className="h-4 w-4" />
-                Afval registreren
+                Registreren
               </Button>
             </Link>
           </div>
@@ -216,16 +242,18 @@ export default function AfvalPage() {
               </button>
             ))}
           </div>
-          <select
-            value={reasonId}
-            onChange={(e) => setReasonId(e.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-          >
-            <option value="">Alle redenen</option>
-            {reasons.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </select>
+          {regType === "afval" && (
+            <select
+              value={reasonId}
+              onChange={(e) => setReasonId(e.target.value)}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            >
+              <option value="">Alle redenen</option>
+              {reasons.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          )}
           <select
             value={staffId}
             onChange={(e) => setStaffId(e.target.value)}
@@ -249,8 +277,12 @@ export default function AfvalPage() {
                     <th className="px-4 py-2 font-medium">Product</th>
                     <th className="px-4 py-2 font-medium">Type</th>
                     <th className="px-4 py-2 text-right font-medium">Hoeveelheid</th>
-                    <th className="px-4 py-2 font-medium">Reden</th>
-                    <th className="px-4 py-2 text-right font-medium">Afvalwaarde</th>
+                    {regType === "afval" && (
+                      <th className="px-4 py-2 font-medium">Reden</th>
+                    )}
+                    <th className="px-4 py-2 text-right font-medium">
+                      {regType === "afval" ? "Afvalwaarde" : "Kosten"}
+                    </th>
                     <th className="px-4 py-2 font-medium">Locatie</th>
                   </tr>
                 </thead>
@@ -275,7 +307,9 @@ export default function AfvalPage() {
                       <td className="px-4 py-2 text-right tabular">
                         {r.quantity} {r.unitName ?? ""}
                       </td>
-                      <td className="px-4 py-2 text-muted">{r.reasonName ?? "—"}</td>
+                      {regType === "afval" && (
+                        <td className="px-4 py-2 text-muted">{r.reasonName ?? "—"}</td>
+                      )}
                       <td className="px-4 py-2 text-right tabular font-medium">
                         {r.waste_value != null ? `€ ${r.waste_value.toFixed(2)}` : "—"}
                       </td>
@@ -284,7 +318,7 @@ export default function AfvalPage() {
                   ))}
                   {active.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={regType === "afval" ? 8 : 7} className="px-4 py-8 text-center text-muted">
                         {loading
                           ? "Registraties laden…"
                           : "Geen afvalregistraties in deze periode."}
@@ -300,7 +334,8 @@ export default function AfvalPage() {
                 {active.length} registratie(s)
               </span>
               <span className="tabular text-lg font-semibold text-danger">
-                € {totalValue.toFixed(2)} afvalwaarde
+                € {totalValue.toFixed(2)}{" "}
+                {regType === "afval" ? "afvalwaarde" : "personeelskosten"}
               </span>
             </div>
           </CardContent>
