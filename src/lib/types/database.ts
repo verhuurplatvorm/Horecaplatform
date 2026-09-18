@@ -918,6 +918,19 @@ export type Database = {
       };
     };
     Views: {
+      dashboard_unmatched_ingredients: {
+        Row: {
+          line_id: string;
+          unmatched_name: string;
+          quantity: number;
+          unit_name: string | null;
+          recipe_id: string;
+          recipe_name: string;
+          recipe_kind: string;
+          changed_at: string;
+        };
+        Relationships: [];
+      };
       products_missing_unit_bridge: {
         Row: ProductMissingUnitBridge;
         Relationships: [];
@@ -979,6 +992,49 @@ export type Database = {
       match_supplier_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { supplier_id: string; supplier_name: string; similarity_score: number }[];
+      };
+      dashboard_summary: {
+        Args: { p_company_id?: string | null };
+        Returns: {
+          price_alerts: number;
+          cost_problems: number;
+          unmatched_ingredients: number;
+          invoices_to_check: number;
+          upcoming_menus: number;
+          flagged_prices: number;
+          recipe_count: number;
+          halfproduct_count: number;
+          product_count: number;
+          supplier_count: number;
+          menu_count: number;
+          menu_card_count: number;
+        }[];
+      };
+      dashboard_price_changes: {
+        Args: { p_days?: number; p_limit?: number; p_direction?: string };
+        Returns: {
+          product_id: string;
+          product_name: string;
+          supplier_name: string | null;
+          old_price: number;
+          new_price: number;
+          difference_eur: number;
+          difference_pct: number;
+          changed_on: string;
+          above_alert: boolean;
+        }[];
+      };
+      dashboard_margin_problems: {
+        Args: { p_company_id: string | null; p_foodcost_norm?: number; p_limit?: number };
+        Returns: {
+          recipe_id: string;
+          recipe_name: string;
+          category: string | null;
+          cost_price: number;
+          sales_price: number;
+          foodcost_pct: number;
+          margin_pct: number;
+        }[];
       };
       rollback_recipe_import: {
         Args: { p_batch_id: string };
