@@ -32,6 +32,17 @@ async function autoCreateNewProducts(
     let productId = createdByName.get(key);
 
     if (!productId) {
+      // Niet elke factuurregel is een ingrediënt. Op een horecafactuur
+      // staan ook handdoekrollen, werkdoekjes, sponzen, folie en
+      // afvalzakken. Alleen regels die herkenbaar voedsel zijn worden
+      // automatisch aangemaakt; de rest blijft staan voor controle, zodat
+      // er geen schoonmaakartikelen als ingrediënt in de keuken belanden.
+      const category = row.itemCategory ?? null;
+      if (category && category !== "food") {
+        result.push(row);
+        continue;
+      }
+
       const baseUnitKey = row.packagingUnitKey ?? "stuk";
       const baseUnitId = unitIdByKey.get(baseUnitKey) ?? unitIdByKey.get("stuk");
       if (!baseUnitId) {
@@ -49,6 +60,7 @@ async function autoCreateNewProducts(
           brand: row.brand,
           base_unit_id: baseUnitId,
           kind: "inkoopartikel" as const,
+          item_category: "food" as const,
         })
         .select("id")
         .single();
@@ -206,6 +218,11 @@ export async function createImportBatch(
     packaging_unit_count: row.packagingUnitCount,
     packaging_unit_key: row.packagingUnitKey,
     purchase_price: row.purchasePrice,
+    vat_rate: row.vatRate ?? null,
+    quality_mark: row.qualityMark ?? null,
+    delivery_date: row.deliveryDate ?? null,
+    delivery_note: row.deliveryNote ?? null,
+    item_category: row.itemCategory ?? null,
     matched_product_id: row.matchedProductId,
     match_method: row.matchMethod,
     match_confidence: row.confidence,

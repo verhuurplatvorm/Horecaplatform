@@ -84,12 +84,21 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       eanCode: line.eanCode,
       articleNumber: line.articleNumber,
       description: line.description,
-      brand: null,
+      // Het merk stond wél in de uitlezing maar werd hier weggegooid; op
+      // facturen met een merkkolom (bv. Horesca) gaat dat nu mee.
+      brand: line.brand ?? null,
       packagingDescription:
         matchedPackagingText ?? line.packagingDescription ?? (effectiveUnit ? `1 ${effectiveUnit}` : null),
       packagingUnitCount,
       packagingUnitKey,
       purchasePrice: line.unitPrice,
+      vatRate: line.vatRate ?? null,
+      qualityMark: line.qualityMark ?? null,
+      deliveryDate: line.deliveryDate ?? null,
+      deliveryNote: line.deliveryNote ?? null,
+      // Bij twijfel geen aanname: 'onbekend' betekent dat een mens het
+      // beoordeelt, zodat niet-food nooit stil als ingrediënt ontstaat.
+      itemCategory: line.itemCategory ?? null,
     };
   });
 }

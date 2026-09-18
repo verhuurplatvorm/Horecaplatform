@@ -21,6 +21,22 @@ export interface ParsedPriceRow {
    * beschouwd als al in de basiseenheid van het gekoppelde ingrediënt. */
   packagingUnitKey: string | null;
   purchasePrice: number | null;
+  /** Btw-percentage van de factuurregel, indien de factuur dat per regel geeft. */
+  vatRate?: number | null;
+  /** Keurmerk/herkomst (MSC, ASC, …) als de factuur die kolom heeft. */
+  qualityMark?: string | null;
+  /** Leverdatum en pakbon-/leveringsnummer van de kopregel waar deze regel onder valt. */
+  deliveryDate?: string | null;
+  deliveryNote?: string | null;
+  /** Soort artikel; alles wat niet 'food' is wordt niet automatisch als ingrediënt aangemaakt. */
+  itemCategory?:
+    | "food"
+    | "verpakking"
+    | "schoonmaak"
+    | "keukenmateriaal"
+    | "overig"
+    | "onbekend"
+    | null;
 }
 
 /** Canonieke velden waar een kolom naartoe gekoppeld kan worden, met

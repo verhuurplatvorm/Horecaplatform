@@ -112,6 +112,7 @@ export type Product = {
   default_loss_percentage: number | null;
   preferred_supplier_id: string | null;
   manual_price_per_base_unit: number | null;
+  item_category: "food" | "verpakking" | "schoonmaak" | "keukenmateriaal" | "overig" | "onbekend";
   avg_unit_quantity: number | null;
   avg_unit_id: string | null;
   net_unit_quantity: number | null;
@@ -693,6 +694,11 @@ export type PriceImportRow = {
   resulting_supplier_product_id: string | null;
   reopened_supplier_product_id: string | null;
   match_confidence: string | null;
+  vat_rate: number | null;
+  quality_mark: string | null;
+  delivery_date: string | null;
+  delivery_note: string | null;
+  item_category: "food" | "verpakking" | "schoonmaak" | "keukenmateriaal" | "overig" | "onbekend" | null;
   suggested_product_ids: string[];
 }
 

@@ -21,11 +21,17 @@ const EXTRACTION_PROMPT = `Je krijgt een foto of PDF van een inkoopfactuur van e
       "eanCode": string of null,
       "articleNumber": string of null,
       "description": string of null,
+      "brand": string of null,
       "packagingDescription": string of null,
       "quantity": number of null,
       "unit": string of null,
       "unitPrice": number of null,
-      "lineTotalExclVat": number of null
+      "lineTotalExclVat": number of null,
+      "vatRate": number of null,
+      "qualityMark": string of null,
+      "deliveryDate": string (YYYY-MM-DD) of null,
+      "deliveryNote": string of null,
+      "itemCategory": "food" | "verpakking" | "schoonmaak" | "keukenmateriaal" | "overig" | "onbekend"
     }
   ]
 }
@@ -40,6 +46,11 @@ Belangrijk:
 - Eén factuur kan meerdere leveringen/pakbonnen bevatten (bv. "Volgens pakbon nr. van ... 27-07-2026"). Behandel al deze regels gewoon als aparte factuurregels van dezelfde factuur — maak er geen aparte facturen van en sla de pakbon-kopregels zelf niet op als los item.
 - Negeer eventuele losse letters/codes aan het einde van een regel die alleen een btw-categorie aangeven (bv. een losse "L" of "H"), dat is geen onderdeel van de prijs of omschrijving.
 - Gebruik een punt als decimaalteken, ongeacht hoe het op de factuur staat (een factuur gebruikt vaak een komma).
+- "brand" is het merk als de factuur daar een aparte kolom voor heeft (bv. HEINZ, BETRA, TOPCLASS). Staat er geen merkkolom, gebruik dan null — haal het merk niet uit de omschrijving.
+- "vatRate" is het btw-PERCENTAGE van die regel (bv. 9 of 21). Sommige facturen gebruiken in plaats daarvan een lettercode in een BTW-kolom (bv. "L" voor laag en "H" voor hoog); vertaal die dan naar het percentage dat onderaan de factuur bij die categorie hoort.
+- "qualityMark" is een keurmerk of herkomstaanduiding als de factuur daar een kolom voor heeft (bv. MSC, ASC, NEW WAVE, MEROMAR).
+- "deliveryDate" en "deliveryNote" horen bij de kopregel waaronder een regel staat, bv. "Volgens pakbon nr. van 212942 07-09-2026" of "Levering 252 6, op 08-09-26". Neem die datum en dat nummer over op ELKE regel die eronder valt, tot de volgende kopregel.
+- "itemCategory" bepaalt wat voor soort artikel het is. Niet elke factuurregel is voedsel: handdoekrollen, werkdoekjes, sponzen, folie, afvalzakken en bakjes zijn geen ingrediënt. Gebruik "food" alleen als je zeker weet dat het eten of drinken is, "verpakking"/"schoonmaak"/"keukenmateriaal" voor het duidelijke non-food, en "onbekend" bij twijfel — dan wordt het door een mens gecontroleerd in plaats van automatisch als ingrediënt aangemaakt.
 - Geef uitsluitend het JSON-object terug, niets ervoor of erna.`;
 
 /**

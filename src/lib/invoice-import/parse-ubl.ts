@@ -26,6 +26,24 @@ export interface ParsedInvoiceLine {
   unit: string | null;
   unitPrice: number | null;
   lineTotalExclVat: number | null;
+  /** Merk, als de factuur daar een eigen kolom voor heeft (Horesca wel, Fix Fisch niet). */
+  brand?: string | null;
+  /** Btw-percentage van deze regel; sommige facturen gebruiken een lettercode die naar een percentage vertaald wordt. */
+  vatRate?: number | null;
+  /** Keurmerk/herkomst als de factuur die kolom heeft (MSC, ASC, NEW WAVE…). */
+  qualityMark?: string | null;
+  /** Leverdatum en pakbon-/leveringsnummer van de kopregel waar deze regel onder valt. */
+  deliveryDate?: string | null;
+  deliveryNote?: string | null;
+  /** Soort artikel; "onbekend" betekent controle nodig, niet automatisch als ingrediënt aanmaken. */
+  itemCategory?:
+    | "food"
+    | "verpakking"
+    | "schoonmaak"
+    | "keukenmateriaal"
+    | "overig"
+    | "onbekend"
+    | null;
 }
 
 export interface ParsedInvoice {
