@@ -103,7 +103,11 @@ export async function extractInvoiceWithClaude(
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 4096,
+      // Ruim bemeten: met het uitgebreide schema (merk, btw, keurmerk,
+      // leverdatum, pakbon, categorie per regel) kapte 4096 tokens het
+      // antwoord bij langere facturen (60+ regels) middenin de JSON af,
+      // waardoor er 0 regels overbleven i.p.v. een foutmelding.
+      max_tokens: 16000,
       messages: [{ role: "user", content }],
     }),
   });
@@ -127,13 +131,22 @@ export async function extractInvoiceWithClaude(
   let parsed: ParsedInvoice;
   try {
     parsed = JSON.parse(cleaned);
-  } catch (err) {
-    console.error(
-      "[invoice-import] Kan Claude-antwoord niet als JSON parsen. Eerste 500 tekens:",
-      cleaned.slice(0, 500),
-      err
+  } catch {
+    // Antwoord kan halverwege afgekapt zijn (max_tokens bereikt bij een
+    // lange factuur). Val terug op de volledige regels die er wél staan,
+    // in plaats van de hele uitlezing weg te gooien.
+    const repaired = repairTruncatedJson(cleaned);
+    if (!repaired) {
+      console.error(
+        "[invoice-import] Kan Claude-antwoord niet als JSON parsen, ook niet na herstelpoging. Eerste 500 tekens:",
+        cleaned.slice(0, 500)
+      );
+      throw new Error("Kan het antwoord van Claude niet als JSON lezen. Controleer handmatig.");
+    }
+    parsed = repaired;
+    console.warn(
+      `[invoice-import] Antwoord was afgekapt; ${parsed.lines.length} volledige regel(s) hersteld. Controleer of alle regels van de factuur aanwezig zijn.`
     );
-    throw new Error("Kan het antwoord van Claude niet als JSON lezen. Controleer handmatig.");
   }
 
   if (!parsed.header || !Array.isArray(parsed.lines)) {
@@ -157,4 +170,42 @@ export function isClaudeOcrSupported(mimeType: string, filename: string): boolea
     mimeType.startsWith("image/") ||
     /\.(jpg|jpeg|png|webp)$/.test(name)
   );
+}
+
+/**
+ * Probeert een antwoord te redden dat is afgekapt doordat max_tokens
+ * bereikt werd middenin de "lines"-array. Knipt het laatst begonnen,
+ * onvolledige regel-object weg en sluit de array en het object netjes
+ * af, zodat de volledige regels die er wél staan niet verloren gaan.
+ * Geeft null terug als er niets bruikbaars te redden valt.
+ */
+function repairTruncatedJson(text: string): ParsedInvoice | null {
+  const linesStart = text.indexOf('"lines"');
+  if (linesStart < 0) return null;
+  const arrayStart = text.indexOf("[", linesStart);
+  if (arrayStart < 0) return null;
+
+  // Laatste volledige "}" vóór het afbreekpunt zoeken, op het niveau van
+  // een los regel-object (dus buiten geneste accolades).
+  let depth = 0;
+  let lastCompleteEnd = -1;
+  for (let i = arrayStart + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) lastCompleteEnd = i;
+    }
+  }
+  if (lastCompleteEnd < 0) return null;
+
+  const repaired =
+    text.slice(0, lastCompleteEnd + 1) + "]}"; // array en buitenste object sluiten
+  try {
+    const candidate = JSON.parse(repaired) as ParsedInvoice;
+    if (candidate.header && Array.isArray(candidate.lines)) return candidate;
+    return null;
+  } catch {
+    return null;
+  }
 }
