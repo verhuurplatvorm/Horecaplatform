@@ -25,8 +25,11 @@ export default async function FacturenPage() {
           <Link href="/leveranciers/facturen/mailboxen">
             <Button variant="secondary">Mailboxen beheren</Button>
           </Link>
+          <Link href="/leveranciers/facturen/mailbox">
+            <Button variant="secondary">Factuurmailbox-overzicht</Button>
+          </Link>
           <Link href="/leveranciers/facturen/postvak-in">
-            <Button variant="secondary">Postvak in</Button>
+            <Button variant="secondary">Controle nodig</Button>
           </Link>
           <Link href="/leveranciers/facturen/uploaden">
             <Button>

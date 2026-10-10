@@ -6,6 +6,7 @@ import { RotateCcw } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  MailboxWidget,
   MarginProblemsWidget,
   PriceChangesWidget,
   SuppliersWidget,
@@ -189,6 +190,7 @@ export default function DashboardPage() {
           <div className="space-y-4">
             <UpcomingMenusWidget filters={filters} hidden={isHidden("menus")} onHide={hideWidget} />
             <WasteWidget filters={filters} hidden={isHidden("afval")} onHide={hideWidget} />
+            <MailboxWidget filters={filters} hidden={isHidden("factuurmailbox")} onHide={hideWidget} />
             <UnmatchedIngredientsWidget hidden={isHidden("nietherkend")} onHide={hideWidget} />
             <SuppliersWidget hidden={isHidden("leveranciers")} onHide={hideWidget} />
 

@@ -31,6 +31,7 @@ export type Group = {
   created_at: string;
   updated_at: string;
   price_alert_threshold_pct: number;
+  foodcost_norm_pct: number;
 }
 
 export type LegalEntity = {
@@ -603,9 +604,23 @@ export type InboundInvoiceQueueItem = {
   parsed_lines: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supplier_candidates: any;
-  status: "wacht_op_leverancier" | "verwerkt" | "afgewezen";
+  status:
+    | "nieuw_ontvangen"
+    | "wordt_verwerkt"
+    | "verwerkt"
+    | "wacht_op_leverancier"
+    | "fout"
+    | "dubbele_factuur"
+    | "afgewezen";
   resulting_batch_id: string | null;
   received_at: string;
+  attachment_hash: string | null;
+  invoice_number: string | null;
+  total_incl_vat: number | null;
+  error_message: string | null;
+  matched_supplier_id: string | null;
+  duplicate_of_queue_id: string | null;
+  processed_at: string | null;
 }
 
 export type PriceSourceType = "manual_upload" | "api_sync";
@@ -1117,6 +1132,20 @@ export type Database = {
       rollback_recipe_import: {
         Args: { p_batch_id: string };
         Returns: number;
+      };
+      find_duplicate_invoice_email: {
+        Args: {
+          p_group_id: string;
+          p_attachment_hash: string | null;
+          p_supplier_id: string | null;
+          p_invoice_number: string | null;
+          p_total_incl_vat: number | null;
+        };
+        Returns: string | null;
+      };
+      mailbox_status_summary: {
+        Args: { p_group_id: string; p_company_id?: string | null; p_days?: number };
+        Returns: { status: string; aantal: number }[];
       };
       search_products_overview: {
         Args: {

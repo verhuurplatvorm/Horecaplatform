@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createImportBatch } from "@/lib/price-import/create-batch";
 import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
@@ -46,6 +47,10 @@ async function extractAttachments(request: Request): Promise<{
   return { sender, attachments };
 }
 
+function hashAttachment(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -79,6 +84,30 @@ export async function POST(
   const results: { filename: string; outcome: string }[] = [];
 
   for (const attachment of supported) {
+    const attachmentHash = hashAttachment(attachment.buffer);
+
+    // Elk binnenkomend bericht wordt ONMIDDELLIJK gelogd, nog vóór het
+    // verwerkt wordt — zo blijft een crash halverwege de verwerking
+    // zichtbaar als status 'wordt_verwerkt' in het statusoverzicht,
+    // i.p.v. spoorloos te verdwijnen (spec: statusoverzicht moet élke
+    // binnengekomen e-mail laten zien, niet alleen de afwijkingen).
+    const { data: logRow } = await admin
+      .from("inbound_invoice_queue")
+      .insert({
+        group_id: mailbox.group_id,
+        mailbox_id: mailbox.id,
+        company_id: mailbox.company_id,
+        sender_email: sender,
+        original_filename: attachment.filename,
+        storage_path: "",
+        file_kind: "onbekend",
+        attachment_hash: attachmentHash,
+        status: "wordt_verwerkt",
+      })
+      .select("id")
+      .single();
+    const logId = logRow?.id as string | undefined;
+
     const storagePath = `${mailbox.group_id}/${Date.now()}-${attachment.filename}`;
     await admin.storage.from("facturen").upload(storagePath, attachment.buffer, {
       contentType: attachment.filename.toLowerCase().endsWith(".pdf")
@@ -92,6 +121,7 @@ export async function POST(
 
     let parsed: ParsedInvoice | null = null;
     let fileKind: "ubl" | "pdf" | "onbekend" = "onbekend";
+    let parseError: string | null = null;
 
     if (isXml) {
       fileKind = "ubl";
@@ -99,8 +129,9 @@ export async function POST(
       if (looksLikeUbl(xmlText)) {
         try {
           parsed = parseUblInvoice(xmlText);
-        } catch {
+        } catch (err) {
           parsed = null;
+          parseError = err instanceof Error ? err.message : "UBL-bestand kon niet gelezen worden.";
         }
       }
     } else if (attachment.filename.toLowerCase().endsWith(".pdf")) {
@@ -108,22 +139,71 @@ export async function POST(
       try {
         const claudeResult = await extractInvoiceWithClaude(attachment.buffer, "application/pdf");
         if (claudeResult.lines.length > 0) parsed = claudeResult;
-      } catch {
+      } catch (err) {
         parsed = null; // geen sleutel ingesteld, of niet leesbaar — naar het postvak
+        parseError = err instanceof Error ? err.message : "PDF kon niet automatisch gelezen worden.";
       }
     }
 
-    if (!parsed) {
-      await admin.from("inbound_invoice_queue").insert({
-        group_id: mailbox.group_id,
-        mailbox_id: mailbox.id,
-        company_id: mailbox.company_id,
-        sender_email: sender,
-        original_filename: attachment.filename,
-        storage_path: storagePath,
-        file_kind: fileKind,
-        status: "wacht_op_leverancier",
+    // Vóór er iets aangemaakt wordt: is dit dezelfde factuur die al eens
+    // via de mailbox is binnengekomen? Zelfde bijlage-inhoud, of zelfde
+    // leverancier+factuurnummer+totaalbedrag. Dit voorkomt dat een per
+    // ongeluk dubbel gemailde factuur twee keer verwerkt wordt.
+    let matchedSupplierIdForDupeCheck: string | null = null;
+    if (parsed) {
+      const { data: candidatesForDupe } = await admin.rpc("match_supplier_from_invoice", {
+        p_group_id: mailbox.group_id,
+        p_vat_number: parsed.header.supplierVatNumber,
+        p_kvk_number: parsed.header.supplierKvkNumber,
+        p_iban: parsed.header.supplierIban,
+        p_name: parsed.header.supplierName,
       });
+      matchedSupplierIdForDupeCheck =
+        candidatesForDupe?.find((c) => ["btw_nummer", "kvk_nummer", "iban"].includes(c.match_method))
+          ?.supplier_id ?? null;
+    }
+
+    const { data: duplicateId } = await admin.rpc("find_duplicate_invoice_email", {
+      p_group_id: mailbox.group_id,
+      p_attachment_hash: attachmentHash,
+      p_supplier_id: matchedSupplierIdForDupeCheck,
+      p_invoice_number: parsed?.header.invoiceNumber ?? null,
+      p_total_incl_vat: parsed?.header.totalInclVat ?? null,
+    });
+
+    if (duplicateId && duplicateId !== logId) {
+      if (logId) {
+        await admin
+          .from("inbound_invoice_queue")
+          .update({
+            status: "dubbele_factuur",
+            storage_path: storagePath,
+            file_kind: fileKind,
+            invoice_number: parsed?.header.invoiceNumber ?? null,
+            total_incl_vat: parsed?.header.totalInclVat ?? null,
+            matched_supplier_id: matchedSupplierIdForDupeCheck,
+            duplicate_of_queue_id: duplicateId,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", logId);
+      }
+      results.push({ filename: attachment.filename, outcome: "dubbele_factuur" });
+      continue;
+    }
+
+    if (!parsed) {
+      if (logId) {
+        await admin
+          .from("inbound_invoice_queue")
+          .update({
+            status: parseError ? "fout" : "wacht_op_leverancier",
+            storage_path: storagePath,
+            file_kind: fileKind,
+            error_message: parseError,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", logId);
+      }
       results.push({ filename: attachment.filename, outcome: `postvak_in_${fileKind}` });
       continue;
     }
@@ -141,19 +221,23 @@ export async function POST(
     );
 
     if (!confidentMatch || confidentMatch.iban_mismatch) {
-      await admin.from("inbound_invoice_queue").insert({
-        group_id: mailbox.group_id,
-        mailbox_id: mailbox.id,
-        company_id: mailbox.company_id,
-        sender_email: sender,
-        original_filename: attachment.filename,
-        storage_path: storagePath,
-        file_kind: fileKind,
-        parsed_header: parsed.header,
-        parsed_lines: parsed.lines,
-        supplier_candidates: candidates ?? [],
-        status: "wacht_op_leverancier",
-      });
+      if (logId) {
+        await admin
+          .from("inbound_invoice_queue")
+          .update({
+            status: "wacht_op_leverancier",
+            storage_path: storagePath,
+            file_kind: fileKind,
+            parsed_header: parsed.header,
+            parsed_lines: parsed.lines,
+            supplier_candidates: candidates ?? [],
+            invoice_number: parsed.header.invoiceNumber,
+            total_incl_vat: parsed.header.totalInclVat,
+            matched_supplier_id: confidentMatch?.supplier_id ?? null,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", logId);
+      }
       results.push({
         filename: attachment.filename,
         outcome: confidentMatch ? "postvak_in_iban_afwijking" : "postvak_in_onbekende_leverancier",
@@ -182,6 +266,23 @@ export async function POST(
         originalFilePath: storagePath,
       },
     });
+
+    if (logId) {
+      await admin
+        .from("inbound_invoice_queue")
+        .update({
+          status: "error" in result ? "fout" : "verwerkt",
+          storage_path: storagePath,
+          file_kind: fileKind,
+          invoice_number: parsed.header.invoiceNumber,
+          total_incl_vat: parsed.header.totalInclVat,
+          matched_supplier_id: confidentMatch.supplier_id,
+          resulting_batch_id: "error" in result ? null : result.batchId,
+          error_message: "error" in result ? result.error : null,
+          processed_at: new Date().toISOString(),
+        })
+        .eq("id", logId);
+    }
 
     results.push({
       filename: attachment.filename,

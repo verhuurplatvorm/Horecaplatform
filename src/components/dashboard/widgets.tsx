@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, TriangleAlert } from "lucide-react";
 import { DashboardWidget, WidgetTable } from "./dashboard-widget";
 import { createClient } from "@/lib/supabase/client";
+import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { cn } from "@/lib/utils";
 
@@ -164,12 +165,25 @@ export function MarginProblemsWidget({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    createClient()
-      .rpc("dashboard_margin_problems", {
+    async function run() {
+      const supabase = createClient();
+      const groupId = await getCurrentGroupId(supabase);
+      let norm = 33;
+      if (groupId) {
+        const { data: group } = await supabase
+          .from("groups")
+          .select("foodcost_norm_pct")
+          .eq("id", groupId)
+          .maybeSingle();
+        if (group?.foodcost_norm_pct) norm = group.foodcost_norm_pct;
+      }
+      return supabase.rpc("dashboard_margin_problems", {
         p_company_id: filters.companyId,
-        p_foodcost_norm: 33,
+        p_foodcost_norm: norm,
         p_limit: 15,
-      })
+      });
+    }
+    run()
       .then(({ data }) => {
         if (cancelled) return;
         let list = data ?? [];
@@ -719,6 +733,91 @@ export function WasteWidget({
             Ingrediënten € {summary.ingredient_value.toFixed(2)} · halfproducten €{" "}
             {summary.halfproduct_value.toFixed(2)}
           </p>
+        </div>
+      )}
+    </DashboardWidget>
+  );
+}
+
+/** Blok: Factuurmailbox — hoeveel e-mailfacturen in welke status, met
+ * signalering zodra er iets met 'Controle nodig', 'Fout' of 'Dubbele
+ * factuur' binnen is gekomen. */
+export function MailboxWidget({
+  filters,
+  onHide,
+  hidden,
+}: {
+  filters: Filters;
+  onHide?: (id: string) => void;
+  hidden?: boolean;
+}) {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      setLoading(true);
+      const supabase = createClient();
+      const groupId = await getCurrentGroupId(supabase);
+      if (!groupId) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      const { data } = await supabase.rpc("mailbox_status_summary", {
+        p_group_id: groupId,
+        p_company_id: filters.companyId,
+        p_days: filters.days,
+      });
+      if (cancelled) return;
+      const map: Record<string, number> = {};
+      for (const row of data ?? []) map[row.status] = row.aantal;
+      setCounts(map);
+      setLoading(false);
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.companyId, filters.days]);
+
+  const needsAttention =
+    (counts.wacht_op_leverancier ?? 0) + (counts.fout ?? 0) + (counts.dubbele_factuur ?? 0);
+  const verwerkt = counts.verwerkt ?? 0;
+  const totaal = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  return (
+    <DashboardWidget
+      id="factuurmailbox"
+      title="Factuurmailbox"
+      count={needsAttention > 0 ? needsAttention : undefined}
+      href="/leveranciers/facturen/mailbox"
+      hidden={hidden}
+      onHide={onHide}
+    >
+      {loading ? (
+        <p className="px-4 py-6 text-center text-sm text-muted">Laden…</p>
+      ) : totaal === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-muted">
+          Nog geen e-mailfacturen ontvangen in deze periode.
+        </p>
+      ) : (
+        <div className="space-y-2 p-4">
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <Metric label="Verwerkt" value={String(verwerkt)} />
+            <Metric label="Controle nodig" value={String(counts.wacht_op_leverancier ?? 0)} />
+            <Metric label="Fout / dubbel" value={String((counts.fout ?? 0) + (counts.dubbele_factuur ?? 0))} />
+          </div>
+          {needsAttention > 0 && (
+            <Link
+              href="/leveranciers/facturen/mailbox?tab=controle"
+              className="flex items-center gap-1.5 rounded-md bg-warning/10 px-2.5 py-1.5 text-xs text-warning hover:underline"
+            >
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+              {needsAttention} e-mailfactuur{needsAttention === 1 ? "" : "en"} wacht
+              {needsAttention === 1 ? "" : "en"} op jouw aandacht
+            </Link>
+          )}
         </div>
       )}
     </DashboardWidget>

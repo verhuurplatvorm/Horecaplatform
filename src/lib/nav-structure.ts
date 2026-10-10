@@ -15,6 +15,7 @@ import {
   History,
   ShieldCheck,
   FileText,
+  Mail,
 } from "lucide-react";
 
 export interface NavItem {
@@ -87,6 +88,7 @@ export const NAV_TABS: NavTab[] = [
       { href: "/gebruikers", label: "Gebruikers & rechten", icon: Users, moduleKey: "gebruikers" },
       { href: "/gebruikers/rollen", label: "Rollen", icon: ShieldCheck, moduleKey: "gebruikers" },
       { href: "/beheer/wijzigingslog", label: "Wijzigingslog", icon: History, moduleKey: "gebruikers" },
+      { href: "/beheer/factuurverwerking", label: "Factuurverwerking", icon: Mail, moduleKey: "gebruikers" },
     ],
   },
 ];
