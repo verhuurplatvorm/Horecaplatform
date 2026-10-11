@@ -385,9 +385,9 @@ export default function ProductenPage() {
           <div className="flex items-center gap-3">
             {!loading && (
               <span className="text-xs text-muted">
-                {query.trim()
-                  ? `${filteredRows.length} van ${rows.length} ingrediënten`
-                  : `${rows.length} ingrediënten totaal`}
+                {rows.length < totalCount
+                  ? `${rows.length} van ${totalCount} ingrediënten geladen — kolomfilters werken alleen op de geladen regels, gebruik het zoekveld om in alle ${totalCount} te zoeken`
+                  : `${totalCount} ingrediënten`}
               </span>
             )}
           </div>
