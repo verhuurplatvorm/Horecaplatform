@@ -50,6 +50,7 @@ export function ConfigurableTable<T extends { id: string }>({
   onToggleSelectAll,
   emptyLabel = "Geen resultaten.",
   rowClassName,
+  onFilterActiveChange,
 }: {
   columns: DataColumn<T>[];
   rows: T[];
@@ -60,6 +61,8 @@ export function ConfigurableTable<T extends { id: string }>({
   onToggleSelectAll?: (ids: string[]) => void;
   emptyLabel?: string;
   rowClassName?: (row: T) => string | undefined;
+  /** Wordt aangeroepen als er een kolomfilter aan- of uitgaat (bv. om alle regels te laden). */
+  onFilterActiveChange?: (active: boolean) => void;
 }) {
   const defaultOrder = useMemo(() => columns.map((c) => c.key), [columns]);
   const defaultHidden = useMemo(
@@ -71,6 +74,10 @@ export function ConfigurableTable<T extends { id: string }>({
   const [hidden, setHidden] = useState<string[]>(defaultHidden);
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const filterActive = Object.values(filters).some((v) => v.trim() !== "");
+  useEffect(() => {
+    onFilterActiveChange?.(filterActive);
+  }, [filterActive, onFilterActiveChange]);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [showColumnPanel, setShowColumnPanel] = useState(false);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
@@ -150,9 +150,13 @@ export default function ProductenPage() {
   // ophalen van de volledige catalogus plus tientallen losse prijs- en
   // historie-queries; het scherm toont de eerste regels vrijwel meteen.
   const PAGE_SIZE = 100;
+  // Eén aanvraag levert hooguit 1000 regels op (limiet van de API); alles
+  // laden voor een kolomfilter gaat daarom in blokken van 1000.
+  const BLOCK_SIZE = 1000;
+  const MAX_ALL = 20000;
 
   const fetchPage = useCallback(
-    async (offset: number, search: string, append: boolean) => {
+    async (offset: number, search: string, append: boolean, limit = PAGE_SIZE): Promise<number> => {
       const supabase = createClient();
       if (append) setLoadingMore(true);
       else setLoading(true);
@@ -160,7 +164,7 @@ export default function ProductenPage() {
       const { data, error: rpcError } = await supabase.rpc("search_products_overview", {
         p_company_id: referenceCompanyId,
         p_search: search.trim() || null,
-        p_limit: PAGE_SIZE,
+        p_limit: limit,
         p_offset: offset,
       });
 
@@ -168,7 +172,7 @@ export default function ProductenPage() {
         setError(true);
         setLoading(false);
         setLoadingMore(false);
-        return;
+        return -1;
       }
 
       const list = (data ?? []) as NonNullable<typeof data>;
@@ -211,6 +215,7 @@ export default function ProductenPage() {
       setRows((prev) => (append ? [...prev, ...mapped] : mapped));
       setLoading(false);
       setLoadingMore(false);
+      return list.length;
     },
     [referenceCompanyId]
   );
@@ -228,6 +233,30 @@ export default function ProductenPage() {
   function reload() {
     setReloadToken((t) => t + 1);
   }
+
+  // Kolomfilters werken op de geladen regels. Is er een kolomfilter actief
+  // en zijn nog niet alle regels geladen, dan laden we de rest automatisch
+  // (in blokken), zodat het filter in alle ingrediënten zoekt.
+  const [columnFilterActive, setColumnFilterActive] = useState(false);
+  const loadingAllRef = useRef(false);
+
+  useEffect(() => {
+    const target = Math.min(totalCount, MAX_ALL);
+    if (!columnFilterActive || loading || loadingAllRef.current) return;
+    if (rows.length >= target) return;
+    loadingAllRef.current = true;
+    (async () => {
+      let offset = rows.length;
+      while (offset < target) {
+        const got = await fetchPage(offset, query, true, BLOCK_SIZE);
+        if (got <= 0) break;
+        offset += got;
+      }
+    })().finally(() => {
+      loadingAllRef.current = false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnFilterActive, loading, rows.length, totalCount]);
 
   async function updatePriceField(
     priceRowId: string | null,
@@ -386,7 +415,9 @@ export default function ProductenPage() {
             {!loading && (
               <span className="text-xs text-muted">
                 {rows.length < totalCount
-                  ? `${rows.length} van ${totalCount} ingrediënten geladen — kolomfilters werken alleen op de geladen regels, gebruik het zoekveld om in alle ${totalCount} te zoeken`
+                  ? columnFilterActive
+                    ? `Alle ${totalCount} ingrediënten worden geladen voor het filter… (${rows.length} geladen)`
+                    : `${rows.length} van ${totalCount} ingrediënten geladen — typ je in een kolomfilter, dan worden automatisch alle ${totalCount} geladen`
                   : `${totalCount} ingrediënten`}
               </span>
             )}
@@ -430,6 +461,7 @@ export default function ProductenPage() {
             loading ? "Ingrediënten laden…" : "Geen ingrediënten gevonden."
           }
           rowClassName={(row) => (!row.is_active ? "opacity-50" : undefined)}
+          onFilterActiveChange={setColumnFilterActive}
           columns={[
             {
               key: "flag",
