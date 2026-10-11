@@ -78,6 +78,33 @@ export default function MailboxenPage() {
     load();
   }
 
+  async function handleEditEmail(m: InvoiceMailbox) {
+    const input = window.prompt(
+      "Op welk e-mailadres ontvangt deze mailbox facturen? (alleen ter weergave; laat leeg om te wissen)",
+      m.email_address ?? ""
+    );
+    if (input === null) return;
+    const value = input.trim();
+    if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      window.alert("Dit lijkt geen geldig e-mailadres.");
+      return;
+    }
+    const supabase = createClient();
+    const { error: updateError } = await supabase
+      .from("invoice_mailboxes")
+      .update({ email_address: value || null })
+      .eq("id", m.id);
+    if (updateError) {
+      window.alert(
+        updateError.message.includes("row-level security")
+          ? "Alleen groepsbeheerders mogen dit aanpassen."
+          : "Opslaan mislukt: " + updateError.message
+      );
+      return;
+    }
+    load();
+  }
+
   function openIgnoreEditor(m: InvoiceMailbox) {
     if (ignoreEditId === m.id) {
       setIgnoreEditId(null);
@@ -188,6 +215,7 @@ export default function MailboxenPage() {
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-5 py-3 font-medium">Naam</th>
                   <th className="px-5 py-3 font-medium">Bedrijf</th>
+                  <th className="px-5 py-3 font-medium">E-mailadres</th>
                   <th className="px-5 py-3 font-medium">Webhook-URL</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
@@ -200,6 +228,19 @@ export default function MailboxenPage() {
                     <td className="px-5 py-3 font-medium">{m.label}</td>
                     <td className="px-5 py-3 text-muted">
                       {companies.find((c) => c.id === m.company_id)?.name ?? "Groepsbreed"}
+                    </td>
+                    <td className="px-5 py-3">
+                      {m.email_address ? (
+                        <span className="block text-xs">{m.email_address}</span>
+                      ) : (
+                        <span className="block text-xs text-muted">Niet ingevuld</span>
+                      )}
+                      <button
+                        onClick={() => handleEditEmail(m)}
+                        className="text-xs text-teal hover:underline"
+                      >
+                        {m.email_address ? "Wijzigen" : "Invullen"}
+                      </button>
                     </td>
                     <td className="px-5 py-3">
                       <button
@@ -251,7 +292,7 @@ export default function MailboxenPage() {
                   </tr>
                   {ignoreEditId === m.id && (
                     <tr className="bg-surface">
-                      <td colSpan={5} className="px-5 pb-4 pt-2">
+                      <td colSpan={6} className="px-5 pb-4 pt-2">
                         <label className="mb-1 block text-xs font-medium text-foreground">
                           Afzenders waarvan mail niet wordt ingelezen
                         </label>
@@ -296,7 +337,7 @@ export default function MailboxenPage() {
                 ))}
                 {mailboxes.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={6} className="px-5 py-6 text-center text-muted">
                       Nog geen mailboxen aangemaakt.
                     </td>
                   </tr>

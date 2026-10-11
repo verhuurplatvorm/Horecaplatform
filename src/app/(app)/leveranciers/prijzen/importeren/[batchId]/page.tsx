@@ -868,7 +868,12 @@ function RowLine({
               }
             }}
             placeholder="in basiseenheid"
-            className="h-8 w-28 rounded-md border border-border bg-surface px-2 text-xs"
+            className={cn(
+              "h-8 w-28 rounded-md border bg-surface px-2 text-xs",
+              !row.packaging_unit_count && row.matched_product_id
+                ? "border-copper ring-1 ring-copper"
+                : "border-border"
+            )}
           />
         </div>
         {product && (
@@ -952,8 +957,9 @@ function RowLine({
         )}
         {!row.packaging_unit_count && (
           <p className="mt-0.5 flex items-center gap-1 text-xs text-copper">
-            <TriangleAlert className="h-3 w-3" />
-            Verplicht vóór toepassen
+            <TriangleAlert className="h-3 w-3 shrink-0" />
+            Vul in het vak hierboven in hoeveel {product?.base_unit ?? "basiseenheden"} er
+            in deze verpakking zitten, anders kan de prijs niet worden doorgevoerd.
           </p>
         )}
         {packagingChanged && (

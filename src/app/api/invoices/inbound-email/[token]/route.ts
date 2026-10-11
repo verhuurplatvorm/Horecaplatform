@@ -6,6 +6,11 @@ import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice
 import { extractInvoiceWithClaude } from "@/lib/invoice-import/claude-ocr";
 import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
+// Het uitlezen (OCR) van een lange factuur kan langer duren dan de
+// standaardlimiet van een serverfunctie; een timeout zou de mail spoorloos
+// op 'wordt_verwerkt' laten staan.
+export const maxDuration = 300;
+
 interface IncomingAttachment {
   filename: string;
   buffer: Buffer;
@@ -147,6 +152,34 @@ export async function POST(
   });
 
   const results: { filename: string; outcome: string }[] = [];
+
+  // Geen enkele bruikbare bijlage (pdf/xml/ubl): de mail wordt toch gelogd,
+  // zodat hij in het statusoverzicht onder 'Afgewezen' staat met de reden,
+  // in plaats van spoorloos te verdwijnen.
+  if (supported.length === 0) {
+    const others = attachments.map((a) => a.filename);
+    const reason = ignoredMatch
+      ? `Staat op de negeerlijst: "${ignoredMatch.entry}" gevonden in ${ignoredMatch.where}. Geen pdf- of xml-bijlage.`
+      : others.length === 0
+        ? "Geen bijlage in deze e-mail."
+        : `Geen pdf- of xml-bijlage; alleen: ${others.slice(0, 5).join(", ")}${others.length > 5 ? " …" : ""}.`;
+    await admin.from("inbound_invoice_queue").insert({
+      group_id: mailbox.group_id,
+      mailbox_id: mailbox.id,
+      company_id: mailbox.company_id,
+      sender_email: sender ?? fromHeader,
+      original_filename: subject?.trim() ? `(mail) ${subject.trim().slice(0, 120)}` : "(mail zonder bijlage)",
+      storage_path: "",
+      file_kind: "onbekend",
+      status: "afgewezen",
+      error_message: reason,
+      processed_at: new Date().toISOString(),
+    });
+    return NextResponse.json({
+      received: attachments.length,
+      processed: [{ filename: "(geen bruikbare bijlage)", outcome: "afgewezen_geen_bijlage" }],
+    });
+  }
 
   for (const attachment of supported) {
     const attachmentHash = hashAttachment(attachment.buffer);

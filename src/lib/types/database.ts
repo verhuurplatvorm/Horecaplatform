@@ -588,6 +588,8 @@ export type InvoiceMailbox = {
   is_active: boolean;
   /** Afzenders (adres, domein of naamdeel) waarvan mail niet wordt ingelezen. */
   ignored_senders: string[];
+  /** E-mailadres waarop deze mailbox facturen ontvangt (alleen ter weergave). */
+  email_address: string | null;
   created_at: string;
 }
 
