@@ -13,6 +13,8 @@ interface IncomingAttachment {
 
 async function extractAttachments(request: Request): Promise<{
   sender: string | null;
+  /** Volledige From-regel (naam + adres), voor de negeerlijst. */
+  fromHeader: string | null;
   attachments: IncomingAttachment[];
 }> {
   const contentType = request.headers.get("content-type") ?? "";
@@ -27,7 +29,7 @@ async function extractAttachments(request: Request): Promise<{
         filename: String(a.Name ?? a.filename ?? "bijlage"),
         buffer: Buffer.from(String(a.Content ?? a.content), "base64"),
       }));
-    return { sender, attachments };
+    return { sender, fromHeader: body.From ?? body.from ?? null, attachments };
   }
 
   const formData = await request.formData();
@@ -44,7 +46,30 @@ async function extractAttachments(request: Request): Promise<{
       attachments.push({ filename: value.name, buffer });
     }
   }
-  return { sender, attachments };
+  const fromHeader =
+    (formData.get("from") as string) ?? (formData.get("From") as string) ?? null;
+  return { sender, fromHeader, attachments };
+}
+
+/**
+ * Staat deze afzender op de negeerlijst van de mailbox? Elk item is een
+ * e-mailadres, domein of deel van de naam; vergelijking is
+ * hoofdletterongevoelig en kijkt of het item in de From-regel voorkomt.
+ * Items korter dan 3 tekens worden overgeslagen, zodat een tikfout niet
+ * ineens alle mail blokkeert.
+ */
+function matchIgnoredSender(
+  ignored: string[] | null | undefined,
+  sender: string | null,
+  fromHeader: string | null
+): string | null {
+  const haystack = `${fromHeader ?? ""} ${sender ?? ""}`.toLowerCase();
+  if (!haystack.trim()) return null;
+  for (const raw of ignored ?? []) {
+    const entry = raw.trim().toLowerCase();
+    if (entry.length >= 3 && haystack.includes(entry)) return raw.trim();
+  }
+  return null;
 }
 
 function hashAttachment(buffer: Buffer): string {
@@ -75,7 +100,8 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { sender, attachments } = await extractAttachments(request);
+  const { sender, fromHeader, attachments } = await extractAttachments(request);
+  const ignoredMatch = matchIgnoredSender(mailbox.ignored_senders, sender, fromHeader);
   const supported = attachments.filter((a) => {
     const n = a.filename.toLowerCase();
     return n.endsWith(".xml") || n.endsWith(".ubl") || n.endsWith(".pdf");
@@ -85,6 +111,26 @@ export async function POST(
 
   for (const attachment of supported) {
     const attachmentHash = hashAttachment(attachment.buffer);
+
+    // Afzender op de negeerlijst: wel loggen (zichtbaar onder 'Afgewezen'),
+    // maar niet opslaan, niet inlezen en geen batch aanmaken.
+    if (ignoredMatch) {
+      await admin.from("inbound_invoice_queue").insert({
+        group_id: mailbox.group_id,
+        mailbox_id: mailbox.id,
+        company_id: mailbox.company_id,
+        sender_email: sender ?? fromHeader,
+        original_filename: attachment.filename,
+        storage_path: "",
+        file_kind: "onbekend",
+        attachment_hash: attachmentHash,
+        status: "afgewezen",
+        error_message: `Afzender staat op de negeerlijst (${ignoredMatch}).`,
+        processed_at: new Date().toISOString(),
+      });
+      results.push({ filename: attachment.filename, outcome: "genegeerd_afzender" });
+      continue;
+    }
 
     // Elk binnenkomend bericht wordt ONMIDDELLIJK gelogd, nog vóór het
     // verwerkt wordt — zo blijft een crash halverwege de verwerking

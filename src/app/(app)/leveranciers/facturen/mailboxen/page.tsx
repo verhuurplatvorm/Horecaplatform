@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Plus, Copy, Check } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,10 @@ export default function MailboxenPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [ignoreEditId, setIgnoreEditId] = useState<string | null>(null);
+  const [ignoreText, setIgnoreText] = useState("");
+  const [ignoreSaving, setIgnoreSaving] = useState(false);
+  const [ignoreError, setIgnoreError] = useState<string | null>(null);
   const [origin] = useState(() =>
     typeof window !== "undefined" ? window.location.origin : ""
   );
@@ -71,6 +75,53 @@ export default function MailboxenPage() {
       return;
     const supabase = createClient();
     await supabase.from("invoice_mailboxes").update({ is_active: false }).eq("id", id);
+    load();
+  }
+
+  function openIgnoreEditor(m: InvoiceMailbox) {
+    if (ignoreEditId === m.id) {
+      setIgnoreEditId(null);
+      return;
+    }
+    setIgnoreEditId(m.id);
+    setIgnoreText((m.ignored_senders ?? []).join("\n"));
+    setIgnoreError(null);
+  }
+
+  async function saveIgnoreList(id: string) {
+    setIgnoreSaving(true);
+    setIgnoreError(null);
+    // Eén afzender per regel; lege regels weg, dubbelen weg (hoofdletterongevoelig).
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const line of ignoreText.split("\n")) {
+      const entry = line.trim();
+      const key = entry.toLowerCase();
+      if (!entry || seen.has(key)) continue;
+      seen.add(key);
+      list.push(entry);
+    }
+    const tooShort = list.find((e) => e.length < 3);
+    if (tooShort) {
+      setIgnoreError(`"${tooShort}" is te kort (minimaal 3 tekens), anders blokkeert het te veel mail.`);
+      setIgnoreSaving(false);
+      return;
+    }
+    const supabase = createClient();
+    const { error: updateError } = await supabase
+      .from("invoice_mailboxes")
+      .update({ ignored_senders: list })
+      .eq("id", id);
+    setIgnoreSaving(false);
+    if (updateError) {
+      setIgnoreError(
+        updateError.message.includes("row-level security")
+          ? "Alleen groepsbeheerders mogen dit aanpassen."
+          : "Opslaan mislukt: " + updateError.message
+      );
+      return;
+    }
+    setIgnoreEditId(null);
     load();
   }
 
@@ -144,7 +195,8 @@ export default function MailboxenPage() {
               </thead>
               <tbody>
                 {mailboxes.map((m) => (
-                  <tr key={m.id} className="border-t border-border">
+                  <Fragment key={m.id}>
+                  <tr className="border-t border-border">
                     <td className="px-5 py-3 font-medium">{m.label}</td>
                     <td className="px-5 py-3 text-muted">
                       {companies.find((c) => c.id === m.company_id)?.name ?? "Groepsbreed"}
@@ -177,16 +229,68 @@ export default function MailboxenPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      {m.is_active && (
+                      <div className="flex flex-col items-start gap-1">
                         <button
-                          onClick={() => handleDeactivate(m.id)}
-                          className="text-xs text-muted hover:text-danger"
+                          onClick={() => openIgnoreEditor(m)}
+                          className="text-xs text-teal hover:underline"
                         >
-                          Uitschakelen
+                          Afzenders negeren
+                          {(m.ignored_senders?.length ?? 0) > 0 &&
+                            ` (${m.ignored_senders.length})`}
                         </button>
-                      )}
+                        {m.is_active && (
+                          <button
+                            onClick={() => handleDeactivate(m.id)}
+                            className="text-xs text-muted hover:text-danger"
+                          >
+                            Uitschakelen
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
+                  {ignoreEditId === m.id && (
+                    <tr className="bg-surface">
+                      <td colSpan={5} className="px-5 pb-4 pt-2">
+                        <label className="mb-1 block text-xs font-medium text-foreground">
+                          Afzenders waarvan mail niet wordt ingelezen
+                        </label>
+                        <p className="mb-2 text-xs text-muted">
+                          Eén per regel: een e-mailadres, een domein (bv. ovenservice.nl) of een
+                          deel van de naam (bv. Leventie). Hoofdletters maken niet uit. Mail van
+                          deze afzenders wordt niet gelezen en niet verwerkt, maar blijft
+                          zichtbaar onder &quot;Afgewezen&quot; in het Factuurmailbox-overzicht.
+                        </p>
+                        <textarea
+                          value={ignoreText}
+                          onChange={(e) => setIgnoreText(e.target.value)}
+                          rows={5}
+                          placeholder={"leventie\novenservice.nl"}
+                          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                        />
+                        {ignoreError && (
+                          <p className="mt-1 text-xs text-danger">{ignoreError}</p>
+                        )}
+                        <div className="mt-2 flex gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => saveIgnoreList(m.id)}
+                            disabled={ignoreSaving}
+                          >
+                            Opslaan
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => setIgnoreEditId(null)}
+                            className="text-xs text-muted hover:underline"
+                          >
+                            Annuleren
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
                 {mailboxes.length === 0 && (
                   <tr>

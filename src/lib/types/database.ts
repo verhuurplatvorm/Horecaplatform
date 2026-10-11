@@ -586,6 +586,8 @@ export type InvoiceMailbox = {
   label: string;
   webhook_token: string;
   is_active: boolean;
+  /** Afzenders (adres, domein of naamdeel) waarvan mail niet wordt ingelezen. */
+  ignored_senders: string[];
   created_at: string;
 }
 
