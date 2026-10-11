@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteMailItemButton } from "@/components/invoices/delete-mail-item-button";
 import type { InboundInvoiceQueueItem } from "@/lib/types/database";
 
 // Statusoverzicht van de Factuurmailbox: ELKE binnengekomen e-mailfactuur
@@ -97,6 +98,7 @@ export default async function FactuurmailboxOverzichtPage({
                     <th className="px-5 py-3 font-medium">Ontvangen</th>
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium"></th>
+                    <th className="px-5 py-3 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -147,12 +149,19 @@ export default async function FactuurmailboxOverzichtPage({
                             </span>
                           )}
                         </td>
+                        <td className="px-5 py-3 text-right">
+                          <DeleteMailItemButton
+                            id={item.id}
+                            filename={item.original_filename}
+                            status={item.status}
+                          />
+                        </td>
                       </tr>
                     );
                   })}
                   {(!items || items.length === 0) && (
                     <tr>
-                      <td colSpan={7} className="px-5 py-6 text-center text-muted">
+                      <td colSpan={8} className="px-5 py-6 text-center text-muted">
                         {error
                           ? "Kan factuurmailbox niet laden — controleer de Supabase-koppeling."
                           : "Niets in deze categorie."}
