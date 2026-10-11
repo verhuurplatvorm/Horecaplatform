@@ -257,9 +257,11 @@ export default function MailboxenPage() {
                         </label>
                         <p className="mb-2 text-xs text-muted">
                           Eén per regel: een e-mailadres, een domein (bv. ovenservice.nl) of een
-                          deel van de naam (bv. Leventie). Hoofdletters maken niet uit. Mail van
-                          deze afzenders wordt niet gelezen en niet verwerkt, maar blijft
-                          zichtbaar onder &quot;Afgewezen&quot; in het Factuurmailbox-overzicht.
+                          deel van de naam (bv. Leventie). Hoofdletters maken niet uit. Er wordt
+                          gezocht in de afzender, het onderwerp en de mailtekst, dus ook in
+                          doorgestuurde mail. Zulke mail wordt niet gelezen en niet verwerkt,
+                          maar blijft zichtbaar onder &quot;Afgewezen&quot; in het
+                          Factuurmailbox-overzicht, met de reden erbij.
                         </p>
                         <textarea
                           value={ignoreText}

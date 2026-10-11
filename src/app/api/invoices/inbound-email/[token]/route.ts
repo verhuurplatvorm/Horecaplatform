@@ -15,6 +15,9 @@ async function extractAttachments(request: Request): Promise<{
   sender: string | null;
   /** Volledige From-regel (naam + adres), voor de negeerlijst. */
   fromHeader: string | null;
+  /** Onderwerp en (afgekapte) mailtekst, voor de negeerlijst bij doorgestuurde mail. */
+  subject: string | null;
+  bodyText: string | null;
   attachments: IncomingAttachment[];
 }> {
   const contentType = request.headers.get("content-type") ?? "";
@@ -29,7 +32,13 @@ async function extractAttachments(request: Request): Promise<{
         filename: String(a.Name ?? a.filename ?? "bijlage"),
         buffer: Buffer.from(String(a.Content ?? a.content), "base64"),
       }));
-    return { sender, fromHeader: body.From ?? body.from ?? null, attachments };
+    return {
+      sender,
+      fromHeader: body.From ?? body.from ?? null,
+      subject: body.Subject ?? body.subject ?? null,
+      bodyText: truncateText(body.TextBody ?? body.text ?? body.body ?? null),
+      attachments,
+    };
   }
 
   const formData = await request.formData();
@@ -48,26 +57,51 @@ async function extractAttachments(request: Request): Promise<{
   }
   const fromHeader =
     (formData.get("from") as string) ?? (formData.get("From") as string) ?? null;
-  return { sender, fromHeader, attachments };
+  const subject =
+    (formData.get("subject") as string) ?? (formData.get("Subject") as string) ?? null;
+  const bodyText = truncateText(
+    (formData.get("body-plain") as string) ??
+      (formData.get("stripped-text") as string) ??
+      null
+  );
+  return { sender, fromHeader, subject, bodyText, attachments };
+}
+
+/** Voor de negeerlijst is het begin van de mailtekst genoeg (bv. "Van: ..." in een doorgestuurd bericht). */
+function truncateText(text: unknown): string | null {
+  return typeof text === "string" ? text.slice(0, 20000) : null;
 }
 
 /**
- * Staat deze afzender op de negeerlijst van de mailbox? Elk item is een
- * e-mailadres, domein of deel van de naam; vergelijking is
- * hoofdletterongevoelig en kijkt of het item in de From-regel voorkomt.
- * Items korter dan 3 tekens worden overgeslagen, zodat een tikfout niet
- * ineens alle mail blokkeert.
+ * Staat deze mail op de negeerlijst van de mailbox? Elk item is een
+ * e-mailadres, domein of (deel van een) naam; vergelijking is
+ * hoofdletterongevoelig en kijkt of het item voorkomt in de afzender,
+ * het onderwerp of de mailtekst. Dat laatste is nodig voor doorgestuurde
+ * mail: dan is de afzender de doorstuurder zelf, en staat de oorspronkelijke
+ * afzender alleen in de tekst ("Van: ..."). Items korter dan 3 tekens
+ * worden overgeslagen, zodat een tikfout niet ineens alle mail blokkeert.
+ * Geeft het gevonden item en de plek terug, voor de reden in het statuslog.
  */
 function matchIgnoredSender(
   ignored: string[] | null | undefined,
-  sender: string | null,
-  fromHeader: string | null
-): string | null {
-  const haystack = `${fromHeader ?? ""} ${sender ?? ""}`.toLowerCase();
-  if (!haystack.trim()) return null;
+  parts: {
+    sender: string | null;
+    fromHeader: string | null;
+    subject: string | null;
+    bodyText: string | null;
+  }
+): { entry: string; where: string } | null {
+  const places: { where: string; text: string }[] = [
+    { where: "afzender", text: `${parts.fromHeader ?? ""} ${parts.sender ?? ""}`.toLowerCase() },
+    { where: "onderwerp", text: (parts.subject ?? "").toLowerCase() },
+    { where: "mailtekst", text: (parts.bodyText ?? "").toLowerCase() },
+  ];
   for (const raw of ignored ?? []) {
     const entry = raw.trim().toLowerCase();
-    if (entry.length >= 3 && haystack.includes(entry)) return raw.trim();
+    if (entry.length < 3) continue;
+    for (const place of places) {
+      if (place.text.includes(entry)) return { entry: raw.trim(), where: place.where };
+    }
   }
   return null;
 }
@@ -100,8 +134,13 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { sender, fromHeader, attachments } = await extractAttachments(request);
-  const ignoredMatch = matchIgnoredSender(mailbox.ignored_senders, sender, fromHeader);
+  const { sender, fromHeader, subject, bodyText, attachments } = await extractAttachments(request);
+  const ignoredMatch = matchIgnoredSender(mailbox.ignored_senders, {
+    sender,
+    fromHeader,
+    subject,
+    bodyText,
+  });
   const supported = attachments.filter((a) => {
     const n = a.filename.toLowerCase();
     return n.endsWith(".xml") || n.endsWith(".ubl") || n.endsWith(".pdf");
@@ -125,7 +164,7 @@ export async function POST(
         file_kind: "onbekend",
         attachment_hash: attachmentHash,
         status: "afgewezen",
-        error_message: `Afzender staat op de negeerlijst (${ignoredMatch}).`,
+        error_message: `Staat op de negeerlijst: "${ignoredMatch.entry}" gevonden in ${ignoredMatch.where}.`,
         processed_at: new Date().toISOString(),
       });
       results.push({ filename: attachment.filename, outcome: "genegeerd_afzender" });
