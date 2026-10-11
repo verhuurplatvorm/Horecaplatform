@@ -37,7 +37,14 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/login") ||
     request.nextUrl.pathname.startsWith("/auth");
 
-  if (!user && !isAuthRoute) {
+  // De factuurmailbox-webhook wordt door een externe mailservice (Mailgun)
+  // aangeroepen, zonder inlogsessie. De route beveiligt zichzelf met het
+  // geheime token in de URL, dus hij mag niet naar /login worden gestuurd.
+  const isInboundEmailWebhook = request.nextUrl.pathname.startsWith(
+    "/api/invoices/inbound-email/"
+  );
+
+  if (!user && !isAuthRoute && !isInboundEmailWebhook) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
