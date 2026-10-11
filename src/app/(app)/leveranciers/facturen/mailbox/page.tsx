@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteMailItemButton } from "@/components/invoices/delete-mail-item-button";
 import type { InboundInvoiceQueueItem } from "@/lib/types/database";
 
 // Statusoverzicht van de Factuurmailbox: ELKE binnengekomen e-mailfactuur
@@ -9,6 +10,21 @@ import type { InboundInvoiceQueueItem } from "@/lib/types/database";
 // het verschil met het "Postvak in"-scherm (dat alleen de regels toont die
 // nog een leverancier-keuze nodig hebben).
 const TABS: { key: string; label: string; statuses: InboundInvoiceQueueItem["status"][] }[] = [
+  // Standaardlijst: alleen wat nog verwerkt of nagekeken moet worden.
+  // Afgehandelde mail (verwerkt, dubbel, afgewezen) staat hier niet meer
+  // tussen; die blijft gewoon bewaard en is te vinden onder het eigen
+  // tabblad en onder "Alles".
+  {
+    key: "open",
+    label: "Open",
+    statuses: ["nieuw_ontvangen", "wordt_verwerkt", "wacht_op_leverancier", "fout"],
+  },
+  { key: "controle", label: "Controle nodig", statuses: ["wacht_op_leverancier"] },
+  { key: "verwerkt", label: "Verwerkt", statuses: ["verwerkt"] },
+  { key: "bezig", label: "Wordt verwerkt", statuses: ["wordt_verwerkt", "nieuw_ontvangen"] },
+  { key: "fout", label: "Fout", statuses: ["fout"] },
+  { key: "dubbel", label: "Dubbele factuur", statuses: ["dubbele_factuur"] },
+  { key: "afgewezen", label: "Afgewezen", statuses: ["afgewezen"] },
   {
     key: "alles",
     label: "Alles",
@@ -22,12 +38,6 @@ const TABS: { key: string; label: string; statuses: InboundInvoiceQueueItem["sta
       "afgewezen",
     ],
   },
-  { key: "controle", label: "Controle nodig", statuses: ["wacht_op_leverancier"] },
-  { key: "verwerkt", label: "Verwerkt", statuses: ["verwerkt"] },
-  { key: "bezig", label: "Wordt verwerkt", statuses: ["wordt_verwerkt", "nieuw_ontvangen"] },
-  { key: "fout", label: "Fout", statuses: ["fout"] },
-  { key: "dubbel", label: "Dubbele factuur", statuses: ["dubbele_factuur"] },
-  { key: "afgewezen", label: "Afgewezen", statuses: ["afgewezen"] },
 ];
 
 const STATUS_BADGE: Record<InboundInvoiceQueueItem["status"], { label: string; cls: string }> = {
@@ -61,8 +71,9 @@ export default async function FactuurmailboxOverzichtPage({
       <Topbar title="Factuurmailbox" />
       <main className="p-6 space-y-4">
         <p className="text-sm text-muted">
-          Alle e-mailfacturen die via de factuur-mailboxen zijn binnengekomen, met hun
-          verwerkingsstatus. Automatisch verwerkt betekent dat er een prijsimport-batch is
+          E-mailfacturen die via de factuur-mailboxen zijn binnengekomen. Onder &quot;Open&quot;
+          staat wat nog verwerkt of nagekeken moet worden; verwerkte, dubbele en afgewezen
+          mail vind je onder het eigen tabblad of onder &quot;Alles&quot;. Automatisch verwerkt betekent dat er een prijsimport-batch is
           aangemaakt — de prijzen zelf worden pas doorgevoerd nadat je die batch op het
           Facturen-scherm bevestigt.
         </p>
@@ -96,6 +107,7 @@ export default async function FactuurmailboxOverzichtPage({
                     <th className="px-5 py-3 font-medium">Factuurnummer</th>
                     <th className="px-5 py-3 font-medium">Ontvangen</th>
                     <th className="px-5 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium"></th>
                     <th className="px-5 py-3 font-medium"></th>
                   </tr>
                 </thead>
@@ -147,12 +159,19 @@ export default async function FactuurmailboxOverzichtPage({
                             </span>
                           )}
                         </td>
+                        <td className="px-5 py-3 text-right">
+                          <DeleteMailItemButton
+                            id={item.id}
+                            filename={item.original_filename}
+                            status={item.status}
+                          />
+                        </td>
                       </tr>
                     );
                   })}
                   {(!items || items.length === 0) && (
                     <tr>
-                      <td colSpan={7} className="px-5 py-6 text-center text-muted">
+                      <td colSpan={8} className="px-5 py-6 text-center text-muted">
                         {error
                           ? "Kan factuurmailbox niet laden — controleer de Supabase-koppeling."
                           : "Niets in deze categorie."}
