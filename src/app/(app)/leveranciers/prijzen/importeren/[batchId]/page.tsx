@@ -12,10 +12,12 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
+import { convertQuantity } from "@/lib/units/convert";
 import type {
   PriceImportBatch,
   PriceImportRow,
   Product,
+  Unit,
 } from "@/lib/types/database";
 
 export default function ImportReviewPage({
@@ -54,6 +56,20 @@ export default function ImportReviewPage({
     null
   );
   const [reloadToken, setReloadToken] = useState(0);
+  const [units, setUnits] = useState<Unit[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .from("units")
+      .select("*")
+      .then(({ data }) => {
+        if (!cancelled) setUnits((data as Unit[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -697,6 +713,7 @@ export default function ImportReviewPage({
                   <RowLine
                     key={row.id}
                     row={row}
+                    units={units}
                     product={
                       row.matched_product_id
                         ? products.get(row.matched_product_id)
@@ -754,6 +771,7 @@ export default function ImportReviewPage({
 
 function RowLine({
   row,
+  units,
   product,
   suggestedProducts,
   existingPrice,
@@ -763,6 +781,7 @@ function RowLine({
   onDelete,
 }: {
   row: PriceImportRow;
+  units: Unit[];
   product?: Product;
   suggestedProducts: Product[];
   existingPrice?: { price: number; packagingCount: number };
@@ -775,6 +794,34 @@ function RowLine({
   const [packagingInput, setPackagingInput] = useState(
     row.packaging_unit_count?.toString() ?? ""
   );
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcCount, setCalcCount] = useState("");
+  const [calcContent, setCalcContent] = useState("");
+  const [calcUnitKey, setCalcUnitKey] = useState("g");
+
+  // Rekenhulp: aantal × inhoud per stuk, omgerekend naar de basiseenheid van
+  // het gekoppelde ingrediënt. Via de centrale convertQuantity — kan het niet
+  // (bv. stuk ↔ gram zonder ingestelde brug), dan is de uitkomst null en
+  // wordt er niets ingevuld.
+  const unitsById = new Map(units.map((u) => [u.id, u]));
+  const calcUnit = units.find((u) => u.key === calcUnitKey);
+  const baseUnit = product ? units.find((u) => u.key === product.base_unit) : undefined;
+  const calcCountNum = Number(calcCount.replace(",", "."));
+  const calcContentNum = Number(calcContent.replace(",", "."));
+  const calcResult =
+    calcUnit &&
+    baseUnit &&
+    product &&
+    calcCountNum > 0 &&
+    calcContentNum > 0
+      ? convertQuantity(
+          calcCountNum * calcContentNum,
+          calcUnit,
+          baseUnit,
+          { avgUnitQuantity: product.avg_unit_quantity, avgUnitId: product.avg_unit_id },
+          unitsById
+        )
+      : null;
 
   const priceDiff =
     existingPrice && row.purchase_price !== null
@@ -824,6 +871,82 @@ function RowLine({
             className="h-8 w-28 rounded-md border border-border bg-surface px-2 text-xs"
           />
         </div>
+        {product && (
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => setCalcOpen((v) => !v)}
+              className="text-xs text-teal hover:underline"
+            >
+              {calcOpen ? "Rekenhulp sluiten" : "Uitrekenen (aantal × inhoud)"}
+            </button>
+            {calcOpen && (
+              <div className="mt-1 space-y-1 rounded-md border border-border bg-surface p-2">
+                <div className="flex items-center gap-1 text-xs">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={calcCount}
+                    onChange={(e) => setCalcCount(e.target.value)}
+                    placeholder="aantal"
+                    className="h-7 w-14 rounded-md border border-border bg-surface px-1.5 text-xs"
+                  />
+                  <span>×</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={calcContent}
+                    onChange={(e) => setCalcContent(e.target.value)}
+                    placeholder="inhoud"
+                    className="h-7 w-16 rounded-md border border-border bg-surface px-1.5 text-xs"
+                  />
+                  <select
+                    value={calcUnitKey}
+                    onChange={(e) => setCalcUnitKey(e.target.value)}
+                    className="h-7 rounded-md border border-border bg-surface px-1 text-xs"
+                  >
+                    {units.map((u) => (
+                      <option key={u.id} value={u.key}>
+                        {u.key}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-muted">
+                  Basiseenheid van dit ingrediënt: {product.base_unit}
+                </p>
+                {calcResult !== null ? (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span>
+                      = {Number(calcResult.toFixed(4))} {product.base_unit}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const value = Number(calcResult.toFixed(4));
+                        setPackagingInput(String(value));
+                        onPackagingChange(value);
+                        setCalcOpen(false);
+                      }}
+                      className="rounded-md bg-teal px-2 py-0.5 text-white hover:opacity-90"
+                    >
+                      Overnemen
+                    </button>
+                  </div>
+                ) : (
+                  calcCountNum > 0 &&
+                  calcContentNum > 0 && (
+                    <p className="text-xs text-copper">
+                      Kan niet omrekenen naar {product.base_unit}. Vul het getal
+                      zelf in, of stel bij het ingrediënt eerst in hoeveel 1 stuk
+                      weegt.
+                    </p>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {row.packaging_description && (
           <p className="mt-0.5 text-xs text-muted">{row.packaging_description}</p>
         )}
