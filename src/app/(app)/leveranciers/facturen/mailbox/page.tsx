@@ -10,6 +10,20 @@ import type { InboundInvoiceQueueItem } from "@/lib/types/database";
 // het verschil met het "Postvak in"-scherm (dat alleen de regels toont die
 // nog een leverancier-keuze nodig hebben).
 const TABS: { key: string; label: string; statuses: InboundInvoiceQueueItem["status"][] }[] = [
+  // Standaardlijst: alles wat nog aandacht vraagt. Verwerkte en dubbele
+  // facturen zijn afgehandeld en staan hier niet meer tussen; ze blijven
+  // gewoon bewaard en zijn te vinden onder hun eigen tabblad en onder "Alles".
+  {
+    key: "open",
+    label: "Open",
+    statuses: ["nieuw_ontvangen", "wordt_verwerkt", "wacht_op_leverancier", "fout", "afgewezen"],
+  },
+  { key: "controle", label: "Controle nodig", statuses: ["wacht_op_leverancier"] },
+  { key: "verwerkt", label: "Verwerkt", statuses: ["verwerkt"] },
+  { key: "bezig", label: "Wordt verwerkt", statuses: ["wordt_verwerkt", "nieuw_ontvangen"] },
+  { key: "fout", label: "Fout", statuses: ["fout"] },
+  { key: "dubbel", label: "Dubbele factuur", statuses: ["dubbele_factuur"] },
+  { key: "afgewezen", label: "Afgewezen", statuses: ["afgewezen"] },
   {
     key: "alles",
     label: "Alles",
@@ -23,12 +37,6 @@ const TABS: { key: string; label: string; statuses: InboundInvoiceQueueItem["sta
       "afgewezen",
     ],
   },
-  { key: "controle", label: "Controle nodig", statuses: ["wacht_op_leverancier"] },
-  { key: "verwerkt", label: "Verwerkt", statuses: ["verwerkt"] },
-  { key: "bezig", label: "Wordt verwerkt", statuses: ["wordt_verwerkt", "nieuw_ontvangen"] },
-  { key: "fout", label: "Fout", statuses: ["fout"] },
-  { key: "dubbel", label: "Dubbele factuur", statuses: ["dubbele_factuur"] },
-  { key: "afgewezen", label: "Afgewezen", statuses: ["afgewezen"] },
 ];
 
 const STATUS_BADGE: Record<InboundInvoiceQueueItem["status"], { label: string; cls: string }> = {
@@ -62,8 +70,9 @@ export default async function FactuurmailboxOverzichtPage({
       <Topbar title="Factuurmailbox" />
       <main className="p-6 space-y-4">
         <p className="text-sm text-muted">
-          Alle e-mailfacturen die via de factuur-mailboxen zijn binnengekomen, met hun
-          verwerkingsstatus. Automatisch verwerkt betekent dat er een prijsimport-batch is
+          E-mailfacturen die via de factuur-mailboxen zijn binnengekomen. Onder &quot;Open&quot;
+          staat wat nog aandacht vraagt; verwerkte en dubbele facturen vind je onder hun eigen
+          tabblad of onder &quot;Alles&quot;. Automatisch verwerkt betekent dat er een prijsimport-batch is
           aangemaakt — de prijzen zelf worden pas doorgevoerd nadat je die batch op het
           Facturen-scherm bevestigt.
         </p>
