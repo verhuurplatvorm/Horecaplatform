@@ -143,6 +143,84 @@ export default function ProductenOpschonenPage() {
     };
   }, [reloadToken]);
 
+  // Bulk verwijderen van ongebruikte ingrediënten uit deze lijst.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkChecking, setBulkChecking] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
+  const [unused, setUnused] = useState<Candidate[]>([]);
+  const [inUse, setInUse] = useState<Candidate[]>([]);
+
+  async function openBulkDelete() {
+    setBulkOpen(true);
+    setBulkChecking(true);
+    setBulkError(null);
+    setBulkResult(null);
+    const supabase = createClient();
+    const ids = candidates.map((c) => c.product.id);
+    const used = new Set<string>();
+    // In blokken, zodat de URL niet te lang wordt.
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const [ri, ml, wr] = await Promise.all([
+        supabase.from("recipe_ingredients").select("product_id").in("product_id", chunk),
+        supabase.from("event_menu_lines").select("product_id").in("product_id", chunk),
+        supabase.from("waste_registrations").select("product_id").in("product_id", chunk),
+      ]);
+      for (const res of [ri, ml, wr]) {
+        if (res.error) {
+          setBulkError("Kan het gebruik niet controleren: " + res.error.message);
+          setBulkChecking(false);
+          return;
+        }
+        for (const r of res.data ?? []) if (r.product_id) used.add(r.product_id);
+      }
+    }
+    setUnused(candidates.filter((c) => !used.has(c.product.id)));
+    setInUse(candidates.filter((c) => used.has(c.product.id)));
+    setBulkChecking(false);
+  }
+
+  async function confirmBulkDelete() {
+    setBulkDeleting(true);
+    setBulkError(null);
+    const supabase = createClient();
+    const ids = unused.map((c) => c.product.id);
+    let deleted = 0;
+    let skipped = 0;
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const { data, error } = await supabase
+        .from("products")
+        .delete()
+        .in("id", chunk)
+        .select("id");
+      if (error) {
+        // De database weigert een product dat toch ergens in gebruik is;
+        // probeer dan één voor één zodat de rest wel wordt verwijderd.
+        for (const id of chunk) {
+          const { data: one, error: oneError } = await supabase
+            .from("products")
+            .delete()
+            .eq("id", id)
+            .select("id");
+          if (oneError || !one || one.length === 0) skipped++;
+          else deleted++;
+        }
+      } else {
+        deleted += data?.length ?? 0;
+      }
+    }
+    setBulkDeleting(false);
+    setBulkOpen(false);
+    setBulkResult(
+      `${deleted} ingrediënt(en) verwijderd.` +
+        (skipped > 0 ? ` ${skipped} overgeslagen omdat ze toch in gebruik bleken.` : "")
+    );
+    reload();
+  }
+
   function reload() {
     setLoading(true);
     setCandidates([]);
@@ -254,6 +332,72 @@ export default function ProductenOpschonenPage() {
         </p>
 
         {loading && <p className="text-sm text-muted">Bezig met zoeken…</p>}
+
+        {bulkResult && (
+          <p className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-success">
+            {bulkResult}
+          </p>
+        )}
+
+        {!loading && candidates.length > 0 && !bulkOpen && (
+          <Button variant="secondary" onClick={openBulkDelete}>
+            Ongebruikte ingrediënten uit deze lijst verwijderen…
+          </Button>
+        )}
+
+        {bulkOpen && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Ongebruikte ingrediënten verwijderen</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {bulkChecking ? (
+                <p className="text-muted">Bezig met controleren waar ze gebruikt worden…</p>
+              ) : (
+                <>
+                  {inUse.length > 0 && (
+                    <p className="text-muted">
+                      {inUse.length} ingrediënt(en) staan in een recept, menu of
+                      afvalregistratie en blijven dus staan.
+                    </p>
+                  )}
+                  {unused.length === 0 ? (
+                    <p>Alle ingrediënten in deze lijst worden gebruikt — er valt niets te verwijderen.</p>
+                  ) : (
+                    <>
+                      <p className="font-medium">
+                        {unused.length} ingrediënt(en) worden niet gebruikt in recepten, menu&apos;s of
+                        afvalregistratie en worden definitief verwijderd, inclusief hun
+                        leveranciersprijzen.
+                      </p>
+                      <ul className="max-h-60 overflow-y-auto rounded-md border border-border bg-background p-2 text-xs">
+                        {unused.map((c) => (
+                          <li key={c.product.id}>
+                            {c.product.name}
+                            {c.prices.length > 0 && (
+                              <span className="text-muted"> — {c.prices.length} prijs(zen)</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {bulkError && <p className="text-danger">{bulkError}</p>}
+                  <div className="flex gap-2">
+                    {unused.length > 0 && (
+                      <Button onClick={confirmBulkDelete} disabled={bulkDeleting}>
+                        {bulkDeleting ? "Bezig met verwijderen…" : `Ja, verwijder ${unused.length} ingrediënt(en)`}
+                      </Button>
+                    )}
+                    <Button variant="secondary" onClick={() => setBulkOpen(false)} disabled={bulkDeleting}>
+                      Annuleren
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {!loading && candidates.length === 0 && (
           <Card>
