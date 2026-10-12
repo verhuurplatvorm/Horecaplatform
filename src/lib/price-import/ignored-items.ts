@@ -46,3 +46,14 @@ export async function removeIgnoredRows(
 
   return { rows: kept, ignoredCount: rows.length - kept.length };
 }
+
+const EMBALLAGE_PATTERN = /\b(emballage|statiegeld|leeggoed|retouremballage|borg)\b/i;
+
+/**
+ * Emballage-/statiegeldregels (kratten, flessen, pallets) zijn geen artikel
+ * en horen niet in het systeem. Bewust alleen duidelijke woorden; "fust" of
+ * "krat" alleen zou ook gewoon product (bv. een fust bier) kunnen zijn.
+ */
+export function isEmballageRow(row: ParsedPriceRow): boolean {
+  return EMBALLAGE_PATTERN.test(row.description ?? "");
+}

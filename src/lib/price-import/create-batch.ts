@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedPriceRow } from "./columns";
-import { removeIgnoredRows } from "./ignored-items";
+import { isEmballageRow, removeIgnoredRows } from "./ignored-items";
 import { matchRowsToProducts, type MatchedRow } from "./match";
 
 /**
@@ -154,11 +154,20 @@ export async function createImportBatch(
 
   // Artikelen die voor deze leverancier als "niet meer verwerken" zijn
   // aangemerkt, worden direct overgeslagen.
-  const { rows: rowsToMatch, ignoredCount } = await removeIgnoredRows(
+  const { rows: withoutIgnored, ignoredCount } = await removeIgnoredRows(
     supabase,
     supplierId,
     parsedRows
   );
+  // Emballage/statiegeld op facturen wordt nooit verwerkt.
+  const rowsToMatch = invoice
+    ? withoutIgnored.filter((r) => !isEmballageRow(r))
+    : withoutIgnored;
+  if (rowsToMatch.length < withoutIgnored.length) {
+    console.log(
+      `[invoice-import] ${withoutIgnored.length - rowsToMatch.length} emballageregel(s) overgeslagen.`
+    );
+  }
   if (ignoredCount > 0) {
     console.log(`[invoice-import] ${ignoredCount} regel(s) overgeslagen (staan op de lijst genegeerde artikelen).`);
   }
