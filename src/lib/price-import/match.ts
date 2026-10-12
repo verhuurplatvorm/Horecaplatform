@@ -42,14 +42,15 @@ export async function matchRowsToProducts(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
   groupId: string,
-  rows: ParsedPriceRow[]
+  rows: ParsedPriceRow[],
+  supplierId?: string | null
 ): Promise<MatchedRow[]> {
   const eanCodes = [...new Set(rows.map((r) => r.eanCode).filter(Boolean))];
   const articleNumbers = [
     ...new Set(rows.map((r) => r.articleNumber).filter(Boolean)),
   ];
 
-  const [byEan, byArticle, allProducts] = await Promise.all([
+  const [byEan, byArticle, allProducts, bySupplierCode] = await Promise.all([
     eanCodes.length > 0
       ? supabase
           .from("products")
@@ -67,7 +68,38 @@ export async function matchRowsToProducts(
           data: [] as { id: string; article_number: string | null }[],
         }),
     supabase.from("products").select("id, name").eq("group_id", groupId),
+    // Geheugen per leverancier: een artikelnummer van DEZE leverancier dat
+    // eerder aan een ingrediënt is gekoppeld (bevestigd bij een eerdere
+    // factuur of prijslijst) wordt bij een terugkerende factuur direct
+    // herkend. Alleen eigen artikelnummers van de leverancier tellen mee.
+    supplierId && articleNumbers.length > 0
+      ? supabase
+          .from("supplier_products")
+          .select("supplier_article_code, product_id, valid_to")
+          .eq("supplier_id", supplierId)
+          .in("supplier_article_code", articleNumbers)
+      : Promise.resolve({
+          data: [] as {
+            supplier_article_code: string | null;
+            product_id: string;
+            valid_to: string | null;
+          }[],
+        }),
   ]);
+
+  // code -> product; bij een code die naar meerdere producten wijst is het
+  // niet zeker welke bedoeld is, dan laten we de koppeling over aan een mens.
+  const codeProducts = new Map<string, Set<string>>();
+  for (const sp of bySupplierCode.data ?? []) {
+    if (!sp.supplier_article_code) continue;
+    const set = codeProducts.get(sp.supplier_article_code) ?? new Set<string>();
+    set.add(sp.product_id);
+    codeProducts.set(sp.supplier_article_code, set);
+  }
+  const supplierCodeMap = new Map<string, string>();
+  for (const [code, set] of codeProducts) {
+    if (set.size === 1) supplierCodeMap.set(code, [...set][0]);
+  }
 
   const eanMap = new Map(
     (byEan.data ?? [])
@@ -82,6 +114,15 @@ export async function matchRowsToProducts(
   const productList: { id: string; name: string }[] = allProducts.data ?? [];
 
   return rows.map((row) => {
+    if (row.articleNumber && supplierCodeMap.has(row.articleNumber)) {
+      return {
+        ...row,
+        matchedProductId: supplierCodeMap.get(row.articleNumber)!,
+        matchMethod: "artikelnummer" as const,
+        confidence: "gekoppeld" as const,
+        suggestions: [],
+      };
+    }
     if (row.eanCode && eanMap.has(row.eanCode)) {
       return {
         ...row,

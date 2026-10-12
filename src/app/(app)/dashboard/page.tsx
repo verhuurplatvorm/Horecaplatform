@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { FileCheck2, RotateCcw } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -121,12 +121,37 @@ export default function DashboardPage() {
     <>
       <Topbar title="Dashboard" />
       <main className="space-y-4 p-6">
+        <Link
+          href="/leveranciers/facturen"
+          className={cn(
+            "flex items-center justify-between rounded-lg border px-5 py-4 transition-colors",
+            (summary?.invoices_to_check ?? 0) > 0
+              ? "border-copper/40 bg-copper/5 hover:bg-copper/10"
+              : "border-border bg-surface hover:bg-background"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <FileCheck2 className="h-6 w-6 text-copper" />
+            <div>
+              <p className="text-base font-semibold">Facturen controleren</p>
+              <p className="text-xs text-muted">
+                {(summary?.invoices_to_check ?? 0) > 0
+                  ? `${summary?.invoices_to_check === 1 ? "1 factuur wacht" : `${summary?.invoices_to_check} facturen wachten`} op controle — kijk alleen de afwijkingen na`
+                  : "Alles is gecontroleerd"}
+              </p>
+            </div>
+          </div>
+          <span className="tabular text-3xl font-semibold text-copper">
+            {summary?.invoices_to_check ?? "—"}
+          </span>
+        </Link>
+
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Attention label="Prijsalarmen" value={summary?.price_alerts} href="/leveranciers/prijzen/wijzigingen" />
           <Attention label="Margeproblemen" value={summary?.cost_problems} href="/recepturen" />
           <Attention label="Niet herkend" value={summary?.unmatched_ingredients} href="/producten/opschonen" />
           <Attention label="Prijzen te controleren" value={summary?.flagged_prices} href="/producten/opschonen" />
-          <Attention label="Facturen" value={summary?.invoices_to_check} href="/leveranciers/facturen/postvak-in" />
+          <Attention label="Facturen" value={summary?.invoices_to_check} href="/leveranciers/facturen" />
           <Attention label="Menu's op komst" value={summary?.upcoming_menus} href="/menus" neutral />
         </div>
 

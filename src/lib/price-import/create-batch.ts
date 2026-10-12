@@ -151,7 +151,7 @@ export async function createImportBatch(
     source = created;
   }
 
-  let matched = await matchRowsToProducts(supabase, groupId, parsedRows);
+  let matched = await matchRowsToProducts(supabase, groupId, parsedRows, supplierId);
   console.log(
     `[invoice-import] Matching: ${matched.length} regel(s), ${matched.filter((r) => r.matchedProductId).length} gekoppeld, confidence-verdeling: ${JSON.stringify(
       matched.reduce((acc: Record<string, number>, r) => {

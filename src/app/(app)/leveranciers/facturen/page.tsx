@@ -6,16 +6,29 @@ import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteInvoiceButton } from "@/components/invoices/delete-invoice-button";
 
-export default async function FacturenPage() {
+export default async function FacturenPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
+  const showAll = tab === "alles";
   const supabase = await createClient();
-  const { data: batches, error } = await supabase
+  const { data: allBatches, error } = await supabase
     .from("price_import_batches")
     .select(
-      "id, original_filename, invoice_number, invoice_date, total_incl_vat, status, iban_mismatch, supplier_id, suppliers(name)"
+      "id, original_filename, invoice_number, invoice_date, total_incl_vat, status, iban_mismatch, supplier_id, total_rows, matched_rows, unmatched_rows, suppliers(name)"
     )
     .eq("source_kind", "factuur")
     .order("created_at", { ascending: false })
     .limit(100);
+
+  const toCheckCount = (allBatches ?? []).filter(
+    (b) => b.status === "wacht_op_controle"
+  ).length;
+  const batches = showAll
+    ? allBatches
+    : (allBatches ?? []).filter((b) => b.status === "wacht_op_controle");
 
   return (
     <>
@@ -39,6 +52,21 @@ export default async function FacturenPage() {
           </Link>
         </div>
 
+        <div className="flex gap-1 text-sm">
+          <Link
+            href="/leveranciers/facturen"
+            className={`rounded-md px-3 py-1.5 ${!showAll ? "bg-teal text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            Te controleren ({toCheckCount})
+          </Link>
+          <Link
+            href="/leveranciers/facturen?tab=alles"
+            className={`rounded-md px-3 py-1.5 ${showAll ? "bg-teal text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            Alle facturen
+          </Link>
+        </div>
+
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -50,6 +78,7 @@ export default async function FacturenPage() {
                   <th className="px-5 py-3 font-medium">Factuurnummer</th>
                   <th className="px-5 py-3 font-medium">Datum</th>
                   <th className="px-5 py-3 font-medium">Totaal</th>
+                  <th className="px-5 py-3 font-medium">Regels</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
@@ -81,6 +110,15 @@ export default async function FacturenPage() {
                     <td className="px-5 py-3 tabular">
                       {b.total_incl_vat !== null ? `€ ${b.total_incl_vat.toFixed(2)}` : "—"}
                     </td>
+                    <td className="px-5 py-3 text-xs">
+                      {b.unmatched_rows > 0 ? (
+                        <span className="text-copper">
+                          {b.unmatched_rows} van {b.total_rows} niet gekoppeld
+                        </span>
+                      ) : (
+                        <span className="text-muted">{b.total_rows} gekoppeld</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-muted">{b.status.replace(/_/g, " ")}</td>
                     <td className="px-5 py-3">
                       <DeleteInvoiceButton batchId={b.id} filename={b.original_filename ?? "deze factuur"} />
@@ -89,10 +127,12 @@ export default async function FacturenPage() {
                 ))}
                 {(!batches || batches.length === 0) && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan facturen niet laden — controleer de Supabase-koppeling."
-                        : "Nog geen facturen geüpload."}
+                        : showAll
+                        ? "Nog geen facturen geüpload."
+                        : "Alles is gecontroleerd — geen facturen die op controle wachten."}
                     </td>
                   </tr>
                 )}
