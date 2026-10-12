@@ -277,7 +277,7 @@ export async function POST(
         p_name: parsed.header.supplierName,
       });
       matchedSupplierIdForDupeCheck =
-        candidatesForDupe?.find((c) => ["btw_nummer", "kvk_nummer", "iban"].includes(c.match_method))
+        candidatesForDupe?.find((c) => ["btw_nummer", "kvk_nummer", "iban", "bevestigde_naam"].includes(c.match_method))
           ?.supplier_id ?? null;
     }
 
@@ -335,7 +335,7 @@ export async function POST(
     });
 
     const confidentMatch = candidates?.find((c) =>
-      ["btw_nummer", "kvk_nummer", "iban"].includes(c.match_method)
+      ["btw_nummer", "kvk_nummer", "iban", "bevestigde_naam"].includes(c.match_method)
     );
 
     if (!confidentMatch || confidentMatch.iban_mismatch) {

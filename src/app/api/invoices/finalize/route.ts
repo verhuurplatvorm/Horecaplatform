@@ -71,6 +71,12 @@ export async function POST(request: Request) {
     supplierId = created.id;
   }
 
+  // Handmatig gekozen bestaande leverancier: onthoud de koppeling, zodat
+  // dezelfde leverancier de volgende keer vanzelf wordt herkend.
+  if (existingSupplierId) {
+    await rememberSupplierLink(supabase, groupId, existingSupplierId, header);
+  }
+
   if (header.supplierIban && !confirmIbanMismatch) {
     const { data: supplier } = await supabase
       .from("suppliers")
@@ -119,4 +125,54 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
   return NextResponse.json({ batchId: result.batchId });
+}
+
+/**
+ * Leert van een handmatige leverancierskeuze:
+ * - de naam op de factuur wordt een bevestigde alias van de leverancier;
+ * - lege btw-/kvk-velden van de leverancier worden aangevuld. Bestaande
+ *   waarden worden nooit overschreven en het IBAN wordt hier bewust niet
+ *   aangepast (daar geldt de aparte IBAN-controle).
+ * Fouten hierbij mogen het verwerken van de factuur niet blokkeren.
+ */
+async function rememberSupplierLink(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  groupId: string,
+  supplierId: string,
+  header: ParsedInvoiceHeader
+) {
+  try {
+    const aliasName = header.supplierName?.trim();
+    const aliasKey = (aliasName ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    if (aliasName && aliasKey.length >= 3) {
+      await supabase.from("supplier_name_aliases").upsert(
+        { group_id: groupId, supplier_id: supplierId, alias_name: aliasName, alias_key: aliasKey },
+        { onConflict: "group_id,alias_key" }
+      );
+    }
+
+    const { data: supplier } = await supabase
+      .from("suppliers")
+      .select("vat_number, kvk_number, iban")
+      .eq("id", supplierId)
+      .single();
+    if (supplier) {
+      const patch: Record<string, string> = {};
+      if (!supplier.vat_number && header.supplierVatNumber) patch.vat_number = header.supplierVatNumber;
+      if (!supplier.kvk_number && header.supplierKvkNumber) patch.kvk_number = header.supplierKvkNumber;
+      if (!supplier.iban && header.supplierIban) {
+        patch.iban = header.supplierIban;
+        patch.iban_verified_at = new Date().toISOString();
+      }
+      if (Object.keys(patch).length > 0) {
+        await supabase.from("suppliers").update(patch).eq("id", supplierId);
+      }
+    }
+  } catch (err) {
+    console.warn("[invoice-import] Kan leverancierskoppeling niet onthouden:", err);
+  }
 }

@@ -231,7 +231,7 @@ async function finalizeParsed(
   );
 
   const confidentMatch = candidates?.find((c: { match_method: string }) =>
-    ["btw_nummer", "kvk_nummer", "iban"].includes(c.match_method)
+    ["btw_nummer", "kvk_nummer", "iban", "bevestigde_naam"].includes(c.match_method)
   );
 
   if (!confidentMatch) {
