@@ -4,6 +4,7 @@ import { createImportBatch } from "@/lib/price-import/create-batch";
 import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
 import { extractInvoiceWithClaude, isClaudeOcrSupported } from "@/lib/invoice-import/claude-ocr";
 import { identifySupplierFromPdfText } from "@/lib/invoice-import/identify-supplier";
+import { hasNoPrices, NO_PRICES_MESSAGE } from "@/lib/invoice-import/no-prices";
 import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
 export async function POST(request: Request) {
@@ -218,6 +219,10 @@ async function finalizeParsed(
   storagePath: string,
   parsed: ParsedInvoice
 ) {
+  if (hasNoPrices(parsed.lines)) {
+    return NextResponse.json({ error: NO_PRICES_MESSAGE }, { status: 422 });
+  }
+
   const { data: candidates } = await supabase.rpc("match_supplier_from_invoice", {
     p_group_id: groupId,
     p_vat_number: parsed.header.supplierVatNumber,

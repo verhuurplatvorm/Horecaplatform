@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createImportBatch } from "@/lib/price-import/create-batch";
 import { parseUblInvoice, looksLikeUbl, type ParsedInvoice } from "@/lib/invoice-import/parse-ubl";
 import { extractInvoiceWithClaude } from "@/lib/invoice-import/claude-ocr";
+import { hasNoPrices, NO_PRICES_MESSAGE } from "@/lib/invoice-import/no-prices";
 import { linesToRows } from "@/lib/invoice-import/lines-to-rows";
 
 // Het uitlezen (OCR) van een lange factuur kan langer duren dan de
@@ -323,6 +324,27 @@ export async function POST(
           .eq("id", logId);
       }
       results.push({ filename: attachment.filename, outcome: `postvak_in_${fileKind}` });
+      continue;
+    }
+
+    // Pakbon/orderbevestiging: regels maar geen enkele prijs. Wordt gelogd
+    // als afgewezen (zichtbaar onder "Afgewezen"), zonder batch.
+    if (hasNoPrices(parsed.lines)) {
+      if (logId) {
+        await admin
+          .from("inbound_invoice_queue")
+          .update({
+            status: "afgewezen",
+            storage_path: storagePath,
+            file_kind: fileKind,
+            parsed_header: parsed.header,
+            invoice_number: parsed.header.invoiceNumber,
+            error_message: NO_PRICES_MESSAGE,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", logId);
+      }
+      results.push({ filename: attachment.filename, outcome: "geen_prijzen" });
       continue;
     }
 
