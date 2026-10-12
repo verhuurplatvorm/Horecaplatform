@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
+import { normalizeItemKey } from "@/lib/price-import/ignored-items";
 import { convertQuantity } from "@/lib/units/convert";
 import type {
   PriceImportBatch,
@@ -381,6 +382,39 @@ export default function ImportReviewPage({
     setRows((prev) => prev.filter((r) => r.id !== rowId));
   }
 
+  async function handleIgnoreRow(row: PriceImportRow) {
+    if (!batch?.supplier_id) return;
+    if (
+      !window.confirm(
+        `"${row.description ?? "Dit artikel"}" voortaan niet meer verwerken?\n\nBij de volgende factuur of prijslijst van deze leverancier wordt dit artikel automatisch overgeslagen. Je kunt het later terughalen via "Genegeerde artikelen".`
+      )
+    ) {
+      return;
+    }
+    const supabase = createClient();
+    const { error: insertError } = await supabase.from("ignored_invoice_items").insert({
+      group_id: batch.group_id,
+      supplier_id: batch.supplier_id,
+      article_number: row.article_number || null,
+      description: row.description ?? "",
+      description_key: normalizeItemKey(row.description),
+    });
+    // 23505 = stond al op de lijst; dan is het resultaat hetzelfde.
+    if (insertError && insertError.code !== "23505") {
+      window.alert("Opslaan mislukt: " + insertError.message);
+      return;
+    }
+    const { error: deleteError } = await supabase
+      .from("price_import_rows")
+      .delete()
+      .eq("id", row.id);
+    if (deleteError) {
+      window.alert("Het artikel staat nu op de lijst, maar de regel verwijderen mislukte: " + deleteError.message);
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.id !== row.id));
+  }
+
   if (loading) {
     return (
       <>
@@ -735,6 +769,7 @@ export default function ImportReviewPage({
                     }
                     onStartCreate={() => setCreatingForRow(row)}
                     onDelete={() => handleDeleteRow(row.id)}
+                    onIgnore={() => handleIgnoreRow(row)}
                   />
                 ))}
               </tbody>
@@ -779,6 +814,7 @@ function RowLine({
   onPackagingChange,
   onStartCreate,
   onDelete,
+  onIgnore,
 }: {
   row: PriceImportRow;
   units: Unit[];
@@ -789,6 +825,7 @@ function RowLine({
   onPackagingChange: (count: number) => void;
   onStartCreate: () => void;
   onDelete: () => void;
+  onIgnore: () => void;
 }) {
   const [searching, setSearching] = useState(false);
   const [packagingInput, setPackagingInput] = useState(
@@ -1006,6 +1043,14 @@ function RowLine({
             >
               <Plus className="h-3.5 w-3.5" />
               Nieuw ingrediënt aanmaken
+            </button>
+            <button
+              onClick={onIgnore}
+              title="Dit artikel bij deze leverancier voortaan automatisch overslaan"
+              className="flex items-center gap-1 text-xs text-muted hover:text-danger hover:underline"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Niet meer verwerken
             </button>
             <button
               onClick={() => setSearching(true)}

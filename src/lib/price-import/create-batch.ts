@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedPriceRow } from "./columns";
+import { removeIgnoredRows } from "./ignored-items";
 import { matchRowsToProducts, type MatchedRow } from "./match";
 
 /**
@@ -151,7 +152,18 @@ export async function createImportBatch(
     source = created;
   }
 
-  let matched = await matchRowsToProducts(supabase, groupId, parsedRows, supplierId);
+  // Artikelen die voor deze leverancier als "niet meer verwerken" zijn
+  // aangemerkt, worden direct overgeslagen.
+  const { rows: rowsToMatch, ignoredCount } = await removeIgnoredRows(
+    supabase,
+    supplierId,
+    parsedRows
+  );
+  if (ignoredCount > 0) {
+    console.log(`[invoice-import] ${ignoredCount} regel(s) overgeslagen (staan op de lijst genegeerde artikelen).`);
+  }
+
+  let matched = await matchRowsToProducts(supabase, groupId, rowsToMatch, supplierId);
   console.log(
     `[invoice-import] Matching: ${matched.length} regel(s), ${matched.filter((r) => r.matchedProductId).length} gekoppeld, confidence-verdeling: ${JSON.stringify(
       matched.reduce((acc: Record<string, number>, r) => {

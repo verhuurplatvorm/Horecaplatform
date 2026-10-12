@@ -579,6 +579,17 @@ export type MenuItem = {
   updated_at: string;
 }
 
+export type IgnoredInvoiceItem = {
+  id: string;
+  group_id: string;
+  supplier_id: string;
+  article_number: string | null;
+  description: string;
+  description_key: string;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type InvoiceMailbox = {
   id: string;
   group_id: string;
@@ -977,6 +988,12 @@ export type Database = {
         Row: InvoiceMailbox;
         Insert: Partial<InvoiceMailbox>;
         Update: Partial<InvoiceMailbox>;
+        Relationships: [];
+      };
+      ignored_invoice_items: {
+        Row: IgnoredInvoiceItem;
+        Insert: Partial<IgnoredInvoiceItem>;
+        Update: Partial<IgnoredInvoiceItem>;
         Relationships: [];
       };
       inbound_invoice_queue: {

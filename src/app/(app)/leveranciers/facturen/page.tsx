@@ -35,6 +35,9 @@ export default async function FacturenPage({
       <Topbar title="Facturen" />
       <main className="p-6 space-y-4">
         <div className="flex justify-end gap-2">
+          <Link href="/leveranciers/facturen/genegeerd">
+            <Button variant="secondary">Genegeerde artikelen</Button>
+          </Link>
           <Link href="/leveranciers/facturen/mailboxen">
             <Button variant="secondary">Mailboxen beheren</Button>
           </Link>
