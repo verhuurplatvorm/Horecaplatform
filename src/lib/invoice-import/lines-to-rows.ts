@@ -35,9 +35,20 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
     // door ze te verwarren ontstaat precies de fout waarbij "40 stuks
     // besteld à €1,25/stuk" verkeerd wordt gelezen als "1 verpakking van
     // 40 stuks voor €1,25", wat de prijs 40x te laag maakt.
-    const candidateTexts = [line.packagingDescription, line.description].filter(
-      Boolean
-    ) as string[];
+    //
+    // Uitzondering: staat de regel in kilo's of liters (bv. "3,39 kg à
+    // € 17,50"), dan is de prijs per kilo/liter en is de verpakking altijd
+    // 1 kg / 1 liter. Gewichten in de omschrijving ("1.2-1.6", "200 gr")
+    // zijn dan de portie- of stukgrootte en nooit de verpakking.
+    const unitKey = (effectiveUnit ?? "").toLowerCase().replace(/[^a-z]/g, "");
+    const perUnitText = /^(kg|kgs|kilo|kilogram)$/.test(unitKey)
+      ? "1 kg"
+      : /^(l|lt|ltr|liter|litre)$/.test(unitKey)
+      ? "1 l"
+      : null;
+    const candidateTexts = perUnitText
+      ? [perUnitText]
+      : ([line.packagingDescription, line.description].filter(Boolean) as string[]);
 
     for (const text of candidateTexts) {
       const parsed = parsePackagingText(text);

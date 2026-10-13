@@ -13,6 +13,7 @@ import { ProductViewTabs } from "@/components/products/product-view-tabs";
 interface SupplierPriceRow extends SupplierProduct {
   supplierName: string;
   productName?: string;
+  productBaseUnit?: string;
 }
 
 interface Candidate {
@@ -47,7 +48,7 @@ export default function ProductenOpschonenPage() {
       const supabase = createClient();
       const { data } = await supabase
         .from("supplier_products")
-        .select("*, suppliers(name), products(name)")
+        .select("*, suppliers(name), products(name, base_unit)")
         .eq("flagged_for_review", true)
         .is("valid_to", null)
         .order("created_at", { ascending: false });
@@ -60,6 +61,8 @@ export default function ProductenOpschonenPage() {
           supplierName: p.suppliers?.name ?? "onbekend",
           // @ts-expect-error -- geneste relatie
           productName: p.products?.name ?? "onbekend ingrediënt",
+          // @ts-expect-error -- geneste relatie
+          productBaseUnit: p.products?.base_unit ?? undefined,
         }))
       );
       setFlaggedLoading(false);
@@ -551,6 +554,35 @@ function FlaggedPriceRow({
 }) {
   const [saving, setSaving] = useState(false);
 
+  // Prijs is per kilo/liter: verpakking wordt 1 kg / 1 liter en de prijs is
+  // dan direct de kilo-/literprijs.
+  const perUnit =
+    price.productBaseUnit === "g"
+      ? { count: 1000, label: "1 kg", button: "Prijs is per kilo" }
+      : price.productBaseUnit === "ml"
+      ? { count: 1000, label: "1 l", button: "Prijs is per liter" }
+      : null;
+
+  async function handlePerUnit() {
+    if (!perUnit) return;
+    setSaving(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("supplier_products")
+      .update({
+        packaging_unit_count: perUnit.count,
+        packaging_description: perUnit.label,
+        flagged_for_review: false,
+      })
+      .eq("id", price.id);
+    setSaving(false);
+    if (error) {
+      window.alert("Opslaan mislukt: " + error.message);
+      return;
+    }
+    onResolved();
+  }
+
   async function handleMarkReviewed() {
     setSaving(true);
     const supabase = createClient();
@@ -568,9 +600,16 @@ function FlaggedPriceRow({
       </td>
       <td className="py-2 tabular">€ {price.purchase_price.toFixed(2)}</td>
       <td className="py-2">
-        <Button size="sm" variant="secondary" onClick={handleMarkReviewed} disabled={saving}>
-          {saving ? "…" : "Gecontroleerd"}
-        </Button>
+        <div className="flex gap-2">
+          {perUnit && (
+            <Button size="sm" onClick={handlePerUnit} disabled={saving}>
+              {saving ? "…" : perUnit.button}
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" onClick={handleMarkReviewed} disabled={saving}>
+            {saving ? "…" : "Gecontroleerd"}
+          </Button>
+        </div>
       </td>
     </tr>
   );
