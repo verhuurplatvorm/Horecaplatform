@@ -136,6 +136,10 @@ export function RecipeForm({
     initialRecipe ? initialRecipe.yield_is_manual ?? true : false
   );
   const [lossDraft, setLossDraft] = useState<string | null>(null);
+  // Beginhoeveelheid die de kok zelf invult als het systeem hem niet kan
+  // berekenen (bv. liters en kilo's door elkaar). Alleen om het verlies-% en
+  // de bruikbare hoeveelheid aan elkaar te koppelen; wordt niet opgeslagen.
+  const [manualBegin, setManualBegin] = useState("");
   const [yieldQuantity, setYieldQuantity] = useState(
     initialRecipe?.yield_quantity?.toString() ?? ""
   );
@@ -1142,6 +1146,10 @@ export function RecipeForm({
       const converted = (Number(yieldQuantity) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
       setYieldQuantity(String(Math.round(converted * 10000) / 10000));
     }
+    if (prev && next && prev.dimension === next.dimension && Number(manualBegin.replace(",", ".")) > 0) {
+      const b = (Number(manualBegin.replace(",", ".")) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
+      setManualBegin(String(Math.round(b * 10000) / 10000));
+    }
     setBaseUnitId(nextUnitId);
   }
 
@@ -1637,20 +1645,25 @@ export function RecipeForm({
           )}
 
           {recipeKind === "halfproduct" && (() => {
-            const begin = computedYieldFromIngredients;
+            const begin: number | null = yieldAutoReliable
+              ? computedYieldFromIngredients
+              : Number(manualBegin.replace(",", ".")) > 0
+              ? Number(manualBegin.replace(",", "."))
+              : null;
             const endQty = yieldQuantityNum;
             const derivedLoss =
-              yieldAutoReliable && begin !== null && begin > 0 && endQty > 0
+              begin !== null && begin > 0 && endQty > 0
                 ? Math.round((1 - endQty / begin) * 1000) / 10
                 : null;
             const unitLabel = baseUnitName ?? "eenheid";
             const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 3 });
-            function commitLoss() {
-              const raw = lossDraft;
-              setLossDraft(null);
-              if (raw === null || raw.trim() === "" || !yieldAutoReliable || begin === null || begin <= 0) return;
+            // Verlies-% en bruikbare hoeveelheid rekenen live naar elkaar:
+            // typ je het een, dan past het ander direct mee aan.
+            function onLossChange(raw: string) {
+              setLossDraft(raw);
+              if (begin === null || begin <= 0) return;
               const pct = Number(raw.replace(",", "."));
-              if (!Number.isFinite(pct) || pct >= 100) return;
+              if (raw.trim() === "" || !Number.isFinite(pct) || pct >= 100) return;
               // Negatief = gewichtstoename (bv. rijst die water opneemt).
               setYieldManual(true);
               setYieldQuantity(String(Math.round(begin * (1 - pct / 100) * 1000) / 1000));
@@ -1671,22 +1684,36 @@ export function RecipeForm({
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <p className="text-xs text-muted">Beginhoeveelheid (berekend)</p>
-                    <p className="tabular text-sm font-medium">
-                      {yieldAutoReliable && begin !== null ? `${fmt(begin)} ${unitLabel}` : "niet te berekenen"}
+                    <p className="text-xs text-muted">
+                      Beginhoeveelheid ({yieldAutoReliable ? "berekend" : "zelf invullen"})
                     </p>
-                    {!yieldAutoReliable && (
-                      <p className="text-xs text-copper">
-                        {yieldSkippedCount > 0
-                          ? `${yieldSkippedCount} regel(s) staan in een eenheid die niet naar ${unitLabel} om te rekenen is (bv. liters naar kilo's). `
-                          : ""}
-                        Vul de eindopbrengst zelf in.
+                    {yieldAutoReliable && begin !== null ? (
+                      <p className="tabular text-sm font-medium">
+                        {fmt(begin)} {unitLabel}
                       </p>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          aria-label="Beginhoeveelheid"
+                          placeholder="optioneel"
+                          value={manualBegin}
+                          onChange={(e) => setManualBegin(e.target.value)}
+                          className="input h-8"
+                        />
+                        <p className="text-xs text-copper">
+                          {yieldSkippedCount > 0
+                            ? `${yieldSkippedCount} regel(s) staan in een eenheid die niet naar ${unitLabel} om te rekenen is (bv. liters naar kilo's). `
+                            : ""}
+                          Vul de bruikbare hoeveelheid zelf in. Met een beginhoeveelheid kun je ook met een verlies-% rekenen.
+                        </p>
+                      </>
                     )}
                   </div>
                   <div>
                     <label className="text-xs text-muted" htmlFor="eindopbrengst">
-                      Eindopbrengst *
+                      Bruikbare hoeveelheid (eindopbrengst) *
                     </label>
                     <div className="flex items-center gap-1">
                       <input
@@ -1699,6 +1726,7 @@ export function RecipeForm({
                         onChange={(e) => {
                           setYieldQuantity(e.target.value);
                           setYieldManual(true);
+                          setLossDraft(null);
                         }}
                         className="input h-8 min-w-0 flex-1"
                       />
@@ -1745,27 +1773,23 @@ export function RecipeForm({
                   </div>
                   <div>
                     <label className="text-xs text-muted" htmlFor="bereidingsverlies">
-                      Bereidingsverlies / reductie (%)
+                      Verlies / reductie (%)
                     </label>
                     <input
                       id="bereidingsverlies"
                       type="text"
                       inputMode="decimal"
-                      disabled={!yieldAutoReliable || begin === null || begin <= 0}
+                      disabled={begin === null || begin <= 0}
                       placeholder={derivedLoss === null ? "optioneel" : undefined}
                       value={lossDraft ?? (derivedLoss === null ? "" : String(derivedLoss))}
-                      onChange={(e) => setLossDraft(e.target.value)}
-                      onBlur={commitLoss}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commitLoss();
-                        }
-                      }}
+                      onChange={(e) => onLossChange(e.target.value)}
+                      onBlur={() => setLossDraft(null)}
                       className="input h-8"
                     />
                     <p className="text-xs text-muted">
-                      Optioneel. Negatief = gewichtstoename.
+                      {begin === null
+                        ? "Vul eerst een beginhoeveelheid in."
+                        : "Gekoppeld aan de bruikbare hoeveelheid. Negatief = gewichtstoename."}
                     </p>
                   </div>
                   {canViewFinancial && (
