@@ -91,13 +91,33 @@ export function IngredientSearch({
   companyId,
   onPick,
   onPickMore,
+  open: controlledOpen,
+  onOpenChange,
+  initialQuery,
+  hideTrigger = false,
 }: {
   companyId: string | null;
   onPick: (picked: PickedIngredient) => void;
   onPickMore?: (picked: PickedIngredient) => void;
+  /** Laat de ouder bepalen wanneer het venster open is (bv. bij een regel
+   * die uit het tekstveld komt en nog gekoppeld moet worden). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Zoekterm waarmee het venster opent, bv. de ingetypte ingrediëntnaam. */
+  initialQuery?: string;
+  /** Geen eigen zoekknop tonen; de ouder opent het venster zelf. */
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (value: boolean) => {
+    setInternalOpen(value);
+    onOpenChange?.(value);
+  };
+  // Wat de gebruiker typte; zolang er niets getypt is geldt de meegegeven
+  // zoekterm (de naam uit het tekstveld).
+  const [typedQuery, setQuery] = useState<string | null>(null);
+  const query = typedQuery ?? initialQuery ?? "";
   const [results, setResults] = useState<SearchRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +136,7 @@ export function IngredientSearch({
   useEffect(() => {
     if (!open) return;
     inputRef.current?.focus();
+    inputRef.current?.select();
   }, [open]);
 
   useEffect(() => {
@@ -158,7 +179,7 @@ export function IngredientSearch({
 
   function close() {
     setOpen(false);
-    setQuery("");
+    setQuery(null);
     setResults([]);
     setAdded([]);
     usedFirstPick.current = false;
@@ -209,14 +230,16 @@ export function IngredientSearch({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-9 w-full items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-left text-sm text-muted hover:border-teal"
-      >
-        <Search className="h-3.5 w-3.5 shrink-0" />
-        Ingrediënt zoeken…
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex h-9 w-full items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-left text-sm text-muted hover:border-teal"
+        >
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          Ingrediënt zoeken…
+        </button>
+      )}
 
       {open && (
         <div

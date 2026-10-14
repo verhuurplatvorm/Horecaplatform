@@ -7,6 +7,8 @@ import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Package,
   SoupIcon,
@@ -25,6 +27,11 @@ import { RecipeHistory } from "@/components/recipes/recipe-history";
 import { RecipeFinancialTable } from "@/components/recipes/recipe-financial-table";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { IngredientSearch, type PickedIngredient } from "@/components/recipes/ingredient-search";
+import { IngredientTextInput } from "@/components/recipes/ingredient-text-input";
+import {
+  parseIngredientText,
+  type ParsedIngredientLine,
+} from "@/lib/recipes/parse-ingredient-line";
 import type {
   Recipe,
   RecipeIngredient,
@@ -33,7 +40,21 @@ import type {
   Unit,
 } from "@/lib/types/database";
 
+let rowUidCounter = 0;
+/** Vaste sleutel per regel in het scherm (niet opgeslagen), zodat een regel
+ * die nog gezocht wordt altijd de juiste blijft, ook als er intussen regels
+ * bijkomen of wegvallen. */
+function newRowUid() {
+  rowUidCounter += 1;
+  return `r${rowUidCounter}`;
+}
+
+/** Voortgang van de automatische herkenning van een uit tekst ingevoerde regel. */
+type MatchState = "zoekt" | "meerdere" | "onbekend";
+
 interface IngredientRow {
+  uid: string;
+  matchState?: MatchState;
   id?: string;
   type: "ingrediënt" | "halfproduct";
   refId: string | null;
@@ -89,7 +110,7 @@ export function RecipeForm({
   const canViewFinancial = can(
     recipeKind === "halfproduct" ? "halfproducten" : "recepturen"
   ).canViewFinancial;
-  const [formTab, setFormTab] = useState<"algemeen" | "financieel" | "voeding" | "gebruikt" | "historie">("algemeen");
+  const [formTab, setFormTab] = useState<"algemeen" | "financieel" | "voeding" | "galerij" | "gebruikt" | "historie">("algemeen");
   const [name, setName] = useState(initialRecipe?.name ?? "");
   const [category, setCategory] = useState(initialRecipe?.category ?? "");
   const [preparation, setPreparation] = useState(
@@ -158,6 +179,7 @@ export function RecipeForm({
   const [rows, setRows] = useState<IngredientRow[]>(
     initialIngredients.length > 0
       ? initialIngredients.map((ri) => ({
+          uid: newRowUid(),
           id: ri.id,
           type: ri.sub_recipe_id ? "halfproduct" : "ingrediënt",
           refId: ri.product_id ?? ri.sub_recipe_id,
@@ -672,7 +694,7 @@ export function RecipeForm({
 
   function duplicateRow(index: number) {
     setRows((prev) => {
-      const copy = { ...prev[index], id: undefined };
+      const copy = { ...prev[index], id: undefined, uid: newRowUid() };
       const next = [...prev];
       next.splice(index + 1, 0, copy);
       return next;
@@ -785,8 +807,13 @@ export function RecipeForm({
     // bv. de ene olie naar de andere blijft "100 milliliter" gewoon staan.
     const currentUnit = rows[index]?.unitId ? unitsById.get(rows[index].unitId!) : null;
     const newBaseUnit = picked.baseUnitId ? unitsById.get(picked.baseUnitId) : null;
+    // Een regel uit het tekstveld die nog niet gekoppeld was houdt de
+    // eenheid die de kok zelf typte, ook als die (nog) niet omgerekend kan
+    // worden — de regel meldt dat dan zelf.
     const keepUnit =
-      currentUnit && newBaseUnit && currentUnit.dimension === newBaseUnit.dimension;
+      currentUnit &&
+      ((newBaseUnit && currentUnit.dimension === newBaseUnit.dimension) ||
+        (rows[index]?.unmatchedName && !rows[index]?.refId));
     const nextUnitId = keepUnit ? rows[index].unitId : picked.baseUnitId;
 
     updateRow(index, {
@@ -798,6 +825,7 @@ export function RecipeForm({
       baseUnitId: picked.baseUnitId,
       yieldQuantity: picked.yieldQuantity ?? null,
       unitId: nextUnitId,
+      matchState: undefined,
     });
     if (picked.type === "ingrediënt") loadProductPrice(picked.id);
     else loadHalfproductCost(picked.id);
@@ -844,6 +872,217 @@ export function RecipeForm({
     else loadHalfproductCost(picked.id);
   }
 
+  // ---------------------------------------------------------------------
+  // Tekstinvoer: "2000 ml kookwijn wit" → regel met hoeveelheid, eenheid en
+  // (als het zeker is) een koppeling aan het echte ingrediënt-ID.
+  // De tekst zelf wordt nooit bewaard; alleen de gekoppelde regels tellen.
+  // ---------------------------------------------------------------------
+  const unitByKey = useMemo(() => new Map(units.map((u) => [u.key, u])), [units]);
+  // Welke regel het zoekvenster nu open heeft (er is er maximaal één).
+  const [searchUid, setSearchUid] = useState<string | null>(null);
+  const [textEditOpen, setTextEditOpen] = useState(false);
+  const [multiplyOpen, setMultiplyOpen] = useState(false);
+  const [multiplyFactor, setMultiplyFactor] = useState("2");
+  const [multiplyMessage, setMultiplyMessage] = useState<string | null>(null);
+
+  function isEmptyRow(r: IngredientRow) {
+    return !r.refId && !r.unmatchedName && !r.quantity.trim() && !r.note.trim();
+  }
+
+  function normalizeName(value: string) {
+    return value.toLowerCase().replace(/\s+/g, " ").trim();
+  }
+
+  function rowFromParsedLine(line: ParsedIngredientLine): IngredientRow {
+    const unit = line.unitKey ? unitByKey.get(line.unitKey) : null;
+    return {
+      ...emptyRow(),
+      unmatchedName: line.name || line.raw,
+      quantity: line.quantity !== null ? String(line.quantity) : "",
+      unitId: unit?.id ?? null,
+      // Een eenheid die we niet kennen (tl, snufje, …) gaat niet verloren
+      // maar komt als opmerking op de regel.
+      note: line.unknownUnit ? `${line.quantity ?? ""} ${line.unknownUnit}`.trim() : "",
+      matchState: "zoekt",
+    };
+  }
+
+  /**
+   * Zoekt de bij een ingetypte naam passende ingrediënt of halfproduct en
+   * koppelt alleen als het ZEKER is: precies één exacte treffer, of
+   * (zonder exacte) precies één naam die ermee begint.
+   * Bij meerdere of geen treffers blijft de regel open voor een keuze.
+   */
+  async function resolveRow(uid: string, name: string): Promise<"gekoppeld" | "meerdere" | "onbekend"> {
+    const trimmed = name.trim();
+    const finish = (patch: Partial<IngredientRow>) =>
+      setRows((prev) => prev.map((r) => (r.uid === uid && !r.refId ? { ...r, ...patch } : r)));
+
+    if (trimmed.length < 2) {
+      finish({ matchState: "onbekend" });
+      return "onbekend";
+    }
+    const supabase = createClient();
+    const { data, error: rpcError } = await supabase.rpc("search_ingredients_picker", {
+      p_search: trimmed,
+      p_company_id: referenceCompanyId,
+      p_limit: 8,
+    });
+    if (rpcError || !data) {
+      finish({ matchState: "onbekend" });
+      return "onbekend";
+    }
+    const hits = data as {
+      kind: "ingrediënt" | "halfproduct";
+      id: string;
+      name: string;
+      custom_name: string | null;
+      base_unit_id: string | null;
+      yield_quantity: number | null;
+      match_rank: number;
+    }[];
+    if (hits.length === 0) {
+      finish({ matchState: "onbekend" });
+      return "onbekend";
+    }
+    // Eén exacte treffer (naam, synoniem of artikelnummer) wint van namen
+    // die er alleen mee beginnen. Is er geen exacte, dan koppelen we alleen
+    // als er precies één naam is die ermee begint.
+    const exact = hits.filter((h) => h.match_rank === 0);
+    const startsWith = hits.filter((h) => h.match_rank === 1);
+    const sure = exact.length === 1 ? exact : exact.length === 0 ? startsWith : [];
+    if (sure.length !== 1) {
+      finish({ matchState: "meerdere" });
+      return "meerdere";
+    }
+    const hit = sure[0];
+    setRows((prev) =>
+      prev.map((r) =>
+        r.uid === uid && !r.refId
+          ? {
+              ...r,
+              type: hit.kind,
+              refId: hit.id,
+              refName: hit.custom_name?.trim() || hit.name,
+              unmatchedName: null,
+              unmatchedArticleNumber: null,
+              baseUnitId: hit.base_unit_id,
+              yieldQuantity: hit.yield_quantity ?? null,
+              unitId: r.unitId ?? hit.base_unit_id,
+              matchState: undefined,
+            }
+          : r
+      )
+    );
+    if (hit.kind === "ingrediënt") void loadProductPrice(hit.id);
+    else void loadHalfproductCost(hit.id);
+    return "gekoppeld";
+  }
+
+  /** Meerdere zoekopdrachten tegelijk, maar niet honderd tegelijk. */
+  async function resolveMany(items: { uid: string; name: string }[]) {
+    const results: ("gekoppeld" | "meerdere" | "onbekend")[] = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await resolveRow(items[i].uid, items[i].name);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker));
+    return results;
+  }
+
+  async function addText(text: string) {
+    const lines = parseIngredientText(text);
+    if (lines.length === 0) return;
+    const newRows = lines.map(rowFromParsedLine);
+    // Lege startregels maken plaats voor de nieuwe regels.
+    setRows((prev) => [...prev.filter((r) => !isEmptyRow(r)), ...newRows]);
+    const results = await resolveMany(
+      newRows.map((r) => ({ uid: r.uid, name: r.unmatchedName ?? "" }))
+    );
+    // Eén regel getypt en niet zeker herkend: meteen het zoekvenster erbij.
+    if (newRows.length === 1 && results[0] !== "gekoppeld") setSearchUid(newRows[0].uid);
+  }
+
+  function rowsToText() {
+    return rows
+      .filter((r) => !isEmptyRow(r))
+      .map((r) => {
+        const unit = r.unitId ? unitsById.get(r.unitId) : null;
+        const unitText = unit ? (unit.key === "stuk" ? "stuks" : unit.key) : "";
+        return [r.quantity, unitText, r.refName ?? r.unmatchedName ?? ""].filter(Boolean).join(" ");
+      })
+      .join("\n");
+  }
+
+  /**
+   * Tekst bewerken en toepassen. Een regel met dezelfde ingrediëntnaam als
+   * een bestaande regel behoudt zijn koppeling, verlies %, optioneel en
+   * opmerking; alleen hoeveelheid en eenheid worden overgenomen. Nieuwe
+   * namen gaan door de gewone herkenning.
+   */
+  async function applyTextEdit(text: string) {
+    const lines = parseIngredientText(text);
+    const pool = rows.filter((r) => !isEmptyRow(r)).map((row) => ({ row, used: false }));
+    const next: IngredientRow[] = [];
+    const fresh: IngredientRow[] = [];
+    for (const line of lines) {
+      const key = normalizeName(line.name);
+      const hit = pool.find(
+        (p) => !p.used && normalizeName(p.row.refName ?? p.row.unmatchedName ?? "") === key
+      );
+      if (hit) {
+        hit.used = true;
+        const unit = line.unitKey ? unitByKey.get(line.unitKey) : null;
+        next.push({
+          ...hit.row,
+          quantity: line.quantity !== null ? String(line.quantity) : hit.row.quantity,
+          unitId: unit?.id ?? hit.row.unitId,
+        });
+      } else {
+        const created = rowFromParsedLine(line);
+        next.push(created);
+        fresh.push(created);
+      }
+    }
+    const removed = pool.filter((p) => !p.used).length;
+    if (
+      removed > 0 &&
+      !window.confirm(`${removed} regel(s) staan niet meer in de tekst en worden uit het recept gehaald. Doorgaan?`)
+    ) {
+      return;
+    }
+    setRows(next.length > 0 ? next : [emptyRow()]);
+    setTextEditOpen(false);
+    await resolveMany(fresh.map((r) => ({ uid: r.uid, name: r.unmatchedName ?? "" })));
+  }
+
+  function applyMultiply() {
+    const factor = Number(multiplyFactor.replace(",", "."));
+    if (!Number.isFinite(factor) || factor <= 0) {
+      setMultiplyMessage("Vul een getal groter dan 0 in.");
+      return;
+    }
+    setRows((prev) =>
+      prev.map((r) => {
+        const q = parseFloat(r.quantity);
+        if (!Number.isFinite(q)) return r;
+        return { ...r, quantity: String(Math.round(q * factor * 10000) / 10000) };
+      })
+    );
+    // Bij een halfproduct schaalt de opbrengst mee, anders klopt de prijs
+    // per kilo/liter niet meer.
+    if (recipeKind === "halfproduct" && Number(yieldQuantity) > 0) {
+      setYieldQuantity(String(Math.round(Number(yieldQuantity) * factor * 10000) / 10000));
+    }
+    setMultiplyMessage(
+      `Alle hoeveelheden zijn × ${factor.toLocaleString("nl-NL")} gedaan. Controleer en klik op Opslaan; Annuleren zet alles terug.`
+    );
+    setMultiplyOpen(false);
+  }
+
   async function handleSubmit(e: React.FormEvent, publishStatus?: RecipeStatus) {
     e.preventDefault();
     setError(null);
@@ -853,6 +1092,13 @@ export function RecipeForm({
 
     if (validRows.length === 0) {
       setError("Voeg minimaal één ingrediënt of halfproduct toe.");
+      return;
+    }
+
+    if (finalStatus === "goedgekeurd" && rows.some((r) => !r.refId && !isEmptyRow(r))) {
+      setError(
+        "Kan niet publiceren: één of meer ingrediënten zijn nog niet aan een product gekoppeld. Kies ze in het zoekvenster, of sla op als concept."
+      );
       return;
     }
 
@@ -933,6 +1179,7 @@ export function RecipeForm({
         product_id: r.type === "ingrediënt" ? r.refId : null,
         sub_recipe_id: r.type === "halfproduct" ? r.refId : null,
         unmatched_name: !r.refId ? r.unmatchedName : null,
+        unmatched_article_number: !r.refId ? r.unmatchedArticleNumber : null,
         quantity: Number(r.quantity),
         unit_id: r.unitId,
         unit: "",
@@ -1006,7 +1253,7 @@ export function RecipeForm({
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {!lockedKind && (
             <Field label="Soort" required>
               <select
@@ -1155,6 +1402,11 @@ export function RecipeForm({
                   </p>
                 )}
               </Field>
+              <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
+                <summary className="cursor-pointer text-sm font-medium text-foreground">
+                  Houdbaarheid, arbeid en overige instellingen
+                </summary>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <Field label="Houdbaarheid (dagen)">
                 <input
                   type="number"
@@ -1228,25 +1480,34 @@ export function RecipeForm({
                   className="input"
                 />
               </Field>
+                </div>
+              </details>
             </>
           )}
 
-          <Field label="Foto (URL)">
-            <input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} className="input" />
-          </Field>
-          <Field label="Bereidingswijze" span2>
+        </CardContent>
+      </Card>
+  );
+
+  const bereidingCard = (
+      <Card>
+        <CardHeader>
+          <CardTitle>Bereiding &amp; opmaak</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Field label="Bereidingswijze">
             <textarea
               value={preparation}
               onChange={(e) => setPreparation(e.target.value)}
-              rows={3}
+              rows={4}
               className="input"
             />
           </Field>
-          <Field label="Opmaakinstructies" span2>
+          <Field label="Opmaakinstructies / opslag">
             <textarea
               value={platingInstructions}
               onChange={(e) => setPlatingInstructions(e.target.value)}
-              rows={2}
+              rows={4}
               className="input"
             />
           </Field>
@@ -1254,17 +1515,54 @@ export function RecipeForm({
       </Card>
   );
 
+  const galerijCard = (
+      <Card>
+        <CardHeader>
+          <CardTitle>Galerij</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Field label="Foto (URL)">
+            <input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} className="input" />
+          </Field>
+          {photoUrl.trim() ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={photoUrl.trim()}
+              alt={name || "Foto"}
+              className="max-h-64 rounded-md border border-border object-contain"
+            />
+          ) : (
+            <p className="text-sm text-muted">Nog geen foto toegevoegd.</p>
+          )}
+        </CardContent>
+      </Card>
+  );
+
   const unmatchedCount = rows.filter((r) => !r.refId && r.unmatchedName).length;
+
+  // Status onder het invoerveld: groen = alles herkend, oranje = er wordt
+  // gezocht, rood = minstens één ingrediënt is niet herkend.
+  const filledRows = rows.filter((r) => !isEmptyRow(r));
+  const searchingCount = filledRows.filter((r) => !r.refId && r.matchState === "zoekt").length;
+  const unrecognizedRows = filledRows.filter((r) => !r.refId && r.matchState !== "zoekt");
+  const recognitionStatus: "leeg" | "groen" | "oranje" | "rood" =
+    filledRows.length === 0
+      ? "leeg"
+      : searchingCount > 0
+      ? "oranje"
+      : unrecognizedRows.length > 0
+      ? "rood"
+      : "groen";
 
   const ingredientenCard = (
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>
             {recipeKind === "gerecht" ? "Ingrediënten & halfproducten" : "Ingrediënten"}
           </CardTitle>
-          {unmatchedCount > 0 && (
-            <div className="flex items-center gap-2">
-              {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
+          <div className="flex flex-wrap items-center gap-2">
+            {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
+            {unmatchedCount > 0 && (
               <Button
                 type="button"
                 variant="secondary"
@@ -1274,8 +1572,23 @@ export function RecipeForm({
               >
                 {rematching ? "Bezig…" : "Opnieuw zoeken in Ingrediënten"}
               </Button>
-            </div>
-          )}
+            )}
+            {filledRows.length > 0 && !textEditOpen && (
+              <Button type="button" variant="secondary" size="sm" onClick={() => setTextEditOpen(true)}>
+                Als tekst bewerken
+              </Button>
+            )}
+            {recipeKind === "halfproduct" && filledRows.length > 0 && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setMultiplyOpen((v) => !v)}
+              >
+                Receptuur vermenigvuldigen
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {!referenceCompanyId && (
@@ -1284,76 +1597,133 @@ export function RecipeForm({
               kostprijzen te zien tijdens het invoeren.
             </p>
           )}
-          {rows.length > 0 && (
+
+          {multiplyOpen && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-2 text-sm">
+              <span>Alle hoeveelheden (en de opbrengst) vermenigvuldigen met</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={multiplyFactor}
+                onChange={(e) => setMultiplyFactor(e.target.value)}
+                className="h-8 w-20 rounded-md border border-border bg-surface px-2"
+                aria-label="Vermenigvuldigingsfactor"
+              />
+              <Button type="button" size="sm" onClick={applyMultiply}>
+                Toepassen
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setMultiplyOpen(false)}>
+                Sluiten
+              </Button>
+            </div>
+          )}
+          {multiplyMessage && <p className="text-xs text-teal">{multiplyMessage}</p>}
+
+          {textEditOpen ? (
+            <IngredientTextInput
+              mode="edit"
+              initialText={rowsToText()}
+              onAdd={applyTextEdit}
+              onCancel={() => setTextEditOpen(false)}
+            />
+          ) : (
+            <>
+              {filledRows.length > 0 && (
+                <div className="space-y-1.5">
+                  {rows.map((row, i) =>
+                    isEmptyRow(row) ? null : (
+                    <IngredientLine
+                      key={row.uid}
+                      row={row}
+                      units={unitsForDimension(row.baseUnitId, row.type === "ingrediënt" ? row.refId : null)}
+                      currentUnit={row.unitId ? unitsById.get(row.unitId) ?? null : null}
+                      cost={lineCosts[i]}
+                      canViewFinancial={canViewFinancial}
+                      priceDirection={
+                        row.type === "ingrediënt" && row.refId
+                          ? productPrices.get(row.refId)?.priceDirection ?? null
+                          : null
+                      }
+                      purchasePrice={
+                        row.type === "ingrediënt" && row.refId
+                          ? productPrices.get(row.refId)?.purchasePrice ?? null
+                          : null
+                      }
+                      packagingDescription={
+                        row.type === "ingrediënt" && row.refId
+                          ? productPrices.get(row.refId)?.packagingDescription ?? null
+                          : null
+                      }
+                      conversionNote={
+                        row.type === "ingrediënt" && row.refId
+                          ? describeConversion(
+                              productPrices.get(row.refId),
+                              row.unitId ? unitsById.get(row.unitId) : null,
+                              unitsById
+                            )
+                          : null
+                      }
+                      isDuplicate={duplicateIndexes.has(i)}
+                      isIncomplete={incompleteLineIndexes.includes(i)}
+                      companyId={referenceCompanyId}
+                      searchOpen={searchUid === row.uid}
+                      onSearchOpenChange={(open) => setSearchUid(open ? row.uid : null)}
+                      onChange={(patch) => updateRow(i, patch)}
+                      onRemove={() => removeRow(i)}
+                      onDuplicate={() => duplicateRow(i)}
+                      onMoveUp={() => moveRow(i, -1)}
+                      onMoveDown={() => moveRow(i, 1)}
+                      onPick={(picked) => handlePick(i, picked)}
+                      onPickMore={addPickedRow}
+                    />
+                    )
+                  )}
+                </div>
+              )}
+
+              <IngredientTextInput onAdd={addText} />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <IngredientSearch
+                  companyId={referenceCompanyId}
+                  onPick={addPickedRow}
+                  onPickMore={addPickedRow}
+                />
+              </div>
+            </>
+          )}
+
+          {recognitionStatus !== "leeg" && (
             <div
-              className={`hidden grid-cols-2 gap-2 px-3 text-xs font-medium uppercase tracking-wide text-muted sm:grid ${
-                canViewFinancial ? "sm:grid-cols-7" : "sm:grid-cols-5"
+              role="status"
+              className={`flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                recognitionStatus === "groen"
+                  ? "border-success/40 bg-success/10 text-success"
+                  : recognitionStatus === "oranje"
+                  ? "border-copper/40 bg-copper/10 text-copper"
+                  : "border-danger/40 bg-danger/10 text-danger"
               }`}
             >
-              <span>Hoeveelheid</span>
-              <span>Eenheid</span>
-              <span>Verlies %</span>
-              <span>Optioneel</span>
-              <span>Opmerking</span>
-              {canViewFinancial && (
-                <>
-                  <span className="text-right">Prijs/eenheid</span>
-                  <span className="text-right">Totale kostprijs</span>
-                </>
+              <span className="font-medium">
+                {recognitionStatus === "groen" &&
+                  `Alle ${filledRows.length} ingrediënten zijn herkend en gekoppeld.`}
+                {recognitionStatus === "oranje" &&
+                  `Ingrediënten worden gezocht… (${searchingCount} nog bezig)`}
+                {recognitionStatus === "rood" &&
+                  `${unrecognizedRows.length} ingrediënt${unrecognizedRows.length === 1 ? "" : "en"} niet herkend — kies er een uit de database of maak een nieuw ingrediënt aan.`}
+              </span>
+              {recognitionStatus === "rood" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setSearchUid(unrecognizedRows[0].uid)}
+                >
+                  Eerste oplossen
+                </Button>
               )}
             </div>
           )}
-          {rows.map((row, i) => (
-            <IngredientLine
-              key={i}
-              row={row}
-              units={unitsForDimension(row.baseUnitId, row.type === "ingrediënt" ? row.refId : null)}
-              cost={lineCosts[i]}
-              canViewFinancial={canViewFinancial}
-              priceDirection={
-                row.type === "ingrediënt" && row.refId
-                  ? productPrices.get(row.refId)?.priceDirection ?? null
-                  : null
-              }
-              purchasePrice={
-                row.type === "ingrediënt" && row.refId
-                  ? productPrices.get(row.refId)?.purchasePrice ?? null
-                  : null
-              }
-              packagingDescription={
-                row.type === "ingrediënt" && row.refId
-                  ? productPrices.get(row.refId)?.packagingDescription ?? null
-                  : null
-              }
-              conversionNote={
-                row.type === "ingrediënt" && row.refId
-                  ? describeConversion(
-                      productPrices.get(row.refId),
-                      row.unitId ? unitsById.get(row.unitId) : null,
-                      unitsById
-                    )
-                  : null
-              }
-              isDuplicate={duplicateIndexes.has(i)}
-              isIncomplete={incompleteLineIndexes.includes(i)}
-              companyId={referenceCompanyId}
-              onChange={(patch) => updateRow(i, patch)}
-              onRemove={() => removeRow(i)}
-              onDuplicate={() => duplicateRow(i)}
-              onMoveUp={() => moveRow(i, -1)}
-              onMoveDown={() => moveRow(i, 1)}
-              onPick={(picked) => handlePick(i, picked)}
-              onPickMore={addPickedRow}
-            />
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => setRows((prev) => [...prev, emptyRow()])}
-          >
-            Regel toevoegen
-          </Button>
         </CardContent>
       </Card>
   );
@@ -1767,7 +2137,8 @@ export function RecipeForm({
         const tabs: { key: typeof formTab; label: string }[] = [
           { key: "algemeen", label: "Algemeen" },
           ...(canViewFinancial ? [{ key: "financieel" as const, label: "Financieel" }] : []),
-          { key: "voeding", label: "Voedingswaarden & allergenen" },
+          { key: "voeding", label: "Voedingswaarde" },
+          { key: "galerij", label: "Galerij" },
           ...(gebruiktInCard ? [{ key: "gebruikt" as const, label: "Gebruik" }] : []),
           ...(isEdit ? [{ key: "historie" as const, label: "Historie" }] : []),
         ];
@@ -1797,6 +2168,10 @@ export function RecipeForm({
       <div className={formTab === "algemeen" ? "space-y-4" : "hidden"}>
         {basisgegevensCard}
         {ingredientenCard}
+        {bereidingCard}
+      </div>
+      <div className={formTab === "galerij" ? "space-y-4" : "hidden"}>
+        {galerijCard}
       </div>
       <div className={formTab === "voeding" ? "space-y-4" : "hidden"}>
         {allergenenCard}
@@ -1858,6 +2233,7 @@ export function RecipeForm({
 
 function emptyRow(): IngredientRow {
   return {
+    uid: newRowUid(),
     type: "ingrediënt",
     refId: null,
     refName: null,
@@ -2027,6 +2403,9 @@ function IngredientLine({
   isDuplicate,
   isIncomplete,
   companyId,
+  currentUnit,
+  searchOpen,
+  onSearchOpenChange,
   onChange,
   onRemove,
   onDuplicate,
@@ -2046,6 +2425,9 @@ function IngredientLine({
   isDuplicate: boolean;
   isIncomplete: boolean;
   companyId: string | null;
+  currentUnit: Unit | null;
+  searchOpen: boolean;
+  onSearchOpenChange: (open: boolean) => void;
   onChange: (patch: Partial<IngredientRow>) => void;
   onRemove: () => void;
   onDuplicate: () => void;
@@ -2054,192 +2436,223 @@ function IngredientLine({
   onPick: (picked: PickedIngredient) => void;
   onPickMore?: (picked: PickedIngredient) => void;
 }) {
+  // Verlies %, optioneel en opmerking staan ingeklapt tenzij ze gevuld zijn.
+  const [expanded, setExpanded] = useState(
+    Boolean(row.lossPercentage || row.isOptional || row.note)
+  );
   const qty = parseFloat(row.quantity);
   const pricePerUnit =
     cost !== null && Number.isFinite(qty) && qty > 0 ? cost / qty : null;
   const unitName = units.find((u) => u.id === row.unitId)?.name ?? null;
 
-  const isUnmatched = !row.refId && !!row.unmatchedName;
+  const isLinked = Boolean(row.refId);
+  const isSearching = !isLinked && row.matchState === "zoekt";
+  const label = row.refName ?? row.unmatchedName ?? "";
+
+  // Een eenheid die uit de tekst komt maar niet bij dit ingrediënt past,
+  // blijft zichtbaar in de keuzelijst zodat niets stilzwijgend verandert.
+  const currentUnitMissing = currentUnit && !units.some((u) => u.id === currentUnit.id);
+
+  const statusColor = isLinked
+    ? "bg-success"
+    : isSearching
+    ? "bg-copper animate-pulse"
+    : "bg-danger";
+  const statusText = isLinked
+    ? "Gekoppeld aan een ingrediënt"
+    : isSearching
+    ? "Wordt gezocht…"
+    : row.matchState === "meerdere"
+    ? "Meerdere mogelijkheden — kies het juiste ingrediënt"
+    : "Niet herkend — kies een ingrediënt of maak een nieuw aan";
 
   return (
     <div
-      className={`rounded-md border p-3 ${
-        isUnmatched
-          ? "border-danger/50 bg-danger/5"
+      className={`rounded-md border px-2 py-1.5 ${
+        !isLinked && !isSearching
+          ? "border-danger/40 bg-danger/5"
           : isDuplicate
           ? "border-copper/50 bg-copper/5"
           : "border-border"
       }`}
     >
-      <div className="mb-2 flex items-center gap-2">
-        <div className="flex flex-col gap-0.5">
-          <button type="button" onClick={onMoveUp} className="text-muted hover:text-foreground">
-            <ArrowUp className="h-3 w-3" />
-          </button>
-          <button type="button" onClick={onMoveDown} className="text-muted hover:text-foreground">
-            <ArrowDown className="h-3 w-3" />
-          </button>
-        </div>
-
-        <div className="flex-1">
-          {row.refId ? (
-            <div>
-              <span className="flex items-center gap-2 text-sm text-foreground">
-                {row.type === "ingrediënt" ? (
-                  <Package className="h-3.5 w-3.5 text-teal" />
-                ) : (
-                  <SoupIcon className="h-3.5 w-3.5 text-copper" />
-                )}
-                {row.refName}
-                {row.type === "halfproduct" && (
-                  <Link
-                    href={`/halfproducten/${row.refId}/bewerken`}
-                    target="_blank"
-                    className="text-xs text-teal hover:underline"
-                  >
-                    Halfproduct openen →
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChange({
-                      refId: null,
-                      refName: null,
-                      // Oude naam bewaren zodat de regel toont wat er
-                      // gekoppeld wás en nooit stilzwijgend leeg raakt.
-                      unmatchedName: row.refName,
-                      baseUnitId: null,
-                    })
-                  }
-                  className="text-xs text-muted hover:text-teal hover:underline"
-                  title="Ander ingrediënt koppelen"
-                >
-                  wijzig
-                </button>
-              </span>
-              {row.type === "ingrediënt" && (purchasePrice != null || packagingDescription) && (
-                <p className="ml-5 text-xs text-muted">
-                  {packagingDescription ?? "onbekende verpakking"}
-                  {canViewFinancial &&
-                    purchasePrice != null &&
-                    ` · € ${purchasePrice.toFixed(2)} inkoop`}
-                </p>
-              )}
-              {conversionNote && (
-                <p
-                  className="ml-5 text-xs text-teal"
-                  title="Deze omrekening is gebruikt om de kostprijs van deze regel te bepalen"
-                >
-                  omgerekend met {conversionNote}
-                </p>
-              )}
-            </div>
-          ) : row.unmatchedName ? (
-            <div className="space-y-1.5">
-              <span className="flex items-center gap-2 text-sm font-medium text-danger">
-                <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-                &quot;{row.unmatchedName}&quot; — nog niet gekoppeld
-              </span>
-              <IngredientSearch companyId={companyId} onPick={onPick} onPickMore={onPickMore} />
-              <Link
-                href={`/producten/nieuw?naam=${encodeURIComponent(row.unmatchedName)}`}
-                target="_blank"
-                className="text-xs text-teal hover:underline"
-              >
-                Of maak &quot;{row.unmatchedName}&quot; als nieuw ingrediënt aan →
-              </Link>
-            </div>
-          ) : (
-            <IngredientSearch companyId={companyId} onPick={onPick} onPickMore={onPickMore} />
-          )}
-        </div>
-
-        <button type="button" onClick={onDuplicate} className="text-muted hover:text-teal" title="Dupliceren">
-          <Copy className="h-4 w-4" />
-        </button>
-        <button type="button" onClick={onRemove} className="text-muted hover:text-danger" title="Verwijderen">
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
-
-      {isDuplicate && (
-        <p className="mb-2 flex items-center gap-1 text-xs text-copper">
-          <TriangleAlert className="h-3 w-3" />
-          Dit ingrediënt/halfproduct staat al op een andere regel.
-        </p>
-      )}
-
-      <div className={`grid grid-cols-2 gap-2 ${canViewFinancial ? "sm:grid-cols-7" : "sm:grid-cols-5"}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span
+          className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusColor}`}
+          title={statusText}
+          aria-label={statusText}
+        />
         <input
           type="number"
           step="any"
-          placeholder="Hoeveelheid"
+          placeholder="Hoeveel"
+          aria-label="Hoeveelheid"
           value={row.quantity}
           onChange={(e) => onChange({ quantity: e.target.value })}
-          className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+          className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-sm"
         />
         <select
+          aria-label="Eenheid"
           value={row.unitId ?? ""}
           onChange={(e) => onChange({ unitId: e.target.value || null })}
-          className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+          className="h-8 w-28 rounded-md border border-border bg-surface px-1.5 text-sm"
         >
           <option value="">Eenheid…</option>
+          {currentUnitMissing && currentUnit && (
+            <option value={currentUnit.id}>{currentUnit.name} (past niet bij ingrediënt)</option>
+          )}
           {units.map((u) => (
             <option key={u.id} value={u.id}>
               {u.name}
             </option>
           ))}
         </select>
-        {row.type === "ingrediënt" ? (
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Verlies %"
-            value={row.lossPercentage}
-            onChange={(e) => onChange({ lossPercentage: e.target.value })}
-            className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
-          />
-        ) : (
-          <div />
-        )}
-        <label className="flex h-8 items-center gap-1 text-xs text-muted">
-          <input
-            type="checkbox"
-            checked={row.isOptional}
-            onChange={(e) => onChange({ isOptional: e.target.checked })}
-          />
-          Optioneel
-        </label>
-        <input
-          placeholder="Opmerking"
-          value={row.note}
-          onChange={(e) => onChange({ note: e.target.value })}
-          className="h-8 rounded-md border border-border bg-surface px-2 text-xs sm:col-span-1"
-        />
+
+        <button
+          type="button"
+          onClick={() => onSearchOpenChange(true)}
+          className="flex min-w-[10rem] flex-1 items-center gap-1.5 truncate rounded-md px-1 py-1 text-left text-sm hover:bg-surface"
+          title={isLinked ? "Klik om een ander ingrediënt te kiezen" : statusText}
+        >
+          {isLinked ? (
+            row.type === "ingrediënt" ? (
+              <Package className="h-3.5 w-3.5 shrink-0 text-teal" />
+            ) : (
+              <SoupIcon className="h-3.5 w-3.5 shrink-0 text-copper" />
+            )
+          ) : (
+            <TriangleAlert
+              className={`h-3.5 w-3.5 shrink-0 ${isSearching ? "text-copper" : "text-danger"}`}
+            />
+          )}
+          <span className={`truncate ${isLinked ? "text-foreground" : isSearching ? "text-copper" : "font-medium text-danger"}`}>
+            {label || "Ingrediënt kiezen…"}
+          </span>
+          {!isLinked && !isSearching && (
+            <span className="shrink-0 text-xs text-danger">— kiezen</span>
+          )}
+          {isSearching && <span className="shrink-0 text-xs text-copper">zoeken…</span>}
+        </button>
+
         {canViewFinancial && (
-          <>
-            <div className="tabular flex h-8 items-center justify-end text-xs text-muted">
-              {cost !== null && pricePerUnit !== null
-                ? `€ ${pricePerUnit.toFixed(4)} / ${unitName ?? "eenh."}`
-                : "—"}
-            </div>
-            <div
-              className={`tabular flex h-8 items-center justify-end gap-1 text-xs font-medium ${
-                isIncomplete ? "text-copper" : "text-foreground"
-              }`}
-            >
-              {priceDirection === "up" && (
-                <TrendingUp className="h-3 w-3 shrink-0 text-danger" aria-label="Prijs recent gestegen" />
-              )}
-              {priceDirection === "down" && (
-                <TrendingDown className="h-3 w-3 shrink-0 text-success" aria-label="Prijs recent gedaald" />
-              )}
+          <div className="tabular flex w-28 shrink-0 items-center justify-end gap-1 text-sm font-medium">
+            {priceDirection === "up" && (
+              <TrendingUp className="h-3 w-3 shrink-0 text-danger" aria-label="Prijs recent gestegen" />
+            )}
+            {priceDirection === "down" && (
+              <TrendingDown className="h-3 w-3 shrink-0 text-success" aria-label="Prijs recent gedaald" />
+            )}
+            <span className={isIncomplete ? "text-copper" : "text-foreground"}>
               {cost !== null ? `€ ${cost.toFixed(4)}` : isIncomplete ? "onvolledig" : "—"}
-            </div>
-          </>
+            </span>
+          </div>
         )}
+
+        <div className="flex shrink-0 items-center gap-1">
+          <button type="button" onClick={onMoveUp} className="text-muted hover:text-foreground" title="Omhoog">
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onMoveDown} className="text-muted hover:text-foreground" title="Omlaag">
+            <ArrowDown className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onDuplicate} className="text-muted hover:text-teal" title="Regel kopiëren">
+            <Copy className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-muted hover:text-foreground"
+            title="Verlies %, optioneel en opmerking"
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+          <button type="button" onClick={onRemove} className="text-muted hover:text-danger" title="Regel verwijderen">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
+
+      {/* Onder de regel: alleen wat helpt bij controleren. */}
+      {(isLinked && row.type === "halfproduct") ||
+      (isLinked && (purchasePrice != null || packagingDescription)) ||
+      conversionNote ||
+      isDuplicate ? (
+        <div className="ml-4 mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
+          {isLinked && row.type === "halfproduct" && (
+            <Link
+              href={`/halfproducten/${row.refId}/bewerken`}
+              target="_blank"
+              className="text-teal hover:underline"
+            >
+              Halfproduct openen →
+            </Link>
+          )}
+          {isLinked && row.type === "ingrediënt" && (purchasePrice != null || packagingDescription) && (
+            <span>
+              {packagingDescription ?? "onbekende verpakking"}
+              {canViewFinancial && purchasePrice != null && ` · € ${purchasePrice.toFixed(2)} inkoop`}
+              {canViewFinancial && pricePerUnit !== null && ` · € ${pricePerUnit.toFixed(4)} / ${unitName ?? "eenh."}`}
+            </span>
+          )}
+          {conversionNote && (
+            <span
+              className="text-teal"
+              title="Deze omrekening is gebruikt om de kostprijs van deze regel te bepalen"
+            >
+              omgerekend met {conversionNote}
+            </span>
+          )}
+          {isDuplicate && (
+            <span className="flex items-center gap-1 text-copper">
+              <TriangleAlert className="h-3 w-3" />
+              staat al op een andere regel
+            </span>
+          )}
+        </div>
+      ) : null}
+
+      {expanded && (
+        <div className="ml-4 mt-1.5 flex flex-wrap items-center gap-2">
+          {row.type === "ingrediënt" && (
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Verlies %"
+              aria-label="Verlies %"
+              value={row.lossPercentage}
+              onChange={(e) => onChange({ lossPercentage: e.target.value })}
+              className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-sm"
+            />
+          )}
+          <label className="flex h-8 items-center gap-1 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={row.isOptional}
+              onChange={(e) => onChange({ isOptional: e.target.checked })}
+            />
+            Optioneel
+          </label>
+          <input
+            placeholder="Opmerking"
+            aria-label="Opmerking"
+            value={row.note}
+            onChange={(e) => onChange({ note: e.target.value })}
+            className="h-8 min-w-[12rem] flex-1 rounded-md border border-border bg-surface px-2 text-sm"
+          />
+        </div>
+      )}
+
+      {/* Het zoekvenster hoort bij deze regel en opent op de ingetypte naam. */}
+      <IngredientSearch
+        companyId={companyId}
+        open={searchOpen}
+        onOpenChange={onSearchOpenChange}
+        initialQuery={row.unmatchedName ?? undefined}
+        hideTrigger
+        onPick={onPick}
+        onPickMore={onPickMore}
+      />
     </div>
   );
 }
