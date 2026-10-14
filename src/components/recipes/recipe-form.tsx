@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useReturnNavigation } from "@/lib/use-return-navigation";
 import Link from "next/link";
@@ -578,6 +578,43 @@ export function RecipeForm({
     return skipped;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, baseUnitId, unitsById, productPrices]);
+
+  // Bestaand halfproduct waarvan de opbrengst al gelijk is aan de som van de
+  // ingrediënten: dat is gewoon "automatisch". Dat tonen we ook zo, zodat de
+  // standaard automatisch is en alleen echt afwijkende opbrengsten (jus,
+  // ingekookt, gebakken) als handmatig blijven staan. De waarde zelf
+  // verandert hierbij niet. Gebeurt één keer, zodra de som bekend is.
+  const yieldModeChecked = useRef(false);
+  useEffect(() => {
+    if (yieldModeChecked.current) return;
+    if (!initialRecipe || recipeKind !== "halfproduct") {
+      yieldModeChecked.current = true;
+      return;
+    }
+    if (!yieldManual) {
+      yieldModeChecked.current = true;
+      return;
+    }
+    const stored = Number(initialRecipe.yield_quantity) || 0;
+    const missingInfo =
+      initialIngredients.some((ri) => ri.product_id || ri.sub_recipe_id) &&
+      (yieldSkippedCount > 0 || computedYieldFromIngredients === null);
+    // Wacht tot de eenheden en prijzen geladen zijn (anders is de som nog niet compleet).
+    if (units.length === 0 || computedYieldFromIngredients === null || missingInfo) return;
+    yieldModeChecked.current = true;
+    if (stored > 0 && Math.abs(stored - computedYieldFromIngredients) / stored < 0.001) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setYieldManual(false);
+    }
+  }, [
+    computedYieldFromIngredients,
+    yieldSkippedCount,
+    units.length,
+    yieldManual,
+    recipeKind,
+    initialRecipe,
+    initialIngredients,
+  ]);
 
   // In automatische stand volgt de opbrengst de som van de ingrediënten. In
   // handmatige stand blijft de waarde van de kok altijd staan, ook als er
