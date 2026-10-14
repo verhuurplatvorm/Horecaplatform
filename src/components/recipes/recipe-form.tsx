@@ -129,6 +129,13 @@ export function RecipeForm({
   const [baseUnitId, setBaseUnitId] = useState(
     initialRecipe?.base_unit_id ?? ""
   );
+  // Handmatig = de kok bepaalt de eindopbrengst (leidend, nooit overschreven);
+  // automatisch = de opbrengst volgt de som van de ingrediënten. Een nieuw
+  // halfproduct start automatisch, een bestaand houdt wat het had.
+  const [yieldManual, setYieldManual] = useState<boolean>(
+    initialRecipe ? initialRecipe.yield_is_manual ?? true : false
+  );
+  const [lossDraft, setLossDraft] = useState<string | null>(null);
   const [yieldQuantity, setYieldQuantity] = useState(
     initialRecipe?.yield_quantity?.toString() ?? ""
   );
@@ -549,21 +556,43 @@ export function RecipeForm({
     return matchedAny ? sum : null;
   }, [rows, baseUnitId, unitsById, productPrices]);
 
-  // Vult Opbrengst automatisch als die nog leeg is, zodra er genoeg
-  // ingrediënten met een bruikbare eenheid zijn ingevuld. Overschrijft
-  // nooit een waarde die de gebruiker zelf al heeft ingevoerd.
+  // Regels met een hoeveelheid die niet in de basiseenheid van dit recept
+  // zijn om te rekenen (andere eenheid zonder omrekening, of nog geen
+  // koppeling). Die tellen niet mee in de beginhoeveelheid.
+  const yieldSkippedCount = useMemo(() => {
+    if (!baseUnitId) return 0;
+    const targetUnit = unitsById.get(baseUnitId);
+    if (!targetUnit) return 0;
+    let skipped = 0;
+    for (const row of rows) {
+      if (isEmptyRow(row) || !row.quantity.trim()) continue;
+      const qty = parseFloat(row.quantity);
+      const rowUnit = row.unitId ? unitsById.get(row.unitId) : null;
+      const bridge = row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId) : null;
+      const converted =
+        Number.isFinite(qty) && rowUnit
+          ? convertQuantity(qty, rowUnit, targetUnit, bridge, unitsById)
+          : null;
+      if (converted === null) skipped++;
+    }
+    return skipped;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, baseUnitId, unitsById, productPrices]);
+
+  // In automatische stand volgt de opbrengst de som van de ingrediënten. In
+  // handmatige stand blijft de waarde van de kok altijd staan, ook als er
+  // ingrediënten bijkomen of wijzigen.
   useEffect(() => {
     if (
       recipeKind === "halfproduct" &&
-      !yieldQuantity &&
+      !yieldManual &&
       computedYieldFromIngredients !== null &&
       computedYieldFromIngredients > 0
     ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setYieldQuantity(computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, ""));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedYieldFromIngredients, recipeKind]);
+  }, [computedYieldFromIngredients, recipeKind, yieldManual]);
 
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
@@ -1127,6 +1156,7 @@ export function RecipeForm({
       portion_size: recipeKind === "gerecht" ? 1 : null,
       base_unit_id: recipeKind === "halfproduct" ? baseUnitId || null : null,
       yield_quantity: recipeKind === "halfproduct" ? Number(yieldQuantity) || null : null,
+      yield_is_manual: recipeKind === "halfproduct" ? yieldManual : true,
       labour_minutes_kitchen: labourKitchen ? Number(labourKitchen) : null,
       labour_minutes_other: labourOther ? Number(labourOther) : null,
       labour_cost_per_hour: labourRate ? Number(labourRate) : null,
@@ -1366,42 +1396,6 @@ export function RecipeForm({
                   ))}
                 </select>
               </Field>
-              <Field label="Opbrengst" required>
-                <div className="flex min-w-0 items-center gap-2">
-                  <input
-                    required
-                    type="number"
-                    step="any"
-                    value={yieldQuantity}
-                    onChange={(e) => setYieldQuantity(e.target.value)}
-                    className="input min-w-0 flex-1"
-                  />
-                  {computedYieldFromIngredients !== null && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() =>
-                        setYieldQuantity(
-                          computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, "")
-                        )
-                      }
-                    >
-                      Herbereken
-                    </Button>
-                  )}
-                </div>
-                {computedYieldFromIngredients !== null && (
-                  <p className="mt-1 text-xs text-muted">
-                    Som van ingrediënten:{" "}
-                    {computedYieldFromIngredients.toLocaleString("nl-NL", {
-                      maximumFractionDigits: 3,
-                    })}{" "}
-                    {baseUnitName ?? ""}
-                  </p>
-                )}
-              </Field>
               <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
                 <summary className="cursor-pointer text-sm font-medium text-foreground">
                   Houdbaarheid, arbeid en overige instellingen
@@ -1597,6 +1591,135 @@ export function RecipeForm({
               kostprijzen te zien tijdens het invoeren.
             </p>
           )}
+
+          {recipeKind === "halfproduct" && (() => {
+            const begin = computedYieldFromIngredients;
+            const endQty = yieldQuantityNum;
+            const derivedLoss =
+              begin !== null && begin > 0 && endQty > 0
+                ? Math.round((1 - endQty / begin) * 1000) / 10
+                : null;
+            const unitLabel = baseUnitName ?? "eenheid";
+            const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 3 });
+            function commitLoss() {
+              const raw = lossDraft;
+              setLossDraft(null);
+              if (raw === null || raw.trim() === "" || begin === null || begin <= 0) return;
+              const pct = Number(raw.replace(",", "."));
+              if (!Number.isFinite(pct) || pct >= 100) return;
+              // Negatief = gewichtstoename (bv. rijst die water opneemt).
+              setYieldManual(true);
+              setYieldQuantity(String(Math.round(begin * (1 - pct / 100) * 1000) / 1000));
+            }
+            return (
+              <div className="space-y-2 rounded-md border border-border bg-background p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-foreground">Opbrengst en kostprijs</p>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      yieldManual ? "bg-copper/15 text-copper" : "bg-teal/10 text-teal"
+                    }`}
+                  >
+                    {yieldManual ? "Handmatig" : "Automatisch"}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-muted">Beginhoeveelheid (berekend)</p>
+                    <p className="tabular text-sm font-medium">
+                      {begin !== null ? `${fmt(begin)} ${unitLabel}` : "niet te berekenen"}
+                    </p>
+                    {begin !== null && yieldSkippedCount > 0 && (
+                      <p className="text-xs text-copper">
+                        {yieldSkippedCount} regel(s) niet meegeteld: geen omrekening naar {unitLabel}.
+                      </p>
+                    )}
+                    {begin === null && (
+                      <p className="text-xs text-copper">
+                        Vul zelf de eindopbrengst in; die werkt ook zonder omrekening.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted" htmlFor="eindopbrengst">
+                      Eindopbrengst ({unitLabel}) *
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        id="eindopbrengst"
+                        required
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={yieldQuantity}
+                        onChange={(e) => {
+                          setYieldQuantity(e.target.value);
+                          setYieldManual(true);
+                        }}
+                        className="input h-8 min-w-0 flex-1"
+                      />
+                      {yieldManual && begin !== null && begin > 0 && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => {
+                            setYieldManual(false);
+                            setYieldQuantity(begin.toFixed(3).replace(/\.?0+$/, ""));
+                          }}
+                        >
+                          Terug naar automatisch
+                        </Button>
+                      )}
+                    </div>
+                    {!baseUnitId && (
+                      <p className="text-xs text-copper">Kies eerst een basiseenheid.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted" htmlFor="bereidingsverlies">
+                      Bereidingsverlies / reductie (%)
+                    </label>
+                    <input
+                      id="bereidingsverlies"
+                      type="text"
+                      inputMode="decimal"
+                      disabled={begin === null || begin <= 0}
+                      placeholder={derivedLoss === null ? "optioneel" : undefined}
+                      value={lossDraft ?? (derivedLoss === null ? "" : String(derivedLoss))}
+                      onChange={(e) => setLossDraft(e.target.value)}
+                      onBlur={commitLoss}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitLoss();
+                        }
+                      }}
+                      className="input h-8"
+                    />
+                    <p className="text-xs text-muted">
+                      Optioneel. Negatief = gewichtstoename.
+                    </p>
+                  </div>
+                  {canViewFinancial && (
+                    <div>
+                      <p className="text-xs text-muted">Kostprijs</p>
+                      <p className="tabular text-sm font-medium">€ {totalCost.toFixed(2)} totaal</p>
+                      {costPerBaseUnit !== null && (
+                        <p className="tabular text-xs text-muted">
+                          € {costPerBaseUnit.toFixed(4)} per {unitLabel}
+                          {costPerLargerUnit !== null && largerUnit
+                            ? ` · € ${costPerLargerUnit.toFixed(2)} per ${largerUnit.name}`
+                            : ""}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {multiplyOpen && (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-2 text-sm">

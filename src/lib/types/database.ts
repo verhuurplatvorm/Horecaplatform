@@ -331,6 +331,7 @@ export type Recipe = {
   portion_size: number | null;
   portion_unit: string | null;
   yield_quantity: number | null;
+  yield_is_manual: boolean;
   yield_unit: string | null;
   base_unit_id: string | null;
   storage_method: string | null;
