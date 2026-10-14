@@ -145,13 +145,6 @@ export function HalfproductIngredientenModule({
     [breakdown, effectiveScale]
   );
 
-  const linesWithConvertedQty = breakdown.filter((l) => l.quantity_in_recipe_unit !== null);
-  const totalScaledQuantity = useMemo(
-    () =>
-      linesWithConvertedQty.reduce((sum, l) => sum + (l.quantity_in_recipe_unit ?? 0) * effectiveScale, 0),
-    [linesWithConvertedQty, effectiveScale]
-  );
-
   const producedByName = users.find((u) => u.id === producedByUserId)?.full_name ?? "";
 
   const stickerHref = `/halfproducten/${recipeId}/sticker/nieuw?quantity=${quantity}&producedBy=${encodeURIComponent(
@@ -198,7 +191,7 @@ export function HalfproductIngredientenModule({
             {!standardYield && (
               <p className="mt-1 flex items-center gap-1 text-xs text-copper">
                 <TriangleAlert className="h-3.5 w-3.5" />
-                Er is nog geen &quot;Opbrengst&quot; ingevuld bij Basisgegevens hieronder —
+                Er is nog geen bruikbare hoeveelheid (opbrengst) ingevuld bij Ingrediënten hieronder —
                 zonder dat kan er niet geschaald worden en blijven de hoeveelheden
                 hierboven altijd gelijk aan het basisrecept.
               </p>
@@ -387,18 +380,21 @@ export function HalfproductIngredientenModule({
         {breakdown.length > 0 && (
           <div className="flex items-center justify-between border-t border-border pt-3">
             <div className="text-sm">
-              <span className="text-muted">Totale hoeveelheid:&nbsp;</span>
-              <span className="font-semibold text-foreground">
-                {(totalScaledQuantity / displayFactor).toLocaleString("nl-NL", {
-                  maximumFractionDigits: 3,
-                })}{" "}
-                {displayUnitName ?? ""}
-              </span>
-              {linesWithConvertedQty.length < breakdown.length && (
-                <span className="ml-1 inline-flex items-center gap-1 text-xs font-medium text-copper">
+              {/* De opbrengst (wat er echt overblijft) is leidend, niet de som van
+                  de ingrediënten: die telt botten, verdampt vocht en liters
+                  naast kilo's mee en klopt daardoor nooit. */}
+              <span className="text-muted">Opbrengst:&nbsp;</span>
+              {standardYield ? (
+                <span className="font-semibold text-foreground">
+                  {((standardYield * effectiveScale) / displayFactor).toLocaleString("nl-NL", {
+                    maximumFractionDigits: 3,
+                  })}{" "}
+                  {displayUnitName ?? ""}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-copper">
                   <TriangleAlert className="h-3 w-3" />
-                  onvolledig — {breakdown.length - linesWithConvertedQty.length} ingrediënt(en)
-                  kunnen niet omgerekend worden (zie waarschuwing bij de regel)
+                  nog niet ingesteld — vul de bruikbare hoeveelheid in bij het halfproduct
                 </span>
               )}
               <span className="mx-2 text-muted">·</span>
