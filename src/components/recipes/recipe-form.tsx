@@ -824,6 +824,26 @@ export function RecipeForm({
     }
   }
 
+  // Extra product uit het zoekvenster ("venster open laten"): komt als
+  // nieuwe regel onderaan, met de basiseenheid van het product alvast gekozen
+  // zodat de kok alleen nog de hoeveelheid hoeft in te vullen.
+  function addPickedRow(picked: PickedIngredient) {
+    setRows((prev) => [
+      ...prev,
+      {
+        ...emptyRow(),
+        type: picked.type,
+        refId: picked.id,
+        refName: picked.name,
+        baseUnitId: picked.baseUnitId,
+        yieldQuantity: picked.yieldQuantity ?? null,
+        unitId: picked.baseUnitId,
+      },
+    ]);
+    if (picked.type === "ingrediënt") loadProductPrice(picked.id);
+    else loadHalfproductCost(picked.id);
+  }
+
   async function handleSubmit(e: React.FormEvent, publishStatus?: RecipeStatus) {
     e.preventDefault();
     setError(null);
@@ -1323,6 +1343,7 @@ export function RecipeForm({
               onMoveUp={() => moveRow(i, -1)}
               onMoveDown={() => moveRow(i, 1)}
               onPick={(picked) => handlePick(i, picked)}
+              onPickMore={addPickedRow}
             />
           ))}
           <Button
@@ -2012,6 +2033,7 @@ function IngredientLine({
   onMoveUp,
   onMoveDown,
   onPick,
+  onPickMore,
 }: {
   row: IngredientRow;
   units: Unit[];
@@ -2030,6 +2052,7 @@ function IngredientLine({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onPick: (picked: PickedIngredient) => void;
+  onPickMore?: (picked: PickedIngredient) => void;
 }) {
   const qty = parseFloat(row.quantity);
   const pricePerUnit =
@@ -2118,7 +2141,7 @@ function IngredientLine({
                 <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
                 &quot;{row.unmatchedName}&quot; — nog niet gekoppeld
               </span>
-              <IngredientSearch companyId={companyId} onPick={onPick} />
+              <IngredientSearch companyId={companyId} onPick={onPick} onPickMore={onPickMore} />
               <Link
                 href={`/producten/nieuw?naam=${encodeURIComponent(row.unmatchedName)}`}
                 target="_blank"
@@ -2128,7 +2151,7 @@ function IngredientLine({
               </Link>
             </div>
           ) : (
-            <IngredientSearch companyId={companyId} onPick={onPick} />
+            <IngredientSearch companyId={companyId} onPick={onPick} onPickMore={onPickMore} />
           )}
         </div>
 

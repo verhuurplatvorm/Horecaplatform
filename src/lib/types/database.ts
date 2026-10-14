@@ -1168,6 +1168,32 @@ export type Database = {
         Args: { p_group_id: string; p_company_id?: string | null; p_days?: number };
         Returns: { status: string; aantal: number }[];
       };
+      search_ingredients_picker: {
+        Args: {
+          p_search: string;
+          p_company_id?: string | null;
+          p_limit?: number;
+        };
+        Returns: {
+          kind: "ingrediënt" | "halfproduct";
+          id: string;
+          name: string;
+          custom_name: string | null;
+          brand: string | null;
+          article_number: string | null;
+          base_unit: string | null;
+          base_unit_id: string | null;
+          supplier_name: string | null;
+          supplier_article_code: string | null;
+          purchase_price: number | null;
+          packaging_description: string | null;
+          packaging_unit_count: number | null;
+          price_per_base_unit: number | null;
+          yield_quantity: number | null;
+          yield_unit: string | null;
+          match_rank: number;
+        }[];
+      };
       search_products_overview: {
         Args: {
           p_company_id: string | null;
