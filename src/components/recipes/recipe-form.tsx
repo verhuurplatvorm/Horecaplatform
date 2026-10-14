@@ -616,6 +616,13 @@ export function RecipeForm({
     initialIngredients,
   ]);
 
+  // De som is alleen betrouwbaar als ALLE regels met een hoeveelheid naar de
+  // eenheid van de opbrengst om te rekenen zijn. Een deelsom (bv. alleen de
+  // gram-regels terwijl het meeste in liters is) zou de opbrengst en dus de
+  // kostprijs per kilo veel te laag/hoog maken; liters en kilo's worden
+  // nooit zonder bekende dichtheid aan elkaar gelijkgesteld.
+  const yieldAutoReliable = computedYieldFromIngredients !== null && yieldSkippedCount === 0;
+
   // In automatische stand volgt de opbrengst de som van de ingrediënten. In
   // handmatige stand blijft de waarde van de kok altijd staan, ook als er
   // ingrediënten bijkomen of wijzigen.
@@ -623,13 +630,14 @@ export function RecipeForm({
     if (
       recipeKind === "halfproduct" &&
       !yieldManual &&
+      yieldAutoReliable &&
       computedYieldFromIngredients !== null &&
       computedYieldFromIngredients > 0
     ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setYieldQuantity(computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, ""));
     }
-  }, [computedYieldFromIngredients, recipeKind, yieldManual]);
+  }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable]);
 
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
@@ -1125,6 +1133,18 @@ export function RecipeForm({
     await resolveMany(fresh.map((r) => ({ uid: r.uid, name: r.unmatchedName ?? "" })));
   }
 
+  // Eenheid van de opbrengst wisselen. Binnen dezelfde soort (kilo ↔ gram,
+  // liter ↔ ml) rekent het getal mee, zodat 6,5 kilo niet 6,5 gram wordt.
+  function changeYieldUnit(nextUnitId: string) {
+    const prev = baseUnitId ? unitsById.get(baseUnitId) : null;
+    const next = nextUnitId ? unitsById.get(nextUnitId) : null;
+    if (prev && next && prev.dimension === next.dimension && Number(yieldQuantity) > 0) {
+      const converted = (Number(yieldQuantity) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
+      setYieldQuantity(String(Math.round(converted * 10000) / 10000));
+    }
+    setBaseUnitId(nextUnitId);
+  }
+
   function applyMultiply() {
     const factor = Number(multiplyFactor.replace(",", "."));
     if (!Number.isFinite(factor) || factor <= 0) {
@@ -1193,7 +1213,9 @@ export function RecipeForm({
       portion_size: recipeKind === "gerecht" ? 1 : null,
       base_unit_id: recipeKind === "halfproduct" ? baseUnitId || null : null,
       yield_quantity: recipeKind === "halfproduct" ? Number(yieldQuantity) || null : null,
-      yield_is_manual: recipeKind === "halfproduct" ? yieldManual : true,
+      // Is automatisch niet betrouwbaar te berekenen, dan is wat er staat
+      // per definitie door de kok bepaald.
+      yield_is_manual: recipeKind === "halfproduct" ? yieldManual || !yieldAutoReliable : true,
       labour_minutes_kitchen: labourKitchen ? Number(labourKitchen) : null,
       labour_minutes_other: labourOther ? Number(labourOther) : null,
       labour_cost_per_hour: labourRate ? Number(labourRate) : null,
@@ -1418,21 +1440,6 @@ export function RecipeForm({
             </>
           ) : (
             <>
-              <Field label="Basiseenheid" required>
-                <select
-                  required
-                  value={baseUnitId}
-                  onChange={(e) => setBaseUnitId(e.target.value)}
-                  className="input"
-                >
-                  <option value="">Kies…</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.dimension})
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
                 <summary className="cursor-pointer text-sm font-medium text-foreground">
                   Houdbaarheid, arbeid en overige instellingen
@@ -1633,7 +1640,7 @@ export function RecipeForm({
             const begin = computedYieldFromIngredients;
             const endQty = yieldQuantityNum;
             const derivedLoss =
-              begin !== null && begin > 0 && endQty > 0
+              yieldAutoReliable && begin !== null && begin > 0 && endQty > 0
                 ? Math.round((1 - endQty / begin) * 1000) / 10
                 : null;
             const unitLabel = baseUnitName ?? "eenheid";
@@ -1641,7 +1648,7 @@ export function RecipeForm({
             function commitLoss() {
               const raw = lossDraft;
               setLossDraft(null);
-              if (raw === null || raw.trim() === "" || begin === null || begin <= 0) return;
+              if (raw === null || raw.trim() === "" || !yieldAutoReliable || begin === null || begin <= 0) return;
               const pct = Number(raw.replace(",", "."));
               if (!Number.isFinite(pct) || pct >= 100) return;
               // Negatief = gewichtstoename (bv. rijst die water opneemt).
@@ -1654,32 +1661,32 @@ export function RecipeForm({
                   <p className="text-sm font-medium text-foreground">Opbrengst en kostprijs</p>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
-                      yieldManual ? "bg-copper/15 text-copper" : "bg-teal/10 text-teal"
+                      yieldManual || !yieldAutoReliable
+                        ? "bg-copper/15 text-copper"
+                        : "bg-teal/10 text-teal"
                     }`}
                   >
-                    {yieldManual ? "Handmatig" : "Automatisch"}
+                    {yieldManual || !yieldAutoReliable ? "Handmatig" : "Automatisch"}
                   </span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <p className="text-xs text-muted">Beginhoeveelheid (berekend)</p>
                     <p className="tabular text-sm font-medium">
-                      {begin !== null ? `${fmt(begin)} ${unitLabel}` : "niet te berekenen"}
+                      {yieldAutoReliable && begin !== null ? `${fmt(begin)} ${unitLabel}` : "niet te berekenen"}
                     </p>
-                    {begin !== null && yieldSkippedCount > 0 && (
+                    {!yieldAutoReliable && (
                       <p className="text-xs text-copper">
-                        {yieldSkippedCount} regel(s) niet meegeteld: geen omrekening naar {unitLabel}.
-                      </p>
-                    )}
-                    {begin === null && (
-                      <p className="text-xs text-copper">
-                        Vul zelf de eindopbrengst in; die werkt ook zonder omrekening.
+                        {yieldSkippedCount > 0
+                          ? `${yieldSkippedCount} regel(s) staan in een eenheid die niet naar ${unitLabel} om te rekenen is (bv. liters naar kilo's). `
+                          : ""}
+                        Vul de eindopbrengst zelf in.
                       </p>
                     )}
                   </div>
                   <div>
                     <label className="text-xs text-muted" htmlFor="eindopbrengst">
-                      Eindopbrengst ({unitLabel}) *
+                      Eindopbrengst *
                     </label>
                     <div className="flex items-center gap-1">
                       <input
@@ -1695,7 +1702,23 @@ export function RecipeForm({
                         }}
                         className="input h-8 min-w-0 flex-1"
                       />
-                      {yieldManual && begin !== null && begin > 0 && (
+                      <select
+                        aria-label="Eenheid van de opbrengst"
+                        required
+                        value={baseUnitId}
+                        onChange={(e) => changeYieldUnit(e.target.value)}
+                        className="input h-8 w-28 shrink-0"
+                      >
+                        <option value="">Eenheid…</option>
+                        {units
+                          .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key) || u.id === baseUnitId)
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </select>
+                      {yieldManual && yieldAutoReliable && begin !== null && begin > 0 && (
                         <Button
                           type="button"
                           variant="secondary"
@@ -1711,7 +1734,13 @@ export function RecipeForm({
                       )}
                     </div>
                     {!baseUnitId && (
-                      <p className="text-xs text-copper">Kies eerst een basiseenheid.</p>
+                      <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, stuks).</p>
+                    )}
+                    {isEdit && baseUnitId !== (initialRecipe?.base_unit_id ?? "") && (
+                      <p className="text-xs text-copper">
+                        Let op: gerechten en recepten die dit halfproduct gebruiken rekenen met deze eenheid.
+                        Een andere soort eenheid (bv. kilo → liter) kan die regels onvolledig maken.
+                      </p>
                     )}
                   </div>
                   <div>
@@ -1722,7 +1751,7 @@ export function RecipeForm({
                       id="bereidingsverlies"
                       type="text"
                       inputMode="decimal"
-                      disabled={begin === null || begin <= 0}
+                      disabled={!yieldAutoReliable || begin === null || begin <= 0}
                       placeholder={derivedLoss === null ? "optioneel" : undefined}
                       value={lossDraft ?? (derivedLoss === null ? "" : String(derivedLoss))}
                       onChange={(e) => setLossDraft(e.target.value)}
