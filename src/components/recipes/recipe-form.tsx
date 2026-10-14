@@ -1448,6 +1448,68 @@ export function RecipeForm({
             </>
           ) : (
             <>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="eindopbrengst">
+                      Bruikbare hoeveelheid (eindopbrengst) <span className="text-danger">*</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="eindopbrengst"
+                        required
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={yieldQuantity}
+                        onChange={(e) => {
+                          setYieldQuantity(e.target.value);
+                          setYieldManual(true);
+                          setLossDraft(null);
+                        }}
+                        className="input min-w-[6rem] flex-1"
+                      />
+                      <select
+                        aria-label="Eenheid van de opbrengst"
+                        required
+                        value={baseUnitId}
+                        onChange={(e) => changeYieldUnit(e.target.value)}
+                        className="input w-32 shrink-0"
+                      >
+                        <option value="">Eenheid…</option>
+                        {units
+                          .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key) || u.id === baseUnitId)
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {yieldManual && yieldAutoReliable && computedYieldFromIngredients !== null && computedYieldFromIngredients > 0 && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          
+                          onClick={() => {
+                            setYieldManual(false);
+                            setYieldQuantity(computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, ""));
+                          }}
+                        >
+                          Terug naar automatisch
+                        </Button>
+                      )}
+                    </div>
+                    {!baseUnitId && (
+                      <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, stuks).</p>
+                    )}
+                    {isEdit && baseUnitId !== (initialRecipe?.base_unit_id ?? "") && (
+                      <p className="text-xs text-copper">
+                        Let op: gerechten en recepten die dit halfproduct gebruiken rekenen met deze eenheid.
+                        Een andere soort eenheid (bv. kilo → liter) kan die regels onvolledig maken.
+                      </p>
+                    )}
+                  </div>
               <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
                 <summary className="cursor-pointer text-sm font-medium text-foreground">
                   Houdbaarheid, arbeid en overige instellingen
@@ -1682,7 +1744,7 @@ export function RecipeForm({
                     {yieldManual || !yieldAutoReliable ? "Handmatig" : "Automatisch"}
                   </span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-3">
                   <div>
                     <p className="text-xs text-muted">
                       Beginhoeveelheid ({yieldAutoReliable ? "berekend" : "zelf invullen"})
@@ -1709,66 +1771,6 @@ export function RecipeForm({
                           Vul de bruikbare hoeveelheid zelf in. Met een beginhoeveelheid kun je ook met een verlies-% rekenen.
                         </p>
                       </>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted" htmlFor="eindopbrengst">
-                      Bruikbare hoeveelheid (eindopbrengst) *
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <input
-                        id="eindopbrengst"
-                        required
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={yieldQuantity}
-                        onChange={(e) => {
-                          setYieldQuantity(e.target.value);
-                          setYieldManual(true);
-                          setLossDraft(null);
-                        }}
-                        className="input h-8 min-w-0 flex-1"
-                      />
-                      <select
-                        aria-label="Eenheid van de opbrengst"
-                        required
-                        value={baseUnitId}
-                        onChange={(e) => changeYieldUnit(e.target.value)}
-                        className="input h-8 w-28 shrink-0"
-                      >
-                        <option value="">Eenheid…</option>
-                        {units
-                          .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key) || u.id === baseUnitId)
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
-                          ))}
-                      </select>
-                      {yieldManual && yieldAutoReliable && begin !== null && begin > 0 && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="shrink-0"
-                          onClick={() => {
-                            setYieldManual(false);
-                            setYieldQuantity(begin.toFixed(3).replace(/\.?0+$/, ""));
-                          }}
-                        >
-                          Terug naar automatisch
-                        </Button>
-                      )}
-                    </div>
-                    {!baseUnitId && (
-                      <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, stuks).</p>
-                    )}
-                    {isEdit && baseUnitId !== (initialRecipe?.base_unit_id ?? "") && (
-                      <p className="text-xs text-copper">
-                        Let op: gerechten en recepten die dit halfproduct gebruiken rekenen met deze eenheid.
-                        Een andere soort eenheid (bv. kilo → liter) kan die regels onvolledig maken.
-                      </p>
                     )}
                   </div>
                   <div>
