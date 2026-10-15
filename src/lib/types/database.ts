@@ -173,6 +173,25 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type PackagingCorrection = {
+  id: string;
+  group_id: string;
+  batch_id: string;
+  product_id: string;
+  supplier_product_id: string | null;
+  supplier_id: string | null;
+  kind: "technisch";
+  old_packaging_unit_count: number | null;
+  new_packaging_unit_count: number | null;
+  old_packaging_description: string | null;
+  new_packaging_description: string | null;
+  old_price_per_base_unit: number | null;
+  new_price_per_base_unit: number | null;
+  reason: string;
+  applied_by: string | null;
+  applied_at: string;
+};
+
 export type WasteReason = {
   id: string;
   group_id: string;
@@ -803,6 +822,12 @@ export type Database = {
         Row: HalfproductFolder;
         Insert: Partial<HalfproductFolder>;
         Update: Partial<HalfproductFolder>;
+        Relationships: [];
+      };
+      packaging_corrections: {
+        Row: PackagingCorrection;
+        Insert: Partial<PackagingCorrection>;
+        Update: Partial<PackagingCorrection>;
         Relationships: [];
       };
       waste_reasons: {

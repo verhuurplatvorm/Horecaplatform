@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { normalizeUnitKey } from "@/lib/recipe-import/parse-halfproducts";
+import { contentFromName, isUnitKey, toSmallestUnit } from "@/lib/packaging";
 
 export interface ParsedProductRow {
   rowNumber: number;
@@ -45,65 +46,14 @@ function toText(value: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
-const UNIT_FACTOR_TO_BASE: Record<string, number> = {
-  g: 1,
-  kg: 1000,
-  ml: 1,
-  cl: 10,
-  dl: 100,
-  l: 1000,
-  stuk: 1,
-};
-
-/** Elke herkende eenheid rekent naar de kleinste basiseenheid van zijn dimensie: g (gewicht), ml (inhoud) of stuk. */
-function toBaseUnitKey(unitKey: string): string {
-  if (unitKey === "stuk") return "stuk";
-  if (unitKey === "kg" || unitKey === "g") return "g";
-  return "ml"; // ml, cl, dl, l
-}
-
-// Eenheid-spellingen zoals ze in ingrediëntnamen voorkomen, met hun factor
-// naar de basiseenheid (ml of g) van hun dimensie.
-const NAME_UNIT_PATTERNS: { pattern: RegExp; baseKey: "ml" | "g"; factor: number }[] = [
-  { pattern: /^(?:ml)$/i, baseKey: "ml", factor: 1 },
-  { pattern: /^(?:cl)$/i, baseKey: "ml", factor: 10 },
-  { pattern: /^(?:dl)$/i, baseKey: "ml", factor: 100 },
-  { pattern: /^(?:l|lt|ltr|liter|litre)$/i, baseKey: "ml", factor: 1000 },
-  { pattern: /^(?:g|gr|gram)$/i, baseKey: "g", factor: 1 },
-  { pattern: /^(?:kg|kilo)$/i, baseKey: "g", factor: 1000 },
-];
-
 /**
- * Probeert de inhoud uit een ingrediëntnaam of -omschrijving af te leiden,
- * voor regels waar het bronbestand geen bruikbare inhoud/eenheid gaf en
- * die anders als "1 stuk" zouden binnenkomen (bv. een emmer van 10 liter
- * als € 22,50 "per stuk" — 10.000x te hoge prijs per basiseenheid).
- *
- * Herkent o.a.: "2x5l", "6 x 1 ltr", "emmer 10 ltr", "750ml", "0,75L",
- * "2,5 kg", "500 gr". Bij meerdere maten in de naam wint de laatste
- * (maataanduidingen staan vrijwel altijd achteraan, bv.
- * "Cola 0,33 → krat 24x33cl").
+ * Inhoud uit een ingrediëntnaam afleiden — de logica staat centraal in
+ * src/lib/packaging (contentFromName); hier alleen onder de oude naam.
  */
 export function deriveContentFromName(
   name: string
 ): { baseKey: "ml" | "g"; quantityInBase: number; matchedText: string } | null {
-  // "AxB eenheid" (bv. 2x5l, 24 x 33cl) of "B eenheid" (bv. 10 ltr, 750ml)
-  const regex =
-    /(?:(\d+(?:[.,]\d+)?)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(ml|cl|dl|ltr|lt|liter|litre|l|kg|kilo|gram|gr|g)(?![a-z])/gi;
-
-  let best: { baseKey: "ml" | "g"; quantityInBase: number; matchedText: string } | null = null;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(name)) !== null) {
-    const count = match[1] ? Number(match[1].replace(",", ".")) : 1;
-    const amount = Number(match[2].replace(",", "."));
-    const unitText = match[3];
-    const unitDef = NAME_UNIT_PATTERNS.find((u) => u.pattern.test(unitText));
-    if (!unitDef || !Number.isFinite(count) || !Number.isFinite(amount)) continue;
-    const quantityInBase = count * amount * unitDef.factor;
-    if (quantityInBase <= 0) continue;
-    best = { baseKey: unitDef.baseKey, quantityInBase, matchedText: match[0].trim() };
-  }
-  return best;
+  return contentFromName(name);
 }
 
 /**
@@ -147,10 +97,12 @@ export function parseMultiSupplierExcel(buffer: Buffer): ParsedProductRow[] {
     const contentPerUnit = toNumber(byCanonical.contentPerUnit) ?? 1;
     const unitRaw = toText(byCanonical.unitRaw) ?? "stuk";
     const unitKey = normalizeUnitKey(unitRaw);
-    const factor = UNIT_FACTOR_TO_BASE[unitKey] ?? 1;
+    const { baseKey: smallestKey, factor } = isUnitKey(unitKey)
+      ? toSmallestUnit(unitKey)
+      : { baseKey: "stuk" as const, factor: 1 };
 
     let packagingUnitCount = packagingCount * contentPerUnit * factor;
-    let packagingUnitKey = toBaseUnitKey(unitKey);
+    let packagingUnitKey: string = smallestKey;
     let packagingDescription = `${packagingCount} × ${contentPerUnit} ${unitRaw}`;
     let contentDerivedFromName = false;
 

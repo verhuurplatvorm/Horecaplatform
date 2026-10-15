@@ -11,7 +11,7 @@ import { ProductForm } from "@/components/products/product-form";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
-import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
+import { importPackagingFromText, parsePackaging } from "@/lib/packaging";
 import { normalizeItemKey } from "@/lib/price-import/ignored-items";
 import { convertQuantity } from "@/lib/units/convert";
 import type {
@@ -293,11 +293,9 @@ export default function ImportReviewPage({
 
       if (!productId) {
         const parsedPackaging = row.packaging_description
-          ? parsePackagingText(row.packaging_description)
+          ? importPackagingFromText(row.packaging_description)
           : null;
-        const baseUnitKey = parsedPackaging
-          ? UNIT_TO_BASE_FACTOR[parsedPackaging.unit]?.baseUnitKey ?? "stuk"
-          : "stuk";
+        const baseUnitKey = parsedPackaging?.unitKey ?? "stuk";
         const baseUnitId = unitIdByKey.get(baseUnitKey) ?? unitIdByKey.get("stuk");
         if (!baseUnitId) {
           skipped++;
@@ -869,7 +867,7 @@ function RowLine({
     row.packaging_unit_count !== null &&
     existingPrice.packagingCount !== row.packaging_unit_count;
   const packagingBreakdown = row.packaging_description
-    ? parsePackagingText(row.packaging_description)
+    ? parsePackaging(row.packaging_description)
     : null;
 
   return (
@@ -1008,11 +1006,11 @@ function RowLine({
         )}
       </td>
       <td className="px-5 py-3 tabular text-muted">
-        {packagingBreakdown ? packagingBreakdown.count : "—"}
+        {packagingBreakdown ? (packagingBreakdown.packs ?? 1) : "—"}
       </td>
       <td className="px-5 py-3 tabular text-muted">
         {packagingBreakdown
-          ? `${packagingBreakdown.unitQuantity} ${packagingBreakdown.unit}`
+          ? `${(packagingBreakdown.perPack ?? packagingBreakdown.total)} ${packagingBreakdown.unit}`
           : "—"}
       </td>
       <td className="px-5 py-3">

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { createClient } from "@/lib/supabase/client";
+import { convertCountToNewBase, isUnitKey, type UnitKey } from "@/lib/packaging";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
@@ -300,26 +301,84 @@ export default function ProductenPage() {
     const unit = units.find((u) => u.id === newUnitId);
     if (!unit) return;
     const row = rows.find((r) => r.id === productId);
-    // Waarschuw bij het wisselen van dimensie (bv. stuk → ml): bestaande
-    // hoeveelheden in recepten en de verpakkingseenheid worden NIET
-    // automatisch omgerekend — die moeten daarna handmatig kloppend
-    // gemaakt worden. Binnen dezelfde dimensie (g → kg) geldt hetzelfde,
-    // dus we waarschuwen altijd.
-    const ok = window.confirm(
-      `Eenheid van "${row?.name ?? "dit ingrediënt"}" wijzigen naar ${unit.name}?\n\n` +
-        `Let op: hoeveelheden in recepten en de verpakkingseenheid worden ` +
-        `niet automatisch omgerekend. Controleer daarna de verpakkingseenheid ` +
-        `(inhoud) en de recepten waarin dit ingrediënt zit.`
-    );
-    if (!ok) return;
+    const oldUnit = units.find((u) => u.id === row?.base_unit_id);
     const supabase = createClient();
-    const { error: updateError } = await supabase
-      .from("products")
-      .update({ base_unit_id: newUnitId })
-      .eq("id", productId);
-    if (updateError) {
-      window.alert("Opslaan mislukt: " + updateError.message);
-      return;
+
+    // Het verpakkingsaantal staat in de basiseenheid van het product. Bij het
+    // wisselen van eenheid rekenen we dat aantal MEE om (centrale rekenmodule),
+    // anders wordt bv. 4680 gram ineens 4680 stuks.
+    if (oldUnit && isUnitKey(oldUnit.key) && isUnitKey(unit.key)) {
+      const [{ data: prod }, { data: prices }] = await Promise.all([
+        supabase.from("products").select("avg_unit_quantity, avg_unit_id").eq("id", productId).maybeSingle(),
+        supabase.from("supplier_products").select("id, packaging_unit_count").eq("product_id", productId),
+      ]);
+      const avgKey = units.find((u) => u.id === prod?.avg_unit_id)?.key;
+      const bridge =
+        prod?.avg_unit_quantity && isUnitKey(avgKey)
+          ? { quantity: Number(prod.avg_unit_quantity), unit: avgKey }
+          : null;
+      const converted = (prices ?? []).map((p) => ({
+        id: p.id as string,
+        oldCount: Number(p.packaging_unit_count),
+        newCount: convertCountToNewBase(Number(p.packaging_unit_count), oldUnit.key as UnitKey, unit.key as UnitKey, bridge),
+      }));
+      if (converted.some((c) => c.newCount === null)) {
+        window.alert(
+          `"${row?.name ?? "Dit ingrediënt"}" kan niet automatisch van ${oldUnit.name} naar ${unit.name} worden omgezet: ` +
+            `de verpakkingsinhoud is niet om te rekenen. Vul eerst bij het ingrediënt in hoeveel gram of ml één stuk is ` +
+            `("gemiddeld gewicht per stuk"), of pas de verpakking daar handmatig aan.`
+        );
+        return;
+      }
+      const ok = window.confirm(
+        `Eenheid van "${row?.name ?? "dit ingrediënt"}" wijzigen van ${oldUnit.name} naar ${unit.name}?\n\n` +
+          (converted.length > 0
+            ? `De verpakkingsinhoud van ${converted.length} leveranciersprijs(prijzen) wordt meegerekend ` +
+              `(bv. ${converted[0].oldCount} ${oldUnit.name} → ${converted[0].newCount} ${unit.name}). ` +
+              `De inkoopprijs blijft gelijk.\n\n`
+            : "") +
+          `Let op: hoeveelheden in recepten worden niet automatisch omgerekend. Controleer daarna de recepten waarin dit ingrediënt zit.`
+      );
+      if (!ok) return;
+
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({ base_unit_id: newUnitId })
+        .eq("id", productId);
+      if (updateError) {
+        window.alert("Opslaan mislukt: " + updateError.message);
+        return;
+      }
+      for (const c of converted) {
+        const { error: priceError } = await supabase
+          .from("supplier_products")
+          .update({ packaging_unit_count: c.newCount as number })
+          .eq("id", c.id);
+        if (priceError) {
+          // Terugdraaien zodat eenheid en verpakking nooit uit elkaar lopen.
+          await supabase.from("products").update({ base_unit_id: row?.base_unit_id ?? null }).eq("id", productId);
+          for (const done of converted) {
+            if (done.id === c.id) break;
+            await supabase.from("supplier_products").update({ packaging_unit_count: done.oldCount }).eq("id", done.id);
+          }
+          window.alert("Omrekenen van de verpakking mislukt, niets is gewijzigd: " + priceError.message);
+          return;
+        }
+      }
+    } else {
+      const ok = window.confirm(
+        `Eenheid van "${row?.name ?? "dit ingrediënt"}" wijzigen naar ${unit.name}?\n\n` +
+          `Let op: hoeveelheden in recepten en de verpakkingseenheid worden niet automatisch omgerekend.`
+      );
+      if (!ok) return;
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({ base_unit_id: newUnitId })
+        .eq("id", productId);
+      if (updateError) {
+        window.alert("Opslaan mislukt: " + updateError.message);
+        return;
+      }
     }
     // base_unit (tekst) wordt in de database gesynchroniseerd door de
     // trigger trg_products_sync_base_unit_text; lokaal doen we hetzelfde.

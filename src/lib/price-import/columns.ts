@@ -4,7 +4,8 @@
  * bekende varianten (NL/EN) in plaats van exacte namen te eisen.
  */
 
-import { parsePackagingText, parseCombinedArticleLine, UNIT_TO_BASE_FACTOR } from "./packaging-parser";
+import { parseCombinedArticleLine } from "./packaging-parser";
+import { importPackagingFromText } from "@/lib/packaging";
 
 export interface ParsedPriceRow {
   rowNumber: number;
@@ -263,19 +264,17 @@ export function normalizeRow(
   // van de kleinste eenheid, bv. een ingrediënt met "kg" als basiseenheid).
   if (packagingUnitCount === null) {
     const fromExplicit = packagingDescription
-      ? parsePackagingText(packagingDescription)
+      ? importPackagingFromText(packagingDescription)
       : null;
     if (fromExplicit) {
-      const baseUnit = UNIT_TO_BASE_FACTOR[fromExplicit.unit];
-      packagingUnitCount = fromExplicit.totalQuantity * (baseUnit?.factor ?? 1);
-      packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+      packagingUnitCount = fromExplicit.count;
+      packagingUnitKey = fromExplicit.unitKey;
       effectivePackagingDescription = packagingDescription;
     } else if (combinedPackagingText) {
-      const fromCombined = parsePackagingText(combinedPackagingText);
+      const fromCombined = importPackagingFromText(combinedPackagingText);
       if (fromCombined) {
-        const baseUnit = UNIT_TO_BASE_FACTOR[fromCombined.unit];
-        packagingUnitCount = fromCombined.totalQuantity * (baseUnit?.factor ?? 1);
-        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+        packagingUnitCount = fromCombined.count;
+        packagingUnitKey = fromCombined.unitKey;
         effectivePackagingDescription = packagingDescription
           ? `${packagingDescription} · ${combinedPackagingText}`
           : combinedPackagingText;
@@ -286,11 +285,10 @@ export function normalizeRow(
       // wanneer die kolom als gewone "Artikelnaam" gekoppeld is i.p.v.
       // als "Artikelregel". Zo hangt herkenning niet af van welke van
       // de twee de gebruiker koos bij het koppelscherm.
-      const fromDescription = parsePackagingText(description);
+      const fromDescription = importPackagingFromText(description);
       if (fromDescription) {
-        const baseUnit = UNIT_TO_BASE_FACTOR[fromDescription.unit];
-        packagingUnitCount = fromDescription.totalQuantity * (baseUnit?.factor ?? 1);
-        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+        packagingUnitCount = fromDescription.count;
+        packagingUnitKey = fromDescription.unitKey;
         effectivePackagingDescription = fromDescription.explanation;
       }
     }

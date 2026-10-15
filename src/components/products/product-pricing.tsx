@@ -8,6 +8,8 @@ import { Modal } from "@/components/ui/modal";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { PackagingHint } from "@/components/products/packaging-hint";
+import { isUnitKey, type KeyBridge, type UnitKey } from "@/lib/packaging";
 
 interface PriceRow {
   id: string;
@@ -50,6 +52,8 @@ export function ProductPricing({
   const [manualPrice, setManualPrice] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingRow, setEditingRow] = useState<PriceRow | null>(null);
+  const [baseKey, setBaseKey] = useState<UnitKey | null>(null);
+  const [bridge, setBridge] = useState<KeyBridge | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -59,11 +63,24 @@ export function ProductPricing({
       const supabase = createClient();
       const { data: productRow } = await supabase
         .from("products")
-        .select("manual_price_per_base_unit")
+        .select("manual_price_per_base_unit, base_unit_id, avg_unit_quantity, avg_unit_id")
         .eq("id", productId)
         .maybeSingle();
       if (cancelled) return;
       setManualPrice(productRow?.manual_price_per_base_unit ?? null);
+
+      // Basiseenheid en gewicht-per-stuk, voor de controle op de verpakking
+      // (centrale rekenmodule) in het wijzigingsformulier.
+      const { data: unitRows } = await supabase.from("units").select("id, key");
+      const keyById = new Map((unitRows ?? []).map((u) => [u.id as string, u.key as string]));
+      const bKey = productRow?.base_unit_id ? keyById.get(productRow.base_unit_id) : undefined;
+      const aKey = productRow?.avg_unit_id ? keyById.get(productRow.avg_unit_id) : undefined;
+      setBaseKey(isUnitKey(bKey) ? bKey : null);
+      setBridge(
+        productRow?.avg_unit_quantity && isUnitKey(aKey)
+          ? { quantity: Number(productRow.avg_unit_quantity), unit: aKey }
+          : null
+      );
 
       const { data } = await supabase
         .from("supplier_products")
@@ -206,6 +223,8 @@ export function ProductPricing({
             row={editingRow}
             productId={productId}
             baseUnitName={baseUnitName}
+            baseKey={baseKey}
+            bridge={bridge}
             referenceCompanyId={editingRow.companyId ?? referenceCompanyId}
             onDone={() => {
               setEditingRow(null);
@@ -223,12 +242,16 @@ function PriceChangeForm({
   row,
   productId,
   baseUnitName,
+  baseKey,
+  bridge,
   referenceCompanyId,
   onDone,
   onCancel,
 }: {
   row: PriceRow;
   productId: string;
+  baseKey: UnitKey | null;
+  bridge: KeyBridge | null;
   baseUnitName: string | null;
   referenceCompanyId: string | null;
   onDone: () => void;
@@ -376,6 +399,14 @@ function PriceChangeForm({
           <p className="mt-1 text-xs text-muted">
             Klopt de verpakking niet (bv. verkeerd geïmporteerd)? Pas &apos;m hier direct aan.
           </p>
+          <PackagingHint
+            description={packagingDescription}
+            count={packagingUnitCount}
+            price={newPrice}
+            baseUnit={baseKey}
+            bridge={bridge}
+            onApply={(value) => setPackagingUnitCount(String(value))}
+          />
         </div>
       </div>
 

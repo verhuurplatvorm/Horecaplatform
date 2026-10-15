@@ -1,5 +1,7 @@
 "use client";
 
+import { PackagingHint } from "@/components/products/packaging-hint";
+import { isUnitKey } from "@/lib/packaging";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useReturnNavigation } from "@/lib/use-return-navigation";
@@ -924,6 +926,21 @@ export function ProductForm({
                 />
               </Field>
             </div>
+            <PackagingHint
+              description={initialPackagingDescription}
+              count={initialPackagingUnitCount}
+              price={initialPurchasePrice}
+              baseUnit={(() => {
+                const key = units.find((u) => u.id === baseUnitId)?.key;
+                return isUnitKey(key) ? key : null;
+              })()}
+              bridge={(() => {
+                const avgKey = units.find((u) => u.id === avgUnitId)?.key;
+                const qty = Number(avgUnitQuantity);
+                return qty > 0 && isUnitKey(avgKey) ? { quantity: qty, unit: avgKey } : null;
+              })()}
+              onApply={(value) => setInitialPackagingUnitCount(String(value))}
+            />
             {initialSupplierId && (!initialPurchasePrice || !initialPackagingUnitCount) && (
               <p className="text-xs text-copper">
                 Vul ook prijs én inhoud in om de leveranciersprijs op te slaan.

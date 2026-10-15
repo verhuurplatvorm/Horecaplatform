@@ -1,5 +1,5 @@
 import type { ParsedInvoiceLine } from "./parse-ubl";
-import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
+import { importPackagingFromText } from "@/lib/packaging";
 import type { ParsedPriceRow } from "@/lib/price-import/columns";
 
 const UN_CEFACT_TO_BASE: Record<string, { baseUnitKey: string; factor: number }> = {
@@ -51,11 +51,10 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
       : ([line.packagingDescription, line.description].filter(Boolean) as string[]);
 
     for (const text of candidateTexts) {
-      const parsed = parsePackagingText(text);
+      const parsed = importPackagingFromText(text);
       if (parsed) {
-        const baseUnit = UNIT_TO_BASE_FACTOR[parsed.unit];
-        packagingUnitCount = parsed.totalQuantity * (baseUnit?.factor ?? 1);
-        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+        packagingUnitCount = parsed.count;
+        packagingUnitKey = parsed.unitKey;
         matchedPackagingText = parsed.explanation;
         break;
       }
@@ -67,11 +66,10 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
     // "{aantal} {eenheid}" voorkomt dat het bestelde aantal per ongeluk
     // als verpakkingsgrootte wordt gebruikt.
     if (packagingUnitCount === null && effectiveUnit) {
-      const parsedSingle = parsePackagingText(`1 ${effectiveUnit}`);
+      const parsedSingle = importPackagingFromText(`1 ${effectiveUnit}`);
       if (parsedSingle) {
-        const baseUnit = UNIT_TO_BASE_FACTOR[parsedSingle.unit];
-        packagingUnitCount = parsedSingle.totalQuantity * (baseUnit?.factor ?? 1);
-        packagingUnitKey = baseUnit?.baseUnitKey ?? null;
+        packagingUnitCount = parsedSingle.count;
+        packagingUnitKey = parsedSingle.unitKey;
         matchedPackagingText = `1 ${effectiveUnit}`;
       } else {
         const unCefact = UN_CEFACT_TO_BASE[effectiveUnit.toUpperCase()];
