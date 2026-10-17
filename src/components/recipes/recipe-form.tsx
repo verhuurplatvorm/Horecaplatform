@@ -1217,6 +1217,26 @@ export function RecipeForm({
     await resolveMany(fresh.map((r) => ({ uid: r.uid, name: r.unmatchedName ?? "" })));
   }
 
+  // Netto opbrengst (bruikbare hoeveelheid) invullen: het verlies-% rekent
+  // direct mee. Zelfde logica voor het veld bovenaan en het veld in het blok
+  // "Opbrengst en kostprijs".
+  function handleYieldTyped(value: string) {
+    setYieldQuantity(value);
+    const typed = Number(value.replace(",", "."));
+    if (yieldAutoReliable && computedYieldFromIngredients !== null && computedYieldFromIngredients > 0) {
+      // Zelf een opbrengst typen = een ander verlies-%, blijft automatisch.
+      if (Number.isFinite(typed) && typed > 0) {
+        setLossPct((1 - typed / computedYieldFromIngredients) * 100);
+        setYieldManual(false);
+      } else {
+        setYieldManual(true);
+      }
+    } else {
+      setYieldManual(true);
+    }
+    setLossDraft(null);
+  }
+
   // Eenheid van de opbrengst wisselen. Binnen dezelfde soort (kilo ↔ gram,
   // liter ↔ ml) rekent het getal mee, zodat 6,5 kilo niet 6,5 gram wordt.
   function changeYieldUnit(nextUnitId: string) {
@@ -1574,22 +1594,7 @@ export function RecipeForm({
                         step="any"
                         min="0"
                         value={yieldQuantity}
-                        onChange={(e) => {
-                          setYieldQuantity(e.target.value);
-                          const typed = Number(e.target.value.replace(",", "."));
-                          if (yieldAutoReliable && computedYieldFromIngredients !== null && computedYieldFromIngredients > 0) {
-                            // Zelf een opbrengst typen = een ander verlies-%, blijft automatisch.
-                            if (Number.isFinite(typed) && typed > 0) {
-                              setLossPct((1 - typed / computedYieldFromIngredients) * 100);
-                              setYieldManual(false);
-                            } else {
-                              setYieldManual(true);
-                            }
-                          } else {
-                            setYieldManual(true);
-                          }
-                          setLossDraft(null);
-                        }}
+                        onChange={(e) => handleYieldTyped(e.target.value)}
                         className="input min-w-[6rem] flex-1"
                       />
                       <select
@@ -1860,7 +1865,7 @@ export function RecipeForm({
                     {yieldManual || !yieldAutoReliable ? "Handmatig" : "Automatisch"}
                   </span>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <p className="text-xs text-muted">
                       Beginhoeveelheid ({yieldAutoReliable ? (yieldIsApproximate ? "berekend, in de buurt" : "berekend") : "zelf invullen"})
@@ -1931,6 +1936,23 @@ export function RecipeForm({
                       {begin === null
                         ? "Vul eerst een beginhoeveelheid in."
                         : "Gekoppeld aan de bruikbare hoeveelheid. Negatief = gewichtstoename."}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted" htmlFor="netto-opbrengst">
+                      Netto opbrengst ({unitLabel})
+                    </label>
+                    <input
+                      id="netto-opbrengst"
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={yieldQuantity}
+                      onChange={(e) => handleYieldTyped(e.target.value)}
+                      className="input h-8"
+                    />
+                    <p className="text-xs text-muted">
+                      Vul je dit in, dan rekent het verlies-% direct mee. Dit is de opbrengst die in de receptuur en de kostprijs per {unitLabel} wordt gebruikt.
                     </p>
                   </div>
                   {canViewFinancial && (
