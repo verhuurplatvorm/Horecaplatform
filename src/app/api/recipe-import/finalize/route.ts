@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { normalizeUnitKey } from "@/lib/recipe-import/parse-halfproducts";
+import type { Database } from "@/lib/types/database";
 import { matchIngredient } from "@/lib/recipe-import/match-ingredient";
 
 interface FinalizeIngredient {
@@ -26,6 +27,13 @@ interface FinalizeRecipe {
   linkedRecipeId?: string | null; // koppel aan bestaand i.p.v. nieuw aanmaken
   skip?: boolean;
 }
+
+// Een import van honderden recepten met elk meerdere ingrediëntregels duurt
+// langer dan de standaardlimiet; zonder dit werd fase 2 halverwege afgekapt
+// en bleven de laatste recepten zonder ingrediënten achter.
+export const maxDuration = 300;
+
+type LineInsert = Database["public"]["Tables"]["recipe_ingredients"]["Insert"];
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -178,31 +186,49 @@ export async function POST(request: Request) {
     unmatchedIngredients: number;
   }[] = [];
 
+  // Gekoppelde bestaande recepten die nog géén ingrediëntregels hebben (bv.
+  // door een eerdere afgebroken import) vullen we alsnog aan; recepten met
+  // regels blijven ongewijzigd.
+  const linkedIds = toImport.map((r) => r.linkedRecipeId).filter((v): v is string => !!v);
+  const linkedWithLines = new Set<string>();
+  for (let i = 0; i < linkedIds.length; i += 200) {
+    const { data: withLines } = await supabase
+      .from("recipe_ingredients")
+      .select("recipe_id")
+      .in("recipe_id", linkedIds.slice(i, i + 200));
+    for (const row of withLines ?? []) linkedWithLines.add(row.recipe_id);
+  }
+
+  // Zelfde ingrediëntnaam komt in veel recepten voor: één keer opzoeken.
+  const matchCache = new Map<string, Awaited<ReturnType<typeof matchIngredient>>>();
+
   for (const recipe of toImport) {
     const recipeId = recipeNameToId.get(recipe.name.trim().toLowerCase());
-    if (!recipeId || recipe.linkedRecipeId) {
-      // Gekoppeld aan een bestaand recept: ingrediënten daarvan blijven
-      // ongewijzigd, we voegen niets dubbel toe.
+    if (!recipeId) continue;
+    if (recipe.linkedRecipeId && linkedWithLines.has(recipe.linkedRecipeId)) {
+      // Gekoppeld aan een bestaand recept met ingrediënten: blijft ongewijzigd,
+      // we voegen niets dubbel toe.
       continue;
     }
 
     let matched = 0;
     let unmatched = 0;
 
+    const lines: LineInsert[] = [];
+    const lineIsUnmatched: boolean[] = [];
     for (let i = 0; i < recipe.ingredients.length; i++) {
       const ing = recipe.ingredients[i];
-      const match = await matchIngredient(
-        supabase,
-        groupId,
-        ing.name,
-        ing.supplierArticleNumber,
-        recipeNameToId
-      );
+      const cacheKey = `${ing.name.trim().toLowerCase()}|${ing.supplierArticleNumber ?? ""}`;
+      let match = matchCache.get(cacheKey);
+      if (!match) {
+        match = await matchIngredient(supabase, groupId, ing.name, ing.supplierArticleNumber, recipeNameToId);
+        matchCache.set(cacheKey, match);
+      }
 
       const unitKey = normalizeUnitKey(ing.unitRaw);
       const unitId = unitIdByKey.get(unitKey) ?? unitIdByKey.get("stuk") ?? null;
 
-      const { error: lineError } = await supabase.from("recipe_ingredients").insert({
+      lines.push({
         recipe_id: recipeId,
         product_id: match.type === "ingrediënt" ? match.id : null,
         sub_recipe_id: match.type === "halfproduct" ? match.id : null,
@@ -213,17 +239,32 @@ export async function POST(request: Request) {
         unit: "",
         sort_order: i,
       });
+      lineIsUnmatched.push(match.type === "unmatched");
+    }
 
-      if (lineError) {
-        console.error(
-          `[recipe-import] Kan ingrediënt "${ing.name}" van "${recipe.name}" niet opslaan:`,
-          lineError.message
-        );
-        continue;
+    // Alle regels van dit recept in één keer; lukt dat niet (bv. één
+    // foute regel), dan per regel zodat de rest er wel in komt.
+    const { error: bulkError } = lines.length
+      ? await supabase.from("recipe_ingredients").insert(lines)
+      : { error: null };
+    if (!bulkError) {
+      for (const um of lineIsUnmatched) {
+        if (um) unmatched++;
+        else matched++;
       }
-
-      if (match.type === "unmatched") unmatched++;
-      else matched++;
+    } else {
+      for (let i = 0; i < lines.length; i++) {
+        const { error: lineError } = await supabase.from("recipe_ingredients").insert(lines[i]);
+        if (lineError) {
+          console.error(
+            `[recipe-import] Kan ingrediënt "${recipe.ingredients[i].name}" van "${recipe.name}" niet opslaan:`,
+            lineError.message
+          );
+          continue;
+        }
+        if (lineIsUnmatched[i]) unmatched++;
+        else matched++;
+      }
     }
 
     results.push({
