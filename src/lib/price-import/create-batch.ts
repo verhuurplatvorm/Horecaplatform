@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedPriceRow } from "./columns";
 import { isEmballageRow, removeIgnoredRows } from "./ignored-items";
+import { autoApplyInvoiceBatch } from "./auto-apply";
 import { matchRowsToProducts, type MatchedRow } from "./match";
 
 /**
@@ -129,7 +130,7 @@ export async function createImportBatch(
       originalFilePath: string | null;
     };
   }
-): Promise<{ batchId: string } | { error: string }> {
+): Promise<{ batchId: string; autoApplied?: number; left?: number } | { error: string }> {
   const { groupId, supplierId, companyId, originalFilename, importedBy, parsedRows, invoice } =
     params;
 
@@ -263,5 +264,17 @@ export async function createImportBatch(
   }
 
   console.log(`[invoice-import] ${rowsToInsert.length} regel(s) opgeslagen in batch ${batch.id}.`);
+
+  // Facturen met een zekere leverancier worden direct doorgevoerd; wat niet
+  // automatisch kan blijft als "te controleren" in de batch staan.
+  if (invoice && !invoice.ibanMismatch) {
+    try {
+      const auto = await autoApplyInvoiceBatch(supabase, batch.id);
+      console.log(`[invoice-import] Automatisch toegepast: ${auto.applied}, te controleren: ${auto.left}.`);
+      return { batchId: batch.id, autoApplied: auto.applied, left: auto.left };
+    } catch (e) {
+      console.error("[invoice-import] Automatisch toepassen mislukt:", (e as Error).message);
+    }
+  }
   return { batchId: batch.id };
 }
