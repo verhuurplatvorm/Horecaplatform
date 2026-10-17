@@ -36,6 +36,7 @@ const SIZE_UNITS: { key: UnitKey; label: string }[] = [
   { key: "kg", label: "kilo" },
   { key: "ml", label: "ml" },
   { key: "l", label: "liter" },
+  { key: "stuk", label: "stuk" },
 ];
 
 const euro = (n: number) => `€ ${fmt(n, 4)}`;
@@ -63,7 +64,7 @@ export function PackagingEditModal({
   const initial = useMemo(() => {
     const spec = parsePackaging(target.packagingDescription) ?? parsePackaging(target.productName);
     const sizeUnit: UnitKey =
-      spec && ["g", "kg", "ml", "l"].includes(spec.unit)
+      spec && ["g", "kg", "ml", "l", "stuk"].includes(spec.unit)
         ? spec.unit
         : originalBase && ["g", "ml"].includes(originalBase)
         ? originalBase
@@ -108,18 +109,26 @@ export function PackagingEditModal({
   // Wat wordt er opgeslagen?
   const plan = useMemo(() => {
     if (!baseKey || !(piecesN > 0)) return null;
+    if (sizeUnit === "stuk") {
+      // "6 × 1 stuk": geen gewicht/inhoud, alleen aantallen.
+      if (!baseIsPiece) return null;
+      const per = sizeN > 0 ? sizeN : 1;
+      return { count: piecesN * per, bridge: null, newBridge: null, clearBridge: true };
+    }
     if (baseIsPiece) {
       const usedBridge: KeyBridge | null = sizeN > 0 ? { quantity: sizeN, unit: sizeUnit } : bridge;
-      return { count: piecesN, bridge: usedBridge, newBridge: sizeN > 0 ? { quantity: sizeN, unit: sizeUnit } : null };
+      return { count: piecesN, bridge: usedBridge, clearBridge: false, newBridge: sizeN > 0 ? { quantity: sizeN, unit: sizeUnit } : null };
     }
     if (!(sizeN > 0)) return null;
     const count = convert(piecesN * sizeN, sizeUnit, baseKey);
     const sizeBridge: KeyBridge = { quantity: sizeN, unit: sizeUnit };
-    return count === null ? null : { count, bridge: sizeBridge, newBridge: piecesN > 1 || baseChangedFromPiece ? sizeBridge : null };
+    return count === null ? null : { count, bridge: sizeBridge, clearBridge: false, newBridge: piecesN > 1 || baseChangedFromPiece ? sizeBridge : null };
   }, [baseKey, baseIsPiece, piecesN, sizeN, sizeUnit, bridge, baseChangedFromPiece]);
 
   const prices = plan && baseKey ? pricesFromCount(target.purchasePrice, plan.count, baseKey, plan.bridge) : null;
-  const description = sizeN > 0
+  const description = sizeUnit === "stuk"
+    ? `${fmt(piecesN)} × ${fmt(sizeN > 0 ? sizeN : 1)} Stuks`
+    : sizeN > 0
     ? `${fmt(piecesN)} × ${fmt(sizeN)} ${SIZE_UNITS.find((u) => u.key === sizeUnit)?.label === "gram" ? "Gram" : sizeUnit}`
     : `${fmt(piecesN)} × 1 Stuks`;
 
@@ -128,6 +137,8 @@ export function PackagingEditModal({
       setError(
         baseIsPiece
           ? "Vul het aantal stuks per verpakking in."
+          : sizeUnit === "stuk"
+          ? "Kies bij \"Ingrediënt rekent in\" de eenheid stuk."
           : "Vul aantal en inhoud in, in een eenheid die bij dit ingrediënt past (gewicht of inhoud)."
       );
       return;
@@ -157,8 +168,18 @@ export function PackagingEditModal({
         otherUpdates.push({ id: o.id as string, count: converted });
       }
     }
-    if (baseChanged || plan.newBridge) {
-      const patch: { base_unit_id?: string; avg_unit_quantity?: number; avg_unit_id?: string } = {};
+    if (baseChanged || plan.newBridge || plan.clearBridge) {
+      const patch: {
+        base_unit_id?: string;
+        avg_unit_quantity?: number | null;
+        avg_unit_id?: string | null;
+        net_unit_quantity?: number | null;
+      } = {};
+      if (plan.clearBridge) {
+        patch.avg_unit_quantity = null;
+        patch.avg_unit_id = null;
+        patch.net_unit_quantity = null;
+      }
       if (baseChanged && unitIds[baseKey]) patch.base_unit_id = unitIds[baseKey];
       if (plan.newBridge && unitIds[plan.newBridge.unit as string]) {
         patch.avg_unit_quantity = plan.newBridge.quantity as number;
@@ -220,7 +241,11 @@ export function PackagingEditModal({
           </label>
           <label>
             <span className="mb-1 block text-xs uppercase tracking-wide text-muted">Eenheid</span>
-            <select value={sizeUnit} onChange={(e) => setSizeUnit(e.target.value as UnitKey)} className="input">
+            <select value={sizeUnit} onChange={(e) => {
+                const k = e.target.value as UnitKey;
+                setSizeUnit(k);
+                if (k === "stuk") setBaseKey("stuk");
+              }} className="input">
               {SIZE_UNITS.map((u) => (
                 <option key={u.key} value={u.key}>
                   {u.label}
@@ -260,7 +285,7 @@ export function PackagingEditModal({
                 <div>{euro(prices.perBase)} per {target.baseUnitKey}</div>
               )}
             </div>
-            {baseIsPiece && sizeN > 0 && (
+            {baseIsPiece && sizeN > 0 && sizeUnit !== "stuk" && (
               <div className="mt-2 text-xs text-muted">
                 In een recept kun je 1 stuk invullen ({prices.perPiece !== null ? euro(prices.perPiece) : "—"}), maar ook
                 bijvoorbeeld 100 {sizeUnit}.
