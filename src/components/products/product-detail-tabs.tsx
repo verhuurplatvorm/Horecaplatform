@@ -13,8 +13,8 @@ const TABS = [
   { key: "algemeen", label: "Algemeen" },
   { key: "gebruik", label: "Gebruik & recepten" },
   { key: "prijs", label: "Prijs & historie" },
-  { key: "allergenen", label: "Allergenen & voedingswaarden" },
-  { key: "voorraad", label: "Voorraad & inkoop" },
+  { key: "allergenen", label: "Allergenen & voeding" },
+  { key: "voorraad", label: "Geavanceerd" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];

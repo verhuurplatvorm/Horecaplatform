@@ -560,7 +560,7 @@ export function ProductForm({
       {activeTab === "algemeen" && (
       <Card>
         <CardHeader>
-          <CardTitle>Basisgegevens</CardTitle>
+          <CardTitle>Ingrediënt</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <Field label="Naam" required>
@@ -574,6 +574,18 @@ export function ProductForm({
               className="input"
             />
           </Field>
+          <Field label="Artikelnummer">
+            <input
+              value={articleNumber}
+              onChange={(e) => setArticleNumber(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <details className="sm:col-span-2 rounded-md border border-border px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-muted">
+              Meer gegevens (merk, groep, omschrijving, EAN, …)
+            </summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <Field
             label="Eigen ingrediëntnaam"
             hint="Standaard gelijk aan de naam, vrij aan te passen — wordt meegenomen in alle zoekfuncties."
@@ -657,13 +669,8 @@ export function ProductForm({
               className="input"
             />
           </Field>
-          <Field label="Artikelnummer">
-            <input
-              value={articleNumber}
-              onChange={(e) => setArticleNumber(e.target.value)}
-              className="input"
-            />
-          </Field>
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -734,6 +741,27 @@ export function ProductForm({
             </p>
           </Field>
 
+          {initialProduct && (
+            <div className="sm:col-span-2 rounded-md border border-border bg-background p-3">
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
+                Prijs per basiseenheid
+              </p>
+              <PriceBreakdownLine
+                avgUnitQuantity={avgUnitQuantity}
+                netUnitQuantity={netUnitQuantity}
+                baseUnitName={
+                  units.find((u) => u.id === baseUnitId)?.name ?? "basiseenheid"
+                }
+                avgUnitName={units.find((u) => u.id === avgUnitId)?.name ?? ""}
+              />
+            </div>
+          )}
+
+          <details className="rounded-md border border-border px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-muted">
+              Geavanceerd (netto bruikbaar, eigen kostprijs, verpakkingen)
+            </summary>
+            <div className="mt-3 space-y-4">
           <Field label="Netto bruikbaar per stuk (optioneel)">
             <div className="flex max-w-xs items-center gap-2">
               <span className="whitespace-nowrap text-sm text-muted">waarvan bruikbaar</span>
@@ -777,22 +805,6 @@ export function ProductForm({
               </>
             )}
           </Field>
-
-          {initialProduct && (
-            <div className="sm:col-span-2 rounded-md border border-border bg-background p-3">
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
-                Prijs per basiseenheid
-              </p>
-              <PriceBreakdownLine
-                avgUnitQuantity={avgUnitQuantity}
-                netUnitQuantity={netUnitQuantity}
-                baseUnitName={
-                  units.find((u) => u.id === baseUnitId)?.name ?? "basiseenheid"
-                }
-                avgUnitName={units.find((u) => u.id === avgUnitId)?.name ?? ""}
-              />
-            </div>
-          )}
 
           <Field
             label={`Eigen kostprijs per ${
@@ -869,6 +881,8 @@ export function ProductForm({
               ))}
             </div>
           </div>
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -1049,7 +1063,7 @@ export function ProductForm({
       {activeTab === "voorraad" && (
       <Card>
         <CardHeader>
-          <CardTitle>Inkoop &amp; voorraad (optioneel)</CardTitle>
+          <CardTitle>Geavanceerd</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <Field label="Voorkeursleverancier">
@@ -1082,24 +1096,6 @@ export function ProductForm({
               value={lossPct}
               onChange={(e) => setLossPct(e.target.value)}
               placeholder="bv. 20 voor 20%"
-              className="input"
-            />
-          </Field>
-          <Field label="Minimale voorraad (in basiseenheid)">
-            <input
-              type="number"
-              step="any"
-              value={minStock}
-              onChange={(e) => setMinStock(e.target.value)}
-              className="input"
-            />
-          </Field>
-          <Field label="Bestelhoeveelheid (in basiseenheid)">
-            <input
-              type="number"
-              step="any"
-              value={reorderQty}
-              onChange={(e) => setReorderQty(e.target.value)}
               className="input"
             />
           </Field>
