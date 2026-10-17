@@ -137,6 +137,10 @@ export function RecipeForm({
     initialRecipe ? initialRecipe.yield_is_manual ?? true : false
   );
   const [lossDraft, setLossDraft] = useState<string | null>(null);
+  // Verlies/reductie in % t.o.v. de beginhoeveelheid. In de automatische stand
+  // is de opbrengst = som van de ingrediënten × (1 − verlies). Wordt bij het
+  // openen afgeleid uit de opgeslagen opbrengst.
+  const [lossPct, setLossPct] = useState(0);
   // Beginhoeveelheid die de kok zelf invult als het systeem hem niet kan
   // berekenen (bv. liters en kilo's door elkaar). Alleen om het verlies-% en
   // de bruikbare hoeveelheid aan elkaar te koppelen; wordt niet opgeslagen.
@@ -631,8 +635,11 @@ export function RecipeForm({
     // Wacht tot de eenheden en prijzen geladen zijn (anders is de som nog niet compleet).
     if (units.length === 0 || computedYieldFromIngredients === null || missingInfo) return;
     yieldModeChecked.current = true;
-    if (stored > 0 && Math.abs(stored - computedYieldFromIngredients) / stored < 0.001) {
+    if (stored > 0 && computedYieldFromIngredients > 0) {
+      // Een opbrengst onder (of boven) de som is gewoon een verlies-%, geen
+      // reden om "handmatig" te zijn: de standaard blijft automatisch.
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLossPct((1 - stored / computedYieldFromIngredients) * 100);
       setYieldManual(false);
     }
   }, [
@@ -663,10 +670,14 @@ export function RecipeForm({
       computedYieldFromIngredients !== null &&
       computedYieldFromIngredients > 0
     ) {
+      const target = computedYieldFromIngredients * (1 - lossPct / 100);
+      const typed = Number(yieldQuantity.replace(",", "."));
+      // Niet overschrijven wat de kok net typt (bv. "7," tijdens het typen).
+      if (Number.isFinite(typed) && yieldQuantity.trim() !== "" && Math.abs(typed - target) <= Math.max(1e-6, Math.abs(target) * 1e-6)) return;
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setYieldQuantity(computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, ""));
+      setYieldQuantity(target.toFixed(3).replace(/\.?0+$/, ""));
     }
-  }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable]);
+  }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable, lossPct, yieldQuantity]);
 
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
@@ -1494,7 +1505,18 @@ export function RecipeForm({
                         value={yieldQuantity}
                         onChange={(e) => {
                           setYieldQuantity(e.target.value);
-                          setYieldManual(true);
+                          const typed = Number(e.target.value.replace(",", "."));
+                          if (yieldAutoReliable && computedYieldFromIngredients !== null && computedYieldFromIngredients > 0) {
+                            // Zelf een opbrengst typen = een ander verlies-%, blijft automatisch.
+                            if (Number.isFinite(typed) && typed > 0) {
+                              setLossPct((1 - typed / computedYieldFromIngredients) * 100);
+                              setYieldManual(false);
+                            } else {
+                              setYieldManual(true);
+                            }
+                          } else {
+                            setYieldManual(true);
+                          }
                           setLossDraft(null);
                         }}
                         className="input min-w-[6rem] flex-1"
@@ -1517,20 +1539,6 @@ export function RecipeForm({
                       </select>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      {yieldManual && yieldAutoReliable && computedYieldFromIngredients !== null && computedYieldFromIngredients > 0 && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          
-                          onClick={() => {
-                            setYieldManual(false);
-                            setYieldQuantity(computedYieldFromIngredients.toFixed(3).replace(/\.?0+$/, ""));
-                          }}
-                        >
-                          Terug naar automatisch
-                        </Button>
-                      )}
                     </div>
                     {!baseUnitId && (
                       <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, stuks).</p>
@@ -1759,7 +1767,12 @@ export function RecipeForm({
               const pct = Number(raw.replace(",", "."));
               if (raw.trim() === "" || !Number.isFinite(pct) || pct >= 100) return;
               // Negatief = gewichtstoename (bv. rijst die water opneemt).
-              setYieldManual(true);
+              if (yieldAutoReliable) {
+                setLossPct(pct);
+                setYieldManual(false);
+              } else {
+                setYieldManual(true);
+              }
               setYieldQuantity(String(Math.round(begin * (1 - pct / 100) * 1000) / 1000));
             }
             return (
