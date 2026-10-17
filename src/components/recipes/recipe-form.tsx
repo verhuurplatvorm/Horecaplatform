@@ -1280,7 +1280,21 @@ export function RecipeForm({
       const b = (Number(manualBegin.replace(",", ".")) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
       setManualBegin(String(Math.round(b * 10000) / 10000));
     }
-    if (prev && next && prev.dimension !== next.dimension) {
+    // Gram ↔ milliliter: bij benadering 1 op 1 (zelfde aanname als bij het
+    // optellen van de ingrediënten), zodat het getal blijft staan.
+    const bothMeasures =
+      prev && next && prev.dimension !== "aantal" && next.dimension !== "aantal" && prev.dimension !== next.dimension;
+    if (prev && next && bothMeasures) {
+      if (Number(yieldQuantity) > 0) {
+        const converted = (Number(yieldQuantity) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
+        setYieldQuantity(String(Math.round(converted * 10000) / 10000));
+      }
+      if (Number(manualBegin.replace(",", ".")) > 0) {
+        const b = (Number(manualBegin.replace(",", ".")) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
+        setManualBegin(String(Math.round(b * 10000) / 10000));
+      }
+    }
+    if (prev && next && prev.dimension !== next.dimension && !bothMeasures) {
       // Van gewicht/inhoud naar stuks (of terug): het oude getal betekent iets
       // anders (5000 ml is geen 5000 stuks). Opnieuw invullen.
       setYieldQuantity("");
@@ -2017,17 +2031,34 @@ export function RecipeForm({
                   </div>
                   <div>
                     <label className="text-xs text-muted" htmlFor="netto-opbrengst">
-                      Netto opbrengst ({unitLabel})
+                      Netto opbrengst
                     </label>
-                    <input
-                      id="netto-opbrengst"
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={yieldQuantity}
-                      onChange={(e) => handleYieldTyped(e.target.value)}
-                      className="input h-8"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        id="netto-opbrengst"
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={yieldQuantity}
+                        onChange={(e) => handleYieldTyped(e.target.value)}
+                        className="input h-8 min-w-0 flex-1"
+                      />
+                      <select
+                        aria-label="Eenheid van de netto opbrengst"
+                        value={baseUnitId}
+                        onChange={(e) => changeYieldUnit(e.target.value)}
+                        className="input h-8 w-28 shrink-0"
+                      >
+                        {!baseUnitId && <option value="">Eenheid…</option>}
+                        {units
+                          .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key) || u.id === baseUnitId)
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
                     <p className="text-xs text-muted">
                       Vul je dit in, dan rekent het verlies-% direct mee. Dit is de opbrengst die in de receptuur en de kostprijs per {unitLabel} wordt gebruikt.
                     </p>
