@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { createClient } from "@/lib/supabase/client";
 import { convertCountToNewBase, isUnitKey, type UnitKey } from "@/lib/packaging";
+import { PackagingEditModal, type PackagingEditResult, type PackagingEditTarget } from "@/components/products/packaging-edit-modal";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
@@ -125,6 +126,7 @@ export default function ProductenPage() {
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [packagingTarget, setPackagingTarget] = useState<PackagingEditTarget | null>(null);
   const [deletingRow, setDeletingRow] = useState<ProductRow | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -295,6 +297,25 @@ export default function ProductenPage() {
         };
       })
     );
+  }
+
+  function handlePackagingSaved(productId: string, priceRowId: string, result: PackagingEditResult) {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== productId) return r;
+        const isTarget = r.priceRowId === priceRowId;
+        const count = isTarget ? result.packagingUnitCount : r.packagingUnitCount;
+        return {
+          ...r,
+          avg_unit_quantity: result.avgUnitQuantity ?? r.avg_unit_quantity,
+          packagingUnitCount: count,
+          packagingDescription: isTarget ? result.packagingDescription : r.packagingDescription,
+          pricePerBaseUnit:
+            isTarget && r.purchasePrice !== null && count ? r.purchasePrice / count : r.pricePerBaseUnit,
+        };
+      })
+    );
+    setPackagingTarget(null);
   }
 
   async function updateBaseUnit(productId: string, newUnitId: string) {
@@ -567,6 +588,29 @@ export default function ProductenPage() {
               label: "Verpakking",
               width: 130,
               value: (r) => r.packagingDescription,
+              render: (r) =>
+                r.priceRowId && r.purchasePrice !== null ? (
+                  <button
+                    type="button"
+                    title="Verpakking aanpassen"
+                    className="text-left underline decoration-dotted underline-offset-2 hover:text-teal"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPackagingTarget({
+                        productId: r.id,
+                        productName: r.name,
+                        priceRowId: r.priceRowId!,
+                        purchasePrice: r.purchasePrice!,
+                        baseUnitKey: r.base_unit,
+                        packagingDescription: r.packagingDescription,
+                      });
+                    }}
+                  >
+                    {r.packagingDescription ?? "invullen"}
+                  </button>
+                ) : (
+                  r.packagingDescription ?? "—"
+                ),
             },
             {
               key: "inhoud",
@@ -731,6 +775,16 @@ export default function ProductenPage() {
           }}
         />
       )}
+      {packagingTarget && (
+        <PackagingEditModal
+          target={packagingTarget}
+          onClose={() => setPackagingTarget(null)}
+          onSaved={(result) =>
+            handlePackagingSaved(packagingTarget.productId, packagingTarget.priceRowId, result)
+          }
+        />
+      )}
+
       {deletingRow && (
         <Modal title="Ingrediënt verwijderen" onClose={() => setDeletingRow(null)}>
           <div className="space-y-4">

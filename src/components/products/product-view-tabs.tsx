@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/producten", label: "Alle ingrediënten" },
   { href: "/producten/opschonen", label: "Te controleren" },
-  { href: "/producten/verpakkingscontrole", label: "Verpakkingscontrole" },
 ];
 
 /** Kleine tabbalk die "Ingrediënten" en "Ingrediënten opschonen" als twee weergaven van hetzelfde overzicht laat aanvoelen, in plaats van losse bestemmingen. */
