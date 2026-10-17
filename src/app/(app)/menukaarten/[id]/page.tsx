@@ -24,6 +24,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
+import { MenuCardSettingsForm } from "@/components/menus/menu-card-settings-form";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
@@ -58,6 +59,7 @@ export default function MenukaartWorkspacePage({
   const [addingRecipe, setAddingRecipe] = useState(false);
   const [addingFromRecipeFolder, setAddingFromRecipeFolder] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const referenceCompanyId = card?.company_id ?? activeCompanyIds[0] ?? null;
 
@@ -316,12 +318,10 @@ export default function MenukaartWorkspacePage({
       <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[280px_1fr] md:p-6">
         <div className="space-y-3">
           <div className="flex gap-2">
-            <Link href={`/menukaarten/${menuCardId}/instellingen`} className="flex-1">
-              <Button variant="secondary" className="w-full">
-                <Settings className="h-3.5 w-3.5" />
-                Instellingen
-              </Button>
-            </Link>
+            <Button variant="secondary" className="flex-1" onClick={() => setSettingsOpen(true)}>
+              <Settings className="h-3.5 w-3.5" />
+              Instellingen
+            </Button>
             <Button variant="secondary" onClick={handleDuplicate} disabled={duplicating} title="Dupliceren">
               <Copy className="h-3.5 w-3.5" />
             </Button>
@@ -569,6 +569,19 @@ export default function MenukaartWorkspacePage({
             reload();
           }}
         />
+      )}
+      {settingsOpen && (
+        <Modal title="Menukaart instellingen" onClose={() => setSettingsOpen(false)}>
+          <MenuCardSettingsForm
+            menuCardId={menuCardId}
+            onSaved={() => {
+              setSettingsOpen(false);
+              setReloadToken((t) => t + 1);
+            }}
+            onCancel={() => setSettingsOpen(false)}
+            onDeleted={() => router.push("/menukaarten")}
+          />
+        </Modal>
       )}
     </>
   );
