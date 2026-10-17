@@ -66,6 +66,7 @@ export default function HalfproductenImporterenPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("recipeKind", recipeKind);
       const res = await fetch("/api/recipe-import/upload", { method: "POST", body: formData });
       let body: { recipes?: (ReviewRecipe & { include?: boolean })[]; error?: string };
       try {

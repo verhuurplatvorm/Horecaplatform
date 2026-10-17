@@ -24,6 +24,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Geen bestand ontvangen." }, { status: 400 });
   }
 
+  const recipeKind = formData.get("recipeKind") === "gerecht" ? "gerecht" : "halfproduct";
+
   const buffer = Buffer.from(await file.arrayBuffer());
 
   let recipes;
@@ -58,8 +60,37 @@ export async function POST(request: Request) {
 
   // Niet-blokkerende dubbel-detectie op receptnaam — de gebruiker kiest
   // zelf of het toch een nieuw, apart recept is.
+  // Halfproducten: exacte naamsmatch op bestaande halfproducten (de
+  // zoekfunctie in de database kijkt alleen naar gerechten, waardoor elke
+  // herhaalde import van halfproducten alles opnieuw aanmaakte). Oudste /
+  // goedgekeurde versie wint als er al dubbelen staan.
+  const halfproductByName = new Map<string, { id: string; name: string }>();
+  if (recipeKind === "halfproduct") {
+    const { data: existingHalf } = await supabase
+      .from("recipes")
+      .select("id, name, status, created_at")
+      .eq("group_id", groupId)
+      .eq("recipe_kind", "halfproduct")
+      .order("created_at", { ascending: true })
+      .limit(5000);
+    const sorted = [...(existingHalf ?? [])].sort(
+      (a, b) => Number(b.status === "goedgekeurd") - Number(a.status === "goedgekeurd")
+    );
+    for (const r of sorted) {
+      const key = r.name.trim().toLowerCase();
+      if (!halfproductByName.has(key)) halfproductByName.set(key, { id: r.id, name: r.name });
+    }
+  }
+
   const recipesWithMatches = await Promise.all(
     recipes.map(async (recipe) => {
+      if (recipeKind === "halfproduct") {
+        const hit = halfproductByName.get(recipe.name.trim().toLowerCase());
+        return {
+          ...recipe,
+          candidates: hit ? [{ recipe_id: hit.id, recipe_name: hit.name, similarity_score: 1 }] : [],
+        };
+      }
       const { data: candidates } = await supabase.rpc("match_recipe_by_name", {
         p_group_id: groupId,
         p_name: recipe.name,
@@ -67,6 +98,7 @@ export async function POST(request: Request) {
       return { ...recipe, candidates: candidates ?? [] };
     })
   );
+
 
   return NextResponse.json({ recipes: recipesWithMatches });
 }
