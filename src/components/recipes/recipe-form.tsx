@@ -1367,6 +1367,11 @@ export function RecipeForm({
           <Field label="Naam" required>
             <input required value={name} onChange={(e) => setName(e.target.value)} className="input" />
           </Field>
+          <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
+            <summary className="cursor-pointer text-sm font-medium text-foreground">
+              Categorie, status en bereik
+            </summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
           <Field label="Categorie">
             <input
               value={category}
@@ -1405,6 +1410,8 @@ export function RecipeForm({
               </option>
             </select>
           </Field>
+            </div>
+          </details>
 
           {recipeKind === "gerecht" ? (
             <>
