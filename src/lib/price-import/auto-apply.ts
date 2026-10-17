@@ -4,13 +4,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * Automatisch doorvoeren van een factuur-batch wanneer de procedure klopt
  * (zekere leverancier, geen IBAN-afwijking). Per regel gelden vangnetten:
  *  - alleen gekoppelde regels met een prijs;
- *  - een prijssprong groter dan MAX_AUTO_CHANGE_PCT blijft voor controle liggen;
+ *  - een prijssprong groter dan MAX_AUTO_CHANGE_PCT (30%) blijft voor controle liggen;
  *  - een nieuwe prijs zonder verpakkingsaantal blijft voor controle liggen.
  * Wat niet automatisch kan, blijft in de batch staan als "te controleren".
  * Prijsalarmen en prijshistorie werken daarna precies als bij handmatig
  * toepassen (dezelfde database-functie).
  */
-export const MAX_AUTO_CHANGE_PCT = 50;
+export const MAX_AUTO_CHANGE_PCT = 30;
 
 export type AutoRowDecision = "toepassen" | "controle";
 
