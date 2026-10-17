@@ -637,9 +637,18 @@ export function RecipeForm({
     yieldModeChecked.current = true;
     if (stored > 0 && computedYieldFromIngredients > 0) {
       // Een opbrengst onder (of boven) de som is gewoon een verlies-%, geen
-      // reden om "handmatig" te zijn: de standaard blijft automatisch.
+      // reden om "handmatig" te zijn: de standaard blijft automatisch. Alleen
+      // een heel andere opbrengst (bv. 24 stuks uit 2 kilo) blijft handmatig.
+      const loss = (1 - stored / computedYieldFromIngredients) * 100;
+      if (loss >= -300 && loss < 99) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLossPct(loss);
+        setYieldManual(false);
+      }
+    } else if (!(stored > 0) && computedYieldFromIngredients > 0) {
+      // Nog geen opbrengst ingevuld: dan volgt die gewoon de som (automatisch).
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLossPct((1 - stored / computedYieldFromIngredients) * 100);
+      setLossPct(0);
       setYieldManual(false);
     }
   }, [
@@ -651,6 +660,41 @@ export function RecipeForm({
     initialRecipe,
     initialIngredients,
   ]);
+
+  // Staat de eenheid van de opbrengst op "stuk" terwijl de ingrediënten in
+  // gram/liter staan (en is de opbrengst nog niet door de kok bepaald), dan
+  // is stuks een restant van de import. We zetten het eenmalig om naar
+  // gram of milliliter, zodat er een echt totaal komt. Zelf een eenheid
+  // kiezen wint altijd.
+  const unitAutoDone = useRef(false);
+  useEffect(() => {
+    if (unitAutoDone.current || recipeKind !== "halfproduct" || units.length === 0) return;
+    const cur = baseUnitId ? unitsById.get(baseUnitId) : null;
+    if (!cur) return;
+    if (cur.dimension !== "aantal") {
+      unitAutoDone.current = true;
+      return;
+    }
+    if (yieldManual && Number(yieldQuantity) > 0) return;
+    let weight = 0;
+    let volume = 0;
+    let count = 0;
+    for (const row of rows) {
+      if (isEmptyRow(row) || !row.quantity.trim()) continue;
+      const u = row.unitId ? unitsById.get(row.unitId) : null;
+      if (!u) continue;
+      if (u.dimension === "gewicht") weight++;
+      else if (u.dimension === "inhoud") volume++;
+      else count++;
+    }
+    if (weight + volume === 0 || count >= weight + volume) return;
+    const target = units.find((u) => u.key === (volume > weight ? "ml" : "g"));
+    if (!target) return;
+    unitAutoDone.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBaseUnitId(target.id);
+    setYieldQuantity("");
+  }, [rows, units, unitsById, baseUnitId, recipeKind, yieldManual, yieldQuantity]);
 
   // De som is alleen betrouwbaar als ALLE regels met een hoeveelheid naar de
   // eenheid van de opbrengst om te rekenen zijn. Een deelsom (bv. alleen de
@@ -1176,6 +1220,7 @@ export function RecipeForm({
   // Eenheid van de opbrengst wisselen. Binnen dezelfde soort (kilo ↔ gram,
   // liter ↔ ml) rekent het getal mee, zodat 6,5 kilo niet 6,5 gram wordt.
   function changeYieldUnit(nextUnitId: string) {
+    unitAutoDone.current = true;
     const prev = baseUnitId ? unitsById.get(baseUnitId) : null;
     const next = nextUnitId ? unitsById.get(nextUnitId) : null;
     if (prev && next && prev.dimension === next.dimension && Number(yieldQuantity) > 0) {
