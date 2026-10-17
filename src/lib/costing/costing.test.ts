@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { STATIC_UNITS_BY_KEY } from "@/lib/packaging";
-import { foodcostAndMargin, halfproductLineCost, ingredientLineCost, recipeTotals } from "./index";
+import { approximateMeasure, foodcostAndMargin, halfproductLineCost, ingredientLineCost, recipeTotals } from "./index";
 
 const U = STATIC_UNITS_BY_KEY;
 const u = (k: string) => U.get(k)!;
@@ -62,5 +62,21 @@ describe("recipeTotals / foodcost", () => {
     close(r.foodcostPct, 30);
     close(r.margin, 7);
     assert.equal(foodcostAndMargin(3, 0).foodcostPct, null);
+  });
+});
+
+describe("approximateMeasure (in de buurt)", () => {
+  it("10 liter + 100 g ≈ 10100 ml", () => {
+    const l = approximateMeasure(10, u("l"), u("ml"));
+    const g = approximateMeasure(100, u("g"), u("ml"));
+    close((l ?? 0) + (g ?? 0), 10100);
+  });
+  it("5 kg + 120 ml ≈ 5120 g", () => {
+    const kg = approximateMeasure(5, u("kg"), u("g"));
+    const ml = approximateMeasure(120, u("ml"), u("g"));
+    close((kg ?? 0) + (ml ?? 0), 5120);
+  });
+  it("stuk is niet te benaderen", () => {
+    assert.equal(approximateMeasure(2, u("stuk"), u("g")), null);
   });
 });

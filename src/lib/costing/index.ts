@@ -74,3 +74,14 @@ export function foodcostAndMargin(cost: number, salesPriceExVat: number) {
   if (!(salesPriceExVat > 0)) return { foodcostPct: null, margin: null };
   return { foodcostPct: (cost / salesPriceExVat) * 100, margin: salesPriceExVat - cost };
 }
+
+/**
+ * "In de buurt": gewicht en inhoud onderling gelijkstellen (1 g ≈ 1 ml),
+ * alleen voor het optellen van een beginhoeveelheid/opbrengst. NIET voor
+ * kostprijzen van ingrediënten. null = geen gewicht/inhoud-eenheid.
+ */
+export function approximateMeasure(quantity: number, from: UnitLike, to: UnitLike): number | null {
+  const isMeasure = (u: UnitLike) => u.dimension === "gewicht" || u.dimension === "inhoud";
+  if (!Number.isFinite(quantity) || !isMeasure(from) || !isMeasure(to) || !to.factor_to_base) return null;
+  return (quantity * from.factor_to_base) / to.factor_to_base;
+}

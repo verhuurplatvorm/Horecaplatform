@@ -23,7 +23,7 @@ import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { convertQuantity } from "@/lib/units/convert";
-import { halfproductLineCost, ingredientLineCost, recipeTotals } from "@/lib/costing";
+import { approximateMeasure, halfproductLineCost, ingredientLineCost, recipeTotals } from "@/lib/costing";
 import { RecipeHistory } from "@/components/recipes/recipe-history";
 import { RecipeFinancialTable } from "@/components/recipes/recipe-financial-table";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -141,6 +141,9 @@ export function RecipeForm({
   // berekenen (bv. liters en kilo's door elkaar). Alleen om het verlies-% en
   // de bruikbare hoeveelheid aan elkaar te koppelen; wordt niet opgeslagen.
   const [manualBegin, setManualBegin] = useState("");
+  // Bij stuks-regels zonder bekend gewicht: de kok geeft bij benadering op
+  // hoeveel gram/ml die regel samen is (uid → getal). Alleen voor de som.
+  const [stukEstimates, setStukEstimates] = useState<Record<string, string>>({});
   const [yieldQuantity, setYieldQuantity] = useState(
     initialRecipe?.yield_quantity?.toString() ?? ""
   );
@@ -546,49 +549,64 @@ export function RecipeForm({
   // alleen regels met dezelfde dimensie (bv. allemaal inhoud, of
   // allemaal gewicht) tellen mee, net als bij de "Totale hoeveelheid"
   // hierboven. Gebruikt om "Opbrengst" automatisch voor te stellen.
-  const computedYieldFromIngredients = useMemo(() => {
-    if (!baseUnitId) return null;
-    const targetUnit = unitsById.get(baseUnitId);
-    if (!targetUnit) return null;
-    let sum = 0;
-    let matchedAny = false;
-    for (const row of rows) {
-      if (!row.unitId || !row.quantity) continue;
-      const qty = parseFloat(row.quantity);
-      if (!Number.isFinite(qty)) continue;
-      const rowUnit = unitsById.get(row.unitId);
-      if (!rowUnit) continue;
-      const bridge = row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId) : null;
-      const converted = convertQuantity(qty, rowUnit, targetUnit, bridge, unitsById);
-      if (converted === null) continue;
-      sum += converted;
-      matchedAny = true;
-    }
-    return matchedAny ? sum : null;
-  }, [rows, baseUnitId, unitsById, productPrices]);
-
-  // Regels met een hoeveelheid die niet in de basiseenheid van dit recept
-  // zijn om te rekenen (andere eenheid zonder omrekening, of nog geen
-  // koppeling). Die tellen niet mee in de beginhoeveelheid.
-  const yieldSkippedCount = useMemo(() => {
-    if (!baseUnitId) return 0;
-    const targetUnit = unitsById.get(baseUnitId);
-    if (!targetUnit) return 0;
-    let skipped = 0;
+  // Per regel: hoeveel dat is in de basiseenheid van dit recept. Eerst de
+  // exacte omrekening; lukt die niet, dan "in de buurt": gewicht en inhoud
+  // worden 1 gram ≈ 1 ml gelijkgesteld (voor een verloren-% schatting, niet
+  // voor kostprijzen van ingrediënten), en een stuks-regel gebruikt het
+  // gram/ml-getal dat de kok zelf opgaf.
+  const yieldLines = useMemo(() => {
+    const targetUnit = baseUnitId ? unitsById.get(baseUnitId) : null;
+    const out: { uid: string; name: string; value: number | null; approx: boolean; needsEstimate: boolean; stuk?: boolean }[] = [];
+    if (!targetUnit) return out;
     for (const row of rows) {
       if (isEmptyRow(row) || !row.quantity.trim()) continue;
       const qty = parseFloat(row.quantity);
       const rowUnit = row.unitId ? unitsById.get(row.unitId) : null;
+      if (!Number.isFinite(qty) || !rowUnit) {
+        out.push({ uid: row.uid, name: row.refName ?? "regel", value: null, approx: false, needsEstimate: false });
+        continue;
+      }
       const bridge = row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId) : null;
-      const converted =
-        Number.isFinite(qty) && rowUnit
-          ? convertQuantity(qty, rowUnit, targetUnit, bridge, unitsById)
-          : null;
-      if (converted === null) skipped++;
+      const exact = convertQuantity(qty, rowUnit, targetUnit, bridge, unitsById);
+      if (exact !== null) {
+        out.push({ uid: row.uid, name: row.refName ?? "regel", value: exact, approx: false, needsEstimate: false });
+        continue;
+      }
+      const approx = approximateMeasure(qty, rowUnit, targetUnit);
+      if (approx !== null) {
+        out.push({ uid: row.uid, name: row.refName ?? "regel", value: approx, approx: true, needsEstimate: false });
+        continue;
+      }
+      const targetIsMeasure = targetUnit.dimension === "gewicht" || targetUnit.dimension === "inhoud";
+      if (rowUnit.dimension === "aantal" && row.refId && targetIsMeasure && targetUnit.factor_to_base) {
+        const est = Number((stukEstimates[row.uid] ?? "").replace(",", "."));
+        if (est > 0) {
+          out.push({
+            uid: row.uid,
+            name: row.refName ?? "regel",
+            value: est / targetUnit.factor_to_base,
+            approx: true,
+            needsEstimate: false,
+            stuk: true,
+          });
+        } else {
+          out.push({ uid: row.uid, name: row.refName ?? "regel", value: null, approx: false, needsEstimate: true, stuk: true });
+        }
+        continue;
+      }
+      out.push({ uid: row.uid, name: row.refName ?? "regel", value: null, approx: false, needsEstimate: false });
     }
-    return skipped;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, baseUnitId, unitsById, productPrices]);
+    return out;
+  }, [rows, baseUnitId, unitsById, productPrices, stukEstimates]);
+
+  const computedYieldFromIngredients = useMemo(() => {
+    const known = yieldLines.filter((l) => l.value !== null);
+    return known.length > 0 ? known.reduce((sum, l) => sum + (l.value as number), 0) : null;
+  }, [yieldLines]);
+  const yieldIsApproximate = yieldLines.some((l) => l.approx);
+
+  // Regels die echt niet in de som kunnen (onvolledig of stuks zonder opgegeven gram/ml).
+  const yieldSkippedCount = yieldLines.filter((l) => l.value === null).length;
 
   // Bestaand halfproduct waarvan de opbrengst al gelijk is aan de som van de
   // ingrediënten: dat is gewoon "automatisch". Dat tonen we ook zo, zodat de
@@ -1761,12 +1779,20 @@ export function RecipeForm({
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div>
                     <p className="text-xs text-muted">
-                      Beginhoeveelheid ({yieldAutoReliable ? "berekend" : "zelf invullen"})
+                      Beginhoeveelheid ({yieldAutoReliable ? (yieldIsApproximate ? "berekend, in de buurt" : "berekend") : "zelf invullen"})
                     </p>
                     {yieldAutoReliable && begin !== null ? (
-                      <p className="tabular text-sm font-medium">
-                        {fmt(begin)} {unitLabel}
-                      </p>
+                      <>
+                        <p className="tabular text-sm font-medium">
+                          {yieldIsApproximate ? "≈ " : ""}
+                          {fmt(begin)} {unitLabel}
+                        </p>
+                        {yieldIsApproximate && (
+                          <p className="text-xs text-muted">
+                            Liters en kilo&apos;s zijn bij benadering bij elkaar opgeteld (1 ml ≈ 1 g).
+                          </p>
+                        )}
+                      </>
                     ) : (
                       <>
                         <input
@@ -1786,6 +1812,21 @@ export function RecipeForm({
                         </p>
                       </>
                     )}
+                        {yieldLines.filter((l) => l.stuk).map((l) => (
+                          <label key={l.uid} className="mt-1 block text-xs text-muted">
+                            {l.name}: hoeveel gram of ml is dit ongeveer samen?
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={stukEstimates[l.uid] ?? ""}
+                              onChange={(e) =>
+                                setStukEstimates((prev) => ({ ...prev, [l.uid]: e.target.value }))
+                              }
+                              className="input mt-0.5 h-8"
+                              placeholder="bv. 450"
+                            />
+                          </label>
+                        ))}
                   </div>
                   <div>
                     <label className="text-xs text-muted" htmlFor="bereidingsverlies">
