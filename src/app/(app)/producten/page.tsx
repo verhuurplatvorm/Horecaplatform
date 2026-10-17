@@ -377,6 +377,9 @@ export default function ProductenPage() {
             <Download className="h-4 w-4" />
             Exporteren
           </Button>
+          <Link href="/producten/maten-koppelen">
+            <Button variant="secondary">Maten koppelen</Button>
+          </Link>
           <Link href="/producten/importeren">
             <Button variant="secondary">
               <Upload className="h-4 w-4" />

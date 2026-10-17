@@ -7,6 +7,7 @@ import {
   diagnosePackaging,
   parsePackaging,
   pricesFromCount,
+  sizePerPieceFromName,
   suggestCountForDescription,
   type KeyBridge,
 } from "./index";
@@ -432,5 +433,31 @@ describe("import-hulpfuncties (Excel / leverancier / factuur)", () => {
     assert.ok(nieuw.perPiece! > oud.perPiece!);
     close(nieuw.perPiece, 32.4 / 18);
     close(nieuw.perKg, 32.4 / 4.68);
+  });
+});
+
+describe("sizePerPieceFromName", () => {
+  it("losse maat is de maat per stuk", () => {
+    const r = sizePerPieceFromName("Crème panna 35% evolineo 1 litre");
+    assert.equal(r?.baseKey, "ml");
+    assert.equal(r?.perPiece, 1000);
+    assert.equal(r?.packsInName, null);
+    assert.equal(r?.ambiguous, false);
+  });
+  it("6x1 ltr: 1000 ml per stuk, 6 in de naam", () => {
+    const r = sizePerPieceFromName("Tomatenpuree 28/30 6x1 ltr");
+    assert.equal(r?.perPiece, 1000);
+    assert.equal(r?.packsInName, 6);
+  });
+  it("gewicht en komma", () => {
+    const r = sizePerPieceFromName("Boter ongezouten 2,5 kg");
+    assert.equal(r?.baseKey, "g");
+    assert.equal(r?.perPiece, 2500);
+  });
+  it("twee verschillende maten is onzeker", () => {
+    assert.equal(sizePerPieceFromName("Saus 500 gr / 2 kg")?.ambiguous, true);
+  });
+  it("geen maat in de naam", () => {
+    assert.equal(sizePerPieceFromName("Citroen 10st"), null);
   });
 });

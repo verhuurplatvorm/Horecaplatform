@@ -432,3 +432,33 @@ export function contentFromName(
   }
   return best;
 }
+
+/**
+ * Inhoud of gewicht PER STUK uit een productnaam, voor producten die in stuks
+ * worden ingekocht maar nog geen "1 stuk = x g/ml" kennen. "Crème panna 1 litre"
+ * → 1000 ml per stuk; "Tomatenpuree 6x1 ltr" → 1000 ml per stuk (6 stuks).
+ * `packsInName` is het aantal vóór de "x" (6), zodat de aanroeper kan
+ * controleren of dat bij het aantal stuks van de verpakking past. Bij
+ * meerdere verschillende maten in de naam is het niet zeker: `ambiguous`.
+ */
+export function sizePerPieceFromName(
+  name: string
+): { baseKey: "ml" | "g"; perPiece: number; packsInName: number | null; matchedText: string; ambiguous: boolean } | null {
+  const regex =
+    /(?:(\d+(?:[.,]\d+)?)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(ml|cl|dl|ltr|lt|liter|litre|l|kg|kilo|gram|gr|g)(?![a-z])/gi;
+  const found: { baseKey: "ml" | "g"; perPiece: number; packsInName: number | null; matchedText: string }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(name)) !== null) {
+    const packs = match[1] ? Number(match[1].replace(",", ".")) : null;
+    const amount = Number(match[2].replace(",", "."));
+    const unit = NAME_UNIT_ALIASES[match[3].toLowerCase()];
+    if (!unit || !Number.isFinite(amount) || amount <= 0) continue;
+    const { baseKey, factor } = toSmallestUnit(unit);
+    if (baseKey === "stuk") continue;
+    found.push({ baseKey, perPiece: amount * factor, packsInName: packs, matchedText: match[0].trim() });
+  }
+  if (found.length === 0) return null;
+  const last = found[found.length - 1];
+  const ambiguous = found.some((f) => f.baseKey !== last.baseKey || Math.abs(f.perPiece - last.perPiece) > 1e-9);
+  return { ...last, ambiguous };
+}
