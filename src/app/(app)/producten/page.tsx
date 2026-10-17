@@ -261,6 +261,32 @@ export default function ProductenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columnFilterActive, loading, rows.length, totalCount]);
 
+  /** Klikbare cel: opent het verpakking-venster (verpakking, inhoud, eenheid en prijs per eenheid). */
+  function packagingCell(r: ProductRow, content: React.ReactNode) {
+    if (!r.priceRowId || r.purchasePrice === null) return content;
+    return (
+      <button
+        type="button"
+        title="Verpakking, inhoud en eenheid aanpassen"
+        className="w-full cursor-pointer text-inherit hover:text-teal"
+        style={{ textAlign: "inherit" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setPackagingTarget({
+            productId: r.id,
+            productName: r.name,
+            priceRowId: r.priceRowId!,
+            purchasePrice: r.purchasePrice!,
+            baseUnitKey: r.base_unit,
+            packagingDescription: r.packagingDescription,
+          });
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
   async function updatePriceField(
     priceRowId: string | null,
     patch: { purchase_price?: number; packaging_unit_count?: number; packaging_description?: string | null }
@@ -307,6 +333,7 @@ export default function ProductenPage() {
         const count = isTarget ? result.packagingUnitCount : r.packagingUnitCount;
         return {
           ...r,
+          base_unit: result.baseUnitKey,
           avg_unit_quantity: result.avgUnitQuantity ?? r.avg_unit_quantity,
           packagingUnitCount: count,
           packagingDescription: isTarget ? result.packagingDescription : r.packagingDescription,
@@ -316,6 +343,7 @@ export default function ProductenPage() {
       })
     );
     setPackagingTarget(null);
+    reload();
   }
 
   async function updateBaseUnit(productId: string, newUnitId: string) {
@@ -588,29 +616,7 @@ export default function ProductenPage() {
               label: "Verpakking",
               width: 130,
               value: (r) => r.packagingDescription,
-              render: (r) =>
-                r.priceRowId && r.purchasePrice !== null ? (
-                  <button
-                    type="button"
-                    title="Verpakking aanpassen"
-                    className="text-left underline decoration-dotted underline-offset-2 hover:text-teal"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPackagingTarget({
-                        productId: r.id,
-                        productName: r.name,
-                        priceRowId: r.priceRowId!,
-                        purchasePrice: r.purchasePrice!,
-                        baseUnitKey: r.base_unit,
-                        packagingDescription: r.packagingDescription,
-                      });
-                    }}
-                  >
-                    {r.packagingDescription ?? "invullen"}
-                  </button>
-                ) : (
-                  r.packagingDescription ?? "—"
-                ),
+              render: (r) => packagingCell(r, r.packagingDescription ?? "invullen"),
             },
             {
               key: "inhoud",
@@ -618,8 +624,15 @@ export default function ProductenPage() {
               width: 100,
               align: "right",
               value: (r) => r.packagingUnitCount,
+              render: (r) => packagingCell(r, r.packagingUnitCount ?? "—"),
             },
-            { key: "eenheid", label: "Eenheid", width: 90, value: (r) => r.base_unit },
+            {
+              key: "eenheid",
+              label: "Eenheid",
+              width: 90,
+              value: (r) => r.base_unit,
+              render: (r) => packagingCell(r, r.base_unit),
+            },
             {
               key: "prijsbasis",
               label: "Prijs per basiseenheid",
@@ -627,9 +640,12 @@ export default function ProductenPage() {
               align: "right",
               value: (r) => r.pricePerBaseUnit,
               render: (r) =>
-                r.pricePerBaseUnit !== null
-                  ? `€ ${r.pricePerBaseUnit.toFixed(4)} / ${r.base_unit}`
-                  : "—",
+                packagingCell(
+                  r,
+                  r.pricePerBaseUnit !== null
+                    ? `€ ${r.pricePerBaseUnit.toFixed(4)} / ${r.base_unit}`
+                    : "—"
+                ),
             },
             {
               key: "deltapct",
