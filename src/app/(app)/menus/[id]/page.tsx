@@ -6,6 +6,8 @@ import { ChevronDown, ChevronRight, Plus, Save, Trash2, Users } from "lucide-rea
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
+import { MenuLineForm } from "@/components/menus/menu-line-form";
 import { MenuOrderList } from "@/components/menus/menu-order-list";
 import { MenuWorkList } from "@/components/menus/menu-work-list";
 import { useCompanyScope } from "@/components/company-context";
@@ -72,6 +74,7 @@ export default function MenuDetailPage({
   const [totalCost, setTotalCost] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [addingLine, setAddingLine] = useState(false);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -391,7 +394,7 @@ export default function MenuDetailPage({
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => router.push(`/menus/${id}/regel-toevoegen`)}
+                  onClick={() => setAddingLine(true)}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Regel toevoegen
@@ -747,6 +750,18 @@ export default function MenuDetailPage({
 
         {tab === "bestellijst" && <MenuOrderList menuId={id} />}
       </main>
+      {addingLine && (
+        <Modal title="Regel toevoegen" onClose={() => setAddingLine(false)}>
+          <MenuLineForm
+            id={id}
+            onDone={() => {
+              setAddingLine(false);
+              load();
+            }}
+            onCancel={() => setAddingLine(false)}
+          />
+        </Modal>
+      )}
     </>
   );
 }
