@@ -611,7 +611,11 @@ export default function HalfproductenPage() {
                 setRematchBusy(true);
                 setRematchMessage(null);
                 try {
-                  const res = await fetch("/api/recipe-import/rematch-all", { method: "POST" });
+                  const res = await fetch("/api/recipe-import/rematch-all", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ recipeKind: "halfproduct" }),
+                  });
                   const body = await res.json();
                   if (!res.ok) throw new Error(body.error ?? "Mislukt.");
                   setRematchMessage(

@@ -42,6 +42,8 @@ export default function RecepturenPage() {
   const [activeFolder, setActiveFolder] = useState<string>("__alle__");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [rematchBusy, setRematchBusy] = useState(false);
+  const [rematchMessage, setRematchMessage] = useState<string | null>(null);
 
   // Voor de kostprijsberekening is een concreet bedrijf nodig (recepten
   // kunnen groepsbreed of lokaal zijn, maar inkoopprijzen kunnen per
@@ -381,6 +383,33 @@ export default function RecepturenPage() {
               className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
             />
           </div>
+          <Button
+            variant="secondary"
+            disabled={rematchBusy}
+            onClick={async () => {
+              setRematchBusy(true);
+              setRematchMessage(null);
+              try {
+                const res = await fetch("/api/recipe-import/rematch-all", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ recipeKind: "gerecht" }),
+                });
+                const body = await res.json();
+                if (!res.ok) throw new Error(body.error ?? "Mislukt.");
+                setRematchMessage(
+                  `${body.linked} ingrediënt(en) gekoppeld in ${body.recipesUpdated} gerecht(en); ${body.stillOpen} nog zonder zekere match.`
+                );
+              } catch (err) {
+                setRematchMessage(err instanceof Error ? err.message : "Opnieuw zoeken mislukt.");
+              } finally {
+                setRematchBusy(false);
+              }
+            }}
+          >
+            {rematchBusy ? "Bezig…" : "Opnieuw zoeken in ingrediënten"}
+          </Button>
+          {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
           <Link href="/recepten/importeren">
             <Button variant="secondary">
               <Upload className="h-4 w-4" />

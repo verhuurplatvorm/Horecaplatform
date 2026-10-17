@@ -8,7 +8,7 @@ import { matchIngredient } from "@/lib/recipe-import/match-ingredient";
 // ook op andere halfproducten). Alleen zekere koppelingen; geen gok.
 export const maxDuration = 300;
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -16,6 +16,10 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
   const groupId = await getCurrentGroupId(supabase);
   if (!groupId) return NextResponse.json({ error: "Kan groep niet bepalen." }, { status: 400 });
+
+  // Welke recepten worden doorgelopen: halfproducten (standaard) of gerechten.
+  const body = await request.json().catch(() => ({}));
+  const targetKind: "halfproduct" | "gerecht" = body?.recipeKind === "gerecht" ? "gerecht" : "halfproduct";
 
   const { data: halfs } = await supabase
     .from("recipes")
@@ -25,12 +29,22 @@ export async function POST() {
     .order("created_at", { ascending: true })
     .limit(5000);
 
+  // Namen van halfproducten: die kunnen als ingrediënt in elk recept staan.
   const nameToId = new Map<string, string>();
   for (const h of halfs ?? []) {
     const key = h.name.trim().toLowerCase();
     if (!nameToId.has(key)) nameToId.set(key, h.id);
   }
-  const halfIds = (halfs ?? []).map((h) => h.id);
+  let targetIds = (halfs ?? []).map((h) => h.id);
+  if (targetKind === "gerecht") {
+    const { data: gerechten } = await supabase
+      .from("recipes")
+      .select("id")
+      .eq("group_id", groupId)
+      .eq("recipe_kind", "gerecht")
+      .limit(5000);
+    targetIds = (gerechten ?? []).map((g) => g.id);
+  }
 
   const lines: {
     id: string;
@@ -38,11 +52,11 @@ export async function POST() {
     unmatched_name: string;
     unmatched_article_number: string | null;
   }[] = [];
-  for (let i = 0; i < halfIds.length; i += 150) {
+  for (let i = 0; i < targetIds.length; i += 150) {
     const { data } = await supabase
       .from("recipe_ingredients")
       .select("id, recipe_id, unmatched_name, unmatched_article_number")
-      .in("recipe_id", halfIds.slice(i, i + 150))
+      .in("recipe_id", targetIds.slice(i, i + 150))
       .not("unmatched_name", "is", null)
       .limit(10000);
     for (const l of data ?? []) {
