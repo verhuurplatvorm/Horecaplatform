@@ -908,10 +908,58 @@ export function RecipeForm({
     const updated = [...rows];
     let resolvedCount = 0;
     const newlyMatchedIds: string[] = [];
+    const newlyMatchedHalfs: string[] = [];
+
+    // Halfproducten (oudste eerst) die als ingrediënt in dit recept kunnen
+    // staan; het recept zelf valt af zodat het nooit zichzelf bevat.
+    const { data: halfList } = await supabase
+      .from("recipes")
+      .select("id, name, base_unit_id, yield_quantity")
+      .eq("recipe_kind", "halfproduct")
+      .order("created_at", { ascending: true })
+      .limit(5000);
+    const halfByName = new Map<string, { id: string; name: string; base_unit_id: string | null; yield_quantity: number | null }>();
+    for (const h of halfList ?? []) {
+      if (h.id === initialRecipe?.id) continue;
+      const key = h.name.trim().toLowerCase();
+      if (key && !halfByName.has(key)) halfByName.set(key, h);
+    }
 
     for (let i = 0; i < updated.length; i++) {
       const row = updated[i];
       if (row.refId || !row.unmatchedName) continue;
+
+      // Eerst een halfproduct met exact dezelfde naam (zelfde volgorde als
+      // bij het importeren).
+      const half = halfByName.get(row.unmatchedName.trim().toLowerCase());
+      if (half) {
+        updated[i] = {
+          ...row,
+          type: "halfproduct",
+          refId: half.id,
+          refName: half.name,
+          unmatchedName: null,
+          unmatchedArticleNumber: null,
+          baseUnitId: half.base_unit_id,
+          yieldQuantity: half.yield_quantity ?? null,
+          unitId: row.unitId ?? half.base_unit_id,
+        };
+        resolvedCount++;
+        newlyMatchedHalfs.push(half.id);
+        if (row.id) {
+          await supabase
+            .from("recipe_ingredients")
+            .update({
+              product_id: null,
+              sub_recipe_id: half.id,
+              unmatched_name: null,
+              unmatched_article_number: null,
+              unit_id: row.unitId ?? half.base_unit_id,
+            })
+            .eq("id", row.id);
+        }
+        continue;
+      }
 
       let match: { id: string; name: string; base_unit_id: string | null } | null = null;
 
@@ -976,13 +1024,16 @@ export function RecipeForm({
     // anders blijft de regel "onvolledig" tonen (met prijs "—") tot de
     // pagina volledig herladen wordt, terwijl de koppeling al bestaat.
     await Promise.all(
-      [...new Set(newlyMatchedIds)].map((id) => loadProductPrice(id))
+      [
+        ...[...new Set(newlyMatchedIds)].map((id) => loadProductPrice(id)),
+        ...[...new Set(newlyMatchedHalfs)].map((id) => loadHalfproductCost(id)),
+      ]
     );
 
     setRematching(false);
     setRematchMessage(
       resolvedCount > 0
-        ? `${resolvedCount} ingrediënt(en) gekoppeld.`
+        ? `${resolvedCount} ingrediënt(en) en halfproduct(en) gekoppeld.`
         : "Geen nieuwe koppelingen gevonden."
     );
   }
