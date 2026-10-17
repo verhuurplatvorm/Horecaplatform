@@ -6,6 +6,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { fmt, parsePackaging, pricesFromCount, isUnitKey } from "@/lib/packaging";
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
 import type { Product, ProductMissingUnitBridge, SupplierProduct, Unit } from "@/lib/types/database";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
@@ -438,6 +439,80 @@ function CandidateCard({
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Handmatig: "N stuks van X gram" — product blijft in stuks, het gewicht per
+  // stuk wordt de brug. In recepten kan dan 1 stuk óf 100 g worden ingevuld.
+  const nameSpec = parsePackaging(product.name);
+  const pieceDimensionUnits = units.filter(
+    (u) => u.dimension !== "aantal" && ["g", "kg", "ml", "l"].includes(u.key)
+  );
+  const [mode, setMode] = useState<"stuks" | "omzetten">(
+    nameSpec && nameSpec.packs !== null && nameSpec.perPack !== null ? "stuks" : "omzetten"
+  );
+  const [pieceCount, setPieceCount] = useState(
+    nameSpec?.packs !== null && nameSpec?.packs !== undefined ? String(nameSpec.packs) : "1"
+  );
+  const [pieceSize, setPieceSize] = useState(
+    nameSpec?.perPack !== null && nameSpec?.perPack !== undefined ? String(nameSpec.perPack) : ""
+  );
+  const [pieceUnitKey, setPieceUnitKey] = useState<string>(
+    nameSpec && ["g", "kg", "ml", "l"].includes(nameSpec.unit) ? nameSpec.unit : "g"
+  );
+  const pieceUnit = units.find((u) => u.key === pieceUnitKey);
+
+  const firstPrice = prices[0];
+  const piecePreview =
+    firstPrice &&
+    Number(pieceCount) > 0 &&
+    Number(pieceSize) > 0 &&
+    isUnitKey(pieceUnitKey)
+      ? pricesFromCount(firstPrice.purchase_price, Number(pieceCount), "stuk", {
+          quantity: Number(pieceSize),
+          unit: pieceUnitKey,
+        })
+      : null;
+
+  async function handleSaveAsPieces() {
+    if (!pieceUnit || !(Number(pieceCount) > 0) || !(Number(pieceSize) > 0)) {
+      setError("Vul het aantal stuks én het gewicht/de inhoud per stuk in.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const supabase = createClient();
+    const stukUnit = units.find((u) => u.key === "stuk");
+    const { error: productError } = await supabase
+      .from("products")
+      .update({
+        base_unit_id: stukUnit?.id ?? product.base_unit_id,
+        avg_unit_quantity: Number(pieceSize),
+        avg_unit_id: pieceUnit.id,
+      })
+      .eq("id", product.id);
+    if (productError) {
+      setError("Kan het ingrediënt niet bijwerken: " + productError.message);
+      setSaving(false);
+      return;
+    }
+    for (const price of prices) {
+      const { error: priceError } = await supabase
+        .from("supplier_products")
+        .update({
+          packaging_unit_count: Number(pieceCount),
+          packaging_description: `${Number(pieceCount)} × ${Number(pieceSize)} ${pieceUnit.name}`,
+          flagged_for_review: false,
+        })
+        .eq("id", price.id);
+      if (priceError) {
+        setError("Kan de verpakking niet bijwerken: " + priceError.message);
+        setSaving(false);
+        return;
+      }
+    }
+    setSaving(false);
+    setDone(true);
+    setTimeout(onFixed, 800);
+  }
+
   async function handleFix() {
     if (!suggestedUnit) {
       setError("Kan de voorgestelde eenheid niet vinden in de eenhedenlijst.");
@@ -496,7 +571,73 @@ function CandidateCard({
           <span className="font-medium text-foreground">{suggestedUnit?.name ?? suggestedUnitKey}</span>
         </p>
 
-        {prices.length > 0 && (
+        <div className="flex gap-2 text-sm">
+          <Button variant={mode === "stuks" ? "primary" : "secondary"} size="sm" onClick={() => setMode("stuks")}>
+            Als stuks bewaren (bv. 18 stuks van 260 g)
+          </Button>
+          <Button variant={mode === "omzetten" ? "primary" : "secondary"} size="sm" onClick={() => setMode("omzetten")}>
+            Omzetten naar {suggestedUnit?.name ?? suggestedUnitKey}
+          </Button>
+        </div>
+
+        {mode === "stuks" && (
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <p className="text-sm text-muted">
+              Vul in hoeveel stuks er in één verpakking zitten en hoeveel één stuk weegt. In recepten
+              kun je daarna <strong>1 stuk</strong> invullen, maar ook <strong>100 g</strong>: beide worden
+              goed doorgerekend.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm">
+                <span className="mb-1 block text-xs uppercase tracking-wide text-muted">Stuks per verpakking</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={pieceCount}
+                  onChange={(e) => setPieceCount(e.target.value)}
+                  className="h-8 w-28 rounded border border-border bg-surface px-2 text-sm"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-xs uppercase tracking-wide text-muted">Gewicht/inhoud per stuk</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={pieceSize}
+                  onChange={(e) => setPieceSize(e.target.value)}
+                  className="h-8 w-28 rounded border border-border bg-surface px-2 text-sm"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-xs uppercase tracking-wide text-muted">Eenheid</span>
+                <select
+                  value={pieceUnitKey}
+                  onChange={(e) => setPieceUnitKey(e.target.value)}
+                  className="h-8 rounded border border-border bg-surface px-2 text-sm"
+                >
+                  {pieceDimensionUnits.map((u) => (
+                    <option key={u.id} value={u.key}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {piecePreview && piecePreview.perPiece !== null && (
+              <p className="text-sm">
+                Resultaat: <strong>€ {fmt(piecePreview.perPiece, 4)} per stuk</strong>
+                {piecePreview.perKg !== null && <> · € {fmt(piecePreview.perKg, 4)} per kg</>}
+                {piecePreview.perLiter !== null && <> · € {fmt(piecePreview.perLiter, 4)} per liter</>}
+              </p>
+            )}
+            {error && <p className="text-sm text-danger">{error}</p>}
+            <Button onClick={handleSaveAsPieces} disabled={saving}>
+              {saving ? "Bezig…" : "Opslaan als stuks"}
+            </Button>
+          </div>
+        )}
+
+        {mode === "omzetten" && prices.length > 0 && (
           <div className="overflow-x-auto">
 <table className="w-full text-sm">
             <thead>
@@ -535,11 +676,14 @@ function CandidateCard({
 </div>
         )}
 
-        {error && <p className="text-sm text-danger">{error}</p>}
-
-        <Button onClick={handleFix} disabled={saving}>
-          {saving ? "Bezig…" : "Basiseenheid + prijs herstellen"}
-        </Button>
+        {mode === "omzetten" && (
+          <>
+            {error && <p className="text-sm text-danger">{error}</p>}
+            <Button onClick={handleFix} disabled={saving}>
+              {saving ? "Bezig…" : "Basiseenheid + prijs herstellen"}
+            </Button>
+          </>
+        )}
       </CardContent>
     </Card>
   );
