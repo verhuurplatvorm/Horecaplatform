@@ -67,6 +67,8 @@ export default function HalfproductenPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [rematchBusy, setRematchBusy] = useState(false);
+  const [rematchMessage, setRematchMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -602,6 +604,29 @@ export default function HalfproductenPage() {
               />
               Toon gearchiveerd
             </label>
+            <Button
+              variant="secondary"
+              disabled={rematchBusy}
+              onClick={async () => {
+                setRematchBusy(true);
+                setRematchMessage(null);
+                try {
+                  const res = await fetch("/api/recipe-import/rematch-all", { method: "POST" });
+                  const body = await res.json();
+                  if (!res.ok) throw new Error(body.error ?? "Mislukt.");
+                  setRematchMessage(
+                    `${body.linked} ingrediënt(en) gekoppeld in ${body.recipesUpdated} halfproduct(en); ${body.stillOpen} nog zonder zekere match.`
+                  );
+                } catch (err) {
+                  setRematchMessage(err instanceof Error ? err.message : "Opnieuw zoeken mislukt.");
+                } finally {
+                  setRematchBusy(false);
+                }
+              }}
+            >
+              {rematchBusy ? "Bezig…" : "Opnieuw zoeken in ingrediënten"}
+            </Button>
+            {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
             <Button variant="secondary" onClick={exportCsv}>
               <Download className="h-4 w-4" />
               Exporteren
