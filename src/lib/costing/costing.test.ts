@@ -80,3 +80,22 @@ describe("approximateMeasure (in de buurt)", () => {
     assert.equal(approximateMeasure(2, u("stuk"), u("g")), null);
   });
 });
+
+describe("halfproduct in stuks (bol vanille ijs: 45 bollen uit een bak van € 20,75)", () => {
+  it("2 bollen in een gerecht = 2/45 van de bak", () => {
+    close(
+      halfproductLineCost({ quantity: 2, unit: u("stuk"), baseUnit: u("stuk"), yieldQuantity: 45, totalCost: 20.75, unitsById: U }),
+      (2 / 45) * 20.75
+    );
+  });
+  it("1 bol kost € 0,4611", () => {
+    close(
+      halfproductLineCost({ quantity: 1, unit: u("stuk"), baseUnit: u("stuk"), yieldQuantity: 45, totalCost: 20.75, unitsById: U }),
+      0.4611
+    );
+  });
+  it("kostprijs per stuk volgt uit totaal / aantal", () => {
+    const t = recipeTotals({ ingredientCost: 20.75, halfproductCost: 0, wastePct: 0, marginFreeCosts: 0, yieldQuantity: 45, isHalfproduct: true });
+    close(t.costPerBaseUnit, 0.4611);
+  });
+});

@@ -612,6 +612,35 @@ export function RecipeForm({
   // Regels die echt niet in de som kunnen (onvolledig of stuks zonder opgegeven gram/ml).
   const yieldSkippedCount = yieldLines.filter((l) => l.value === null).length;
 
+  // Totaal van de ingrediënten in gram of ml (bij benadering), ook als de
+  // opbrengst in stuks is (bv. 45 bollen uit 5 liter). Alleen om te tonen
+  // hoeveel één stuk ongeveer is.
+  const measureRef = useMemo(() => {
+    const gUnit = units.find((u) => u.key === "g");
+    const mlUnit = units.find((u) => u.key === "ml");
+    let weight = 0;
+    let volume = 0;
+    for (const row of rows) {
+      if (isEmptyRow(row) || !row.quantity.trim()) continue;
+      const u = row.unitId ? unitsById.get(row.unitId) : null;
+      if (u?.dimension === "gewicht") weight++;
+      else if (u?.dimension === "inhoud") volume++;
+    }
+    const target = volume > weight ? mlUnit : gUnit;
+    if (!target || weight + volume === 0) return null;
+    let total = 0;
+    for (const row of rows) {
+      if (isEmptyRow(row) || !row.quantity.trim()) continue;
+      const qty = parseFloat(row.quantity);
+      const rowUnit = row.unitId ? unitsById.get(row.unitId) : null;
+      if (!Number.isFinite(qty) || !rowUnit) continue;
+      const bridge = row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId) : null;
+      const v = convertQuantity(qty, rowUnit, target, bridge, unitsById) ?? approximateMeasure(qty, rowUnit, target);
+      if (v !== null) total += v;
+    }
+    return total > 0 ? { total, unitName: target.name } : null;
+  }, [rows, units, unitsById, productPrices]);
+
   // Bestaand halfproduct waarvan de opbrengst al gelijk is aan de som van de
   // ingrediënten: dat is gewoon "automatisch". Dat tonen we ook zo, zodat de
   // standaard automatisch is en alleen echt afwijkende opbrengsten (jus,
@@ -1251,6 +1280,14 @@ export function RecipeForm({
       const b = (Number(manualBegin.replace(",", ".")) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
       setManualBegin(String(Math.round(b * 10000) / 10000));
     }
+    if (prev && next && prev.dimension !== next.dimension) {
+      // Van gewicht/inhoud naar stuks (of terug): het oude getal betekent iets
+      // anders (5000 ml is geen 5000 stuks). Opnieuw invullen.
+      setYieldQuantity("");
+      setLossPct(0);
+      setLossDraft(null);
+      setYieldManual(true);
+    }
     setBaseUnitId(nextUnitId);
   }
 
@@ -1835,6 +1872,10 @@ export function RecipeForm({
                 : null;
             const unitLabel = baseUnitName ?? "eenheid";
             const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 3 });
+            const yieldUnitObj = baseUnitId ? unitsById.get(baseUnitId) : null;
+            const yieldIsCount = yieldUnitObj?.dimension === "aantal";
+            const stukUnit = units.find((u) => u.key === "stuk");
+            const measureUnit = units.find((u) => u.key === (measureRef?.unitName === "milliliter" ? "ml" : "g"));
             // Verlies-% en bruikbare hoeveelheid rekenen live naar elkaar:
             // typ je het een, dan past het ander direct mee aan.
             function onLossChange(raw: string) {
@@ -1865,12 +1906,46 @@ export function RecipeForm({
                     {yieldManual || !yieldAutoReliable ? "Handmatig" : "Automatisch"}
                   </span>
                 </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span>Opbrengst in:</span>
+                  <button
+                    type="button"
+                    onClick={() => measureUnit && yieldIsCount && changeYieldUnit(measureUnit.id)}
+                    className={`rounded-md border px-2 py-1 ${
+                      !yieldIsCount ? "border-teal bg-teal/10 text-teal" : "border-border hover:bg-surface"
+                    }`}
+                  >
+                    Gewicht / inhoud
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => stukUnit && !yieldIsCount && changeYieldUnit(stukUnit.id)}
+                    className={`rounded-md border px-2 py-1 ${
+                      yieldIsCount ? "border-teal bg-teal/10 text-teal" : "border-border hover:bg-surface"
+                    }`}
+                  >
+                    Stuks (bollen, porties, plakken)
+                  </button>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <p className="text-xs text-muted">
                       Beginhoeveelheid ({yieldAutoReliable ? (yieldIsApproximate ? "berekend, in de buurt" : "berekend") : "zelf invullen"})
                     </p>
-                    {yieldAutoReliable && begin !== null ? (
+                    {yieldIsCount ? (
+                      <>
+                        <p className="tabular text-sm font-medium">
+                          {measureRef ? `≈ ${fmt(measureRef.total)} ${measureRef.unitName}` : "—"}
+                        </p>
+                        <p className="text-xs text-muted">
+                          {measureRef && endQty > 0
+                            ? `1 stuk ≈ ${fmt(measureRef.total / endQty)} ${measureRef.unitName}. `
+                            : ""}
+                          De opbrengst is in stuks: vul hiernaast hoeveel stuks je hieruit haalt. De kostprijs per stuk
+                          wordt daarmee berekend en rekent door in gerechten.
+                        </p>
+                      </>
+                    ) : yieldAutoReliable && begin !== null ? (
                       <>
                         <p className="tabular text-sm font-medium">
                           {yieldIsApproximate ? "≈ " : ""}
@@ -1934,7 +2009,9 @@ export function RecipeForm({
                     />
                     <p className="text-xs text-muted">
                       {begin === null
-                        ? "Vul eerst een beginhoeveelheid in."
+                        ? yieldIsCount
+                          ? "Niet van toepassing bij een opbrengst in stuks."
+                          : "Vul eerst een beginhoeveelheid in."
                         : "Gekoppeld aan de bruikbare hoeveelheid. Negatief = gewichtstoename."}
                     </p>
                   </div>
