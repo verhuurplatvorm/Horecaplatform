@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   FileText,
   Mail,
+  Upload,
 } from "lucide-react";
 
 export interface NavItem {
@@ -70,6 +71,7 @@ export const NAV_TABS: NavTab[] = [
     key: "beheer",
     label: "Beheer",
     items: [
+      { href: "/importeren", label: "Importeren", icon: Upload, moduleKey: "producten" },
       { href: "/bedrijven", label: "Bedrijven", icon: Building2, moduleKey: "bedrijven" },
       { href: "/gebruikers", label: "Gebruikers & rechten", icon: Users, moduleKey: "gebruikers" },
       { href: "/gebruikers/rollen", label: "Rollen", icon: ShieldCheck, moduleKey: "gebruikers" },

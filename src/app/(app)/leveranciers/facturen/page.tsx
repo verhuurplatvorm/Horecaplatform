@@ -34,19 +34,26 @@ export default async function FacturenPage({
     <>
       <Topbar title="Facturen" />
       <main className="p-6 space-y-4">
-        <div className="flex justify-end gap-2">
-          <Link href="/leveranciers/facturen/genegeerd">
-            <Button variant="secondary">Genegeerde artikelen</Button>
-          </Link>
-          <Link href="/leveranciers/facturen/mailboxen">
-            <Button variant="secondary">Mailboxen beheren</Button>
-          </Link>
-          <Link href="/leveranciers/facturen/mailbox">
-            <Button variant="secondary">Factuurmailbox-overzicht</Button>
-          </Link>
-          <Link href="/leveranciers/facturen/postvak-in">
-            <Button variant="secondary">Controle nodig</Button>
-          </Link>
+        <div className="flex items-start justify-end gap-2">
+          <details className="relative">
+            <summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-md border border-border bg-surface px-3 text-sm text-muted hover:text-foreground">
+              Geavanceerd
+            </summary>
+            <div className="absolute right-0 z-10 mt-1 flex w-56 flex-col rounded-md border border-border bg-surface p-1 text-sm shadow">
+              <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/postvak-in">
+                Controle nodig (e-mail)
+              </Link>
+              <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/mailbox">
+                Factuurmailbox-overzicht
+              </Link>
+              <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/mailboxen">
+                Mailboxen beheren
+              </Link>
+              <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/genegeerd">
+                Genegeerde artikelen
+              </Link>
+            </div>
+          </details>
           <Link href="/leveranciers/facturen/uploaden">
             <Button>
               <Upload className="h-4 w-4" />
