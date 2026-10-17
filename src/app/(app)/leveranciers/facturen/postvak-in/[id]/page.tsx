@@ -105,7 +105,7 @@ export default function PostvakInDetailPage({
     if (!window.confirm("Deze e-mailfactuur afwijzen? Wordt niet verwerkt.")) return;
     const supabase = createClient();
     await supabase.from("inbound_invoice_queue").update({ status: "afgewezen" }).eq("id", item.id);
-    router.push("/leveranciers/facturen/postvak-in");
+    router.push("/leveranciers/facturen");
   }
 
   if (loading || !item) {

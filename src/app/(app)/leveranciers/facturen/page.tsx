@@ -23,6 +23,13 @@ export default async function FacturenPage({
     .order("created_at", { ascending: false })
     .limit(100);
 
+  const { data: mailItems } = await supabase
+    .from("inbound_invoice_queue")
+    .select("id, original_filename, sender_email, received_at, status")
+    .in("status", ["wacht_op_leverancier", "fout"])
+    .order("received_at", { ascending: false })
+    .limit(10);
+
   const toCheckCount = (allBatches ?? []).filter(
     (b) => b.status === "wacht_op_controle"
   ).length;
@@ -40,12 +47,6 @@ export default async function FacturenPage({
               Geavanceerd
             </summary>
             <div className="absolute right-0 z-10 mt-1 flex w-56 flex-col rounded-md border border-border bg-surface p-1 text-sm shadow">
-              <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/postvak-in">
-                Controle nodig (e-mail)
-              </Link>
-              <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/mailbox">
-                Factuurmailbox-overzicht
-              </Link>
               <Link className="rounded px-3 py-2 hover:bg-background" href="/leveranciers/facturen/mailboxen">
                 Mailboxen beheren
               </Link>
@@ -54,6 +55,9 @@ export default async function FacturenPage({
               </Link>
             </div>
           </details>
+          <Link href="/leveranciers/facturen/mailbox">
+            <Button variant="secondary">Alle e-mailfacturen</Button>
+          </Link>
           <Link href="/leveranciers/facturen/uploaden">
             <Button>
               <Upload className="h-4 w-4" />
@@ -61,6 +65,32 @@ export default async function FacturenPage({
             </Button>
           </Link>
         </div>
+
+        {mailItems && mailItems.length > 0 && (
+          <Card className="border-warning/40">
+            <CardContent className="space-y-2 p-4">
+              <p className="text-sm font-medium">
+                {mailItems.length} e-mailfactu{mailItems.length === 1 ? "ur wacht" : "ren wachten"} op jou
+              </p>
+              <ul className="divide-y divide-border text-sm">
+                {mailItems.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between gap-3 py-2">
+                    <span className="min-w-0 truncate">
+                      {m.original_filename}
+                      <span className="ml-2 text-muted">{m.sender_email ?? ""}</span>
+                    </span>
+                    <Link
+                      href={`/leveranciers/facturen/postvak-in/${m.id}`}
+                      className="shrink-0 text-teal hover:underline"
+                    >
+                      Verwerken →
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex gap-1 text-sm">
           <Link
