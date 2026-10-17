@@ -355,9 +355,6 @@ export default function ProductenPage() {
               Importeren (Excel)
             </Button>
           </Link>
-          <Link href="/producten/naar-stuks">
-            <Button variant="secondary">Alles naar stuks</Button>
-          </Link>
           <Link href="/producten/nieuw">
             <Button>
               <Plus className="h-4 w-4" />
