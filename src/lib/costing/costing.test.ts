@@ -1,0 +1,66 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { STATIC_UNITS_BY_KEY } from "@/lib/packaging";
+import { foodcostAndMargin, halfproductLineCost, ingredientLineCost, recipeTotals } from "./index";
+
+const U = STATIC_UNITS_BY_KEY;
+const u = (k: string) => U.get(k)!;
+const close = (a: number | null, b: number, tol = 1e-4) =>
+  assert.ok(a !== null && Math.abs(a - b) < tol, `${a} ≈ ${b}`);
+
+// Barra Gallega: 18 × 260 g voor € 30,81 → base stuk, € 1,7117/stuk, 260 g per stuk
+const barra = { pricePerBaseUnit: 30.81 / 18, defaultLossPct: null, avgUnitQuantity: 260, avgUnitId: "g" };
+
+describe("ingredientLineCost", () => {
+  it("1 stuk Barra Gallega = € 1,7117", () => {
+    close(ingredientLineCost({ quantity: 1, unit: u("stuk"), baseUnit: u("stuk"), info: barra, unitsById: U, lineLossPct: null }), 1.7117);
+  });
+  it("100 g Barra Gallega = € 0,6583", () => {
+    close(ingredientLineCost({ quantity: 100, unit: u("g"), baseUnit: u("stuk"), info: barra, unitsById: U, lineLossPct: null }), 0.6583);
+  });
+  it("1 kg Barra Gallega = € 6,5833", () => {
+    close(ingredientLineCost({ quantity: 1, unit: u("kg"), baseUnit: u("stuk"), info: barra, unitsById: U, lineLossPct: null }), 6.5833);
+  });
+  it("gram zonder brug op stuks-product kan niet (null)", () => {
+    const info = { pricePerBaseUnit: 1, defaultLossPct: null, avgUnitQuantity: null, avgUnitId: null };
+    assert.equal(ingredientLineCost({ quantity: 100, unit: u("g"), baseUnit: u("stuk"), info, unitsById: U, lineLossPct: null }), null);
+  });
+  it("verlies op de regel telt mee; standaardverlies vervalt bij netto", () => {
+    const info = { pricePerBaseUnit: 0.01, defaultLossPct: 10, avgUnitQuantity: null, avgUnitId: null };
+    close(ingredientLineCost({ quantity: 1000, unit: u("g"), baseUnit: u("g"), info, unitsById: U, lineLossPct: 20 }), 12);
+    close(ingredientLineCost({ quantity: 1000, unit: u("g"), baseUnit: u("g"), info, unitsById: U, lineLossPct: null }), 11);
+    const net = { ...info, avgUnitQuantity: 180, avgUnitId: "g", netUnitQuantity: 130 };
+    close(ingredientLineCost({ quantity: 1000, unit: u("g"), baseUnit: u("g"), info: net, unitsById: U, lineLossPct: null }), 10);
+  });
+  it("bier 24 × 33 cl per stuk; 1 l = 3,03 stuks", () => {
+    const bier = { pricePerBaseUnit: 24 / 24, defaultLossPct: null, avgUnitQuantity: 33, avgUnitId: "cl" };
+    close(ingredientLineCost({ quantity: 1, unit: u("stuk"), baseUnit: u("stuk"), info: bier, unitsById: U, lineLossPct: null }), 1);
+    close(ingredientLineCost({ quantity: 1, unit: u("l"), baseUnit: u("stuk"), info: bier, unitsById: U, lineLossPct: null }), 100 / 33 / 1, 1e-3);
+  });
+});
+
+describe("halfproductLineCost", () => {
+  it("aandeel van opbrengst × totale kostprijs", () => {
+    close(halfproductLineCost({ quantity: 500, unit: u("g"), baseUnit: u("kg"), yieldQuantity: 2, totalCost: 10, unitsById: U }), 2.5);
+  });
+  it("zonder opbrengst → null", () => {
+    assert.equal(halfproductLineCost({ quantity: 1, unit: u("g"), baseUnit: u("g"), yieldQuantity: 0, totalCost: 10, unitsById: U }), null);
+  });
+});
+
+describe("recipeTotals / foodcost", () => {
+  it("afval%, marge-vrije kosten en kostprijs per eenheid", () => {
+    const t = recipeTotals({ ingredientCost: 8, halfproductCost: 2, wastePct: 10, marginFreeCosts: 1, yieldQuantity: 4, isHalfproduct: true });
+    close(t.totalCost, 12);
+    close(t.costPerBaseUnit, 3);
+  });
+  it("gerecht heeft geen kostprijs per eenheid", () => {
+    assert.equal(recipeTotals({ ingredientCost: 1, halfproductCost: 0, wastePct: 0, marginFreeCosts: 0, yieldQuantity: 1, isHalfproduct: false }).costPerBaseUnit, null);
+  });
+  it("foodcost en marge", () => {
+    const r = foodcostAndMargin(3, 10);
+    close(r.foodcostPct, 30);
+    close(r.margin, 7);
+    assert.equal(foodcostAndMargin(3, 0).foodcostPct, null);
+  });
+});

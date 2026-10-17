@@ -22,7 +22,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
-import { convertQuantity, effectiveLossPct } from "@/lib/units/convert";
+import { convertQuantity } from "@/lib/units/convert";
+import { halfproductLineCost, ingredientLineCost, recipeTotals } from "@/lib/costing";
 import { RecipeHistory } from "@/components/recipes/recipe-history";
 import { RecipeFinancialTable } from "@/components/recipes/recipe-financial-table";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -471,28 +472,27 @@ export function RecipeForm({
       if (row.type === "ingrediënt") {
         const priceInfo = productPrices.get(row.refId);
         if (!priceInfo) return null;
-        const baseUnit = priceInfo.baseUnitId ? unitsById.get(priceInfo.baseUnitId) : null;
-        if (!chosenUnit || !baseUnit) return null;
-        // Kostprijs rekent met NETTO bruikbaar (forCost = true): de volle
-        // inkoopprijs wordt gedragen door het bruikbare deel.
-        const qtyInBase = convertQuantity(qty, chosenUnit, baseUnit, priceInfo, unitsById, true);
-        if (qtyInBase === null) return null;
         const explicitLoss = row.lossPercentage.trim() === "" ? null : parseFloat(row.lossPercentage);
-        const lossPct = effectiveLossPct(
-          Number.isFinite(explicitLoss as number) ? (explicitLoss as number) : null,
-          priceInfo,
-          priceInfo.defaultLossPct
-        );
-        return qtyInBase * priceInfo.pricePerBaseUnit * (1 + lossPct / 100);
+        return ingredientLineCost({
+          quantity: qty,
+          unit: chosenUnit,
+          baseUnit: priceInfo.baseUnitId ? unitsById.get(priceInfo.baseUnitId) : null,
+          info: priceInfo,
+          unitsById,
+          lineLossPct: Number.isFinite(explicitLoss as number) ? (explicitLoss as number) : null,
+        });
       }
 
       const hpInfo = halfproductCosts.get(row.refId);
-      if (!hpInfo || !hpInfo.yieldQuantity) return null;
-      const baseUnit = hpInfo.baseUnitId ? unitsById.get(hpInfo.baseUnitId) : null;
-      if (!chosenUnit || !baseUnit) return null;
-      const qtyInBase = convertQuantity(qty, chosenUnit, baseUnit, null, unitsById);
-      if (qtyInBase === null) return null;
-      return (qtyInBase / hpInfo.yieldQuantity) * hpInfo.totalCost;
+      if (!hpInfo) return null;
+      return halfproductLineCost({
+        quantity: qty,
+        unit: chosenUnit,
+        baseUnit: hpInfo.baseUnitId ? unitsById.get(hpInfo.baseUnitId) : null,
+        yieldQuantity: hpInfo.yieldQuantity,
+        totalCost: hpInfo.totalCost,
+        unitsById,
+      });
     });
   }, [rows, productPrices, halfproductCosts, unitsById]);
 
@@ -504,16 +504,23 @@ export function RecipeForm({
     (sum, row, i) => (row.type === "halfproduct" && lineCosts[i] !== null ? sum + lineCosts[i]! : sum),
     0
   );
-  const ingredientAndHalfproductCost = ingredientCost + halfproductCost;
   const wastePct = Number(wastePercentage) || 0;
-  const wasteAmount = ingredientAndHalfproductCost * (wastePct / 100);
-  const costBeforeMarginFree = ingredientAndHalfproductCost + wasteAmount;
   const marginFreeCostsNum = Number(marginFreeCosts) || 0;
-  const totalCost = costBeforeMarginFree + marginFreeCostsNum;
-
   const yieldQuantityNum = Number(yieldQuantity) || 0;
-  const costPerBaseUnit =
-    recipeKind === "halfproduct" && yieldQuantityNum > 0 ? totalCost / yieldQuantityNum : null;
+  const {
+    lines: ingredientAndHalfproductCost,
+    wasteAmount,
+    costBeforeMarginFree,
+    totalCost,
+    costPerBaseUnit,
+  } = recipeTotals({
+    ingredientCost,
+    halfproductCost,
+    wastePct,
+    marginFreeCosts: marginFreeCostsNum,
+    yieldQuantity: yieldQuantityNum,
+    isHalfproduct: recipeKind === "halfproduct",
+  });
   const baseUnitName = baseUnitId ? unitsById.get(baseUnitId)?.name ?? null : null;
 
   // Naast de prijs per basiseenheid (ml/gram) ook de prijs per liter/kilo
