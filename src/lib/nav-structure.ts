@@ -32,24 +32,24 @@ export interface NavTab {
   items: NavItem[];
 }
 
-// Hoofdindeling: 5 tabbladen bovenaan, elk met de bestaande pagina's
-// gegroepeerd naar waar ze inhoudelijk bij horen. Geen enkele bestaande
-// functie is verwijderd — alleen anders ingedeeld.
+// Hoofdindeling: 4 tabbladen. Geen enkele functie is verwijderd — alleen
+// anders ingedeeld (opschoning stap 1).
 export const NAV_TABS: NavTab[] = [
   {
     key: "keuken",
     label: "Keuken",
     items: [
-      { href: "/recepturen", label: "Recepten (Gerechten)", icon: BookOpen, moduleKey: "recepturen" },
+      { href: "/recepturen", label: "Gerechten", icon: BookOpen, moduleKey: "recepturen" },
       { href: "/halfproducten", label: "Halfproducten", icon: SoupIcon, moduleKey: "halfproducten" },
       { href: "/menus", label: "Menu's & buffetten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
-      { href: "/afval", label: "Afvalregistratie", icon: Trash2, moduleKey: "afval" },
       { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
+      { href: "/afval", label: "Afvalregistratie", icon: Trash2, moduleKey: "afval" },
+      { href: "/voorraad", label: "Producties", icon: Warehouse, moduleKey: "producties" },
     ],
   },
   {
     key: "inkoop",
-    label: "Inkoop & Voorraad",
+    label: "Inkoop",
     items: [
       { href: "/producten", label: "Ingrediënten", icon: Package, moduleKey: "producten" },
       { href: "/leveranciers", label: "Leveranciers", icon: Truck, moduleKey: "leveranciers" },
@@ -57,27 +57,13 @@ export const NAV_TABS: NavTab[] = [
     ],
   },
   {
-    key: "productie",
-    label: "Productie",
+    key: "prijzen",
+    label: "Prijzen & facturen",
     items: [
-      { href: "/voorraad", label: "Producties", icon: Warehouse, moduleKey: "producties" },
-      // Besteladvies rekent met min_stock_quantity t.o.v. actuele
-      // voorraad — de voorraadmodule zelf staat nog niet aan (geen
-      // verbruiksregistratie), dus dit advies zou nu op onvolledige
-      // cijfers draaien. Verborgen tot voorraad daadwerkelijk in
-      // gebruik wordt genomen. De pagina zelf blijft bestaan.
-      // { href: "/voorraad/besteladvies", label: "Besteladvies", icon: PrinterIcon, moduleKey: "voorraad" },
-    ],
-  },
-  {
-    key: "financieel",
-    label: "Financieel",
-    items: [
-      { href: "/financieel/bedrijven", label: "Per bedrijf", icon: Building2, moduleKey: "leveranciers" },
-      // Stond eerder alleen op de opgeheven /financieel-hubpagina.
-      { href: "/dashboard/prijzen", label: "Prijsontwikkeling", icon: LineChart, moduleKey: "leveranciers" },
-      { href: "/leveranciers/prijzen/wijzigingen", label: "Prijswijzigingen", icon: History, moduleKey: "leveranciers" },
       { href: "/leveranciers/facturen", label: "Facturen", icon: FileText, moduleKey: "leveranciers" },
+      { href: "/leveranciers/prijzen/wijzigingen", label: "Prijswijzigingen", icon: History, moduleKey: "leveranciers" },
+      { href: "/dashboard/prijzen", label: "Prijsontwikkeling", icon: LineChart, moduleKey: "leveranciers" },
+      { href: "/financieel/bedrijven", label: "Per bedrijf", icon: Building2, moduleKey: "leveranciers" },
     ],
   },
   {
@@ -95,8 +81,13 @@ export const NAV_TABS: NavTab[] = [
 
 /** Zoekt bij een pad het bijbehorende tabblad (voor het markeren van de actieve tab en het bepalen van de zij-navigatie). */
 export function findTabForPath(pathname: string): NavTab | null {
+  let best: { tab: NavTab; len: number } | null = null;
   for (const tab of NAV_TABS) {
-    if (tab.items.some((item) => pathname.startsWith(item.href))) return tab;
+    for (const item of tab.items) {
+      if (pathname.startsWith(item.href) && (!best || item.href.length > best.len)) {
+        best = { tab, len: item.href.length };
+      }
+    }
   }
-  return null;
+  return best?.tab ?? null;
 }

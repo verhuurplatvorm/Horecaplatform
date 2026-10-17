@@ -4,14 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { FileCheck2, RotateCcw } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
-import { Card, CardContent } from "@/components/ui/card";
 import {
-  MailboxWidget,
   MarginProblemsWidget,
   PriceChangesWidget,
-  SuppliersWidget,
   UnmatchedIngredientsWidget,
-  UpcomingMenusWidget,
   WasteWidget,
 } from "@/components/dashboard/widgets";
 import { useCompanyScope } from "@/components/company-context";
@@ -152,7 +148,6 @@ export default function DashboardPage() {
           <Attention label="Niet herkend" value={summary?.unmatched_ingredients} href="/producten/opschonen" />
           <Attention label="Prijzen te controleren" value={summary?.flagged_prices} href="/producten/opschonen" />
           <Attention label="Facturen" value={summary?.invoices_to_check} href="/leveranciers/facturen" />
-          <Attention label="Menu's op komst" value={summary?.upcoming_menus} href="/menus" neutral />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm">
@@ -208,30 +203,12 @@ export default function DashboardPage() {
           <div className="space-y-4">
             <PriceChangesWidget widgetId="alarmen" title="Prijsalarmen" direction="alle" alertsOnly filters={filters} hidden={isHidden("alarmen")} onHide={hideWidget} />
             <MarginProblemsWidget filters={filters} hidden={isHidden("marge")} onHide={hideWidget} />
-            <PriceChangesWidget widgetId="stijgers" title="Grootste prijsstijgers" direction="stijging" filters={filters} hidden={isHidden("stijgers")} onHide={hideWidget} />
-            <PriceChangesWidget widgetId="dalers" title="Grootste prijsdalers" direction="daling" filters={filters} hidden={isHidden("dalers")} onHide={hideWidget} />
           </div>
 
           <div className="space-y-4">
-            <UpcomingMenusWidget filters={filters} hidden={isHidden("menus")} onHide={hideWidget} />
             <WasteWidget filters={filters} hidden={isHidden("afval")} onHide={hideWidget} />
-            <MailboxWidget filters={filters} hidden={isHidden("factuurmailbox")} onHide={hideWidget} />
             <UnmatchedIngredientsWidget hidden={isHidden("nietherkend")} onHide={hideWidget} />
-            <SuppliersWidget hidden={isHidden("leveranciers")} onHide={hideWidget} />
 
-            <Card>
-              <CardContent className="pt-4">
-                <p className="mb-3 text-sm font-medium">Statistieken</p>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <Stat label="Gerechten" value={summary?.recipe_count} href="/recepturen" />
-                  <Stat label="Halfproducten" value={summary?.halfproduct_count} href="/halfproducten" />
-                  <Stat label="Ingrediënten" value={summary?.product_count} href="/producten" />
-                  <Stat label="Leveranciers" value={summary?.supplier_count} href="/leveranciers" />
-                  <Stat label="Menu's & buffetten" value={summary?.menu_count} href="/menus" />
-                  <Stat label="Menukaarten" value={summary?.menu_card_count} href="/menukaarten" />
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </main>
@@ -264,11 +241,3 @@ function Attention({
   );
 }
 
-function Stat({ label, value, href }: { label: string; value: number | undefined; href: string }) {
-  return (
-    <Link href={href} className="rounded-md px-2 py-1.5 hover:bg-background">
-      <p className="tabular text-lg font-semibold">{value ?? "—"}</p>
-      <p className="text-xs text-muted">{label}</p>
-    </Link>
-  );
-}
