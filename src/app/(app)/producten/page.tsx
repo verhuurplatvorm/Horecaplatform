@@ -14,6 +14,7 @@ import { usePermissions } from "@/components/permissions/permissions-context";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
 import { ConfigurableTable } from "@/components/ui/configurable-table";
 import { cn } from "@/lib/utils";
+import { convert, isUnitKey } from "@/lib/packaging";
 import { useRouter } from "next/navigation";
 
 interface ProductRow {
@@ -24,6 +25,7 @@ interface ProductRow {
   base_unit_id: string | null;
   avg_unit_quantity: number | null;
   avg_unit_name: string | null;
+  avgUnitKey: string | null;
   article_number: string | null;
   ean_code: string | null;
   is_active: boolean;
@@ -103,6 +105,17 @@ export default function ProductenPage() {
   }
 
   /** Prijsverschil t.o.v. de vorige actieve prijs, of null als er geen vorige is. */
+  /** Bij stuks met bekend gewicht/inhoud: de kilo- of literprijs ernaast. */
+  function perKiloOrLiter(r: ProductRow): string | null {
+    if (r.base_unit !== "stuk" || r.pricePerBaseUnit === null || !r.avg_unit_quantity) return null;
+    if (!isUnitKey(r.avgUnitKey)) return null;
+    for (const [target, label] of [["l", "l"], ["kg", "kg"]] as const) {
+      const per = convert(r.avg_unit_quantity, r.avgUnitKey, target);
+      if (per !== null && per > 0) return `€ ${(r.pricePerBaseUnit / per).toFixed(2)} / ${label}`;
+    }
+    return null;
+  }
+
   function priceDelta(r: ProductRow) {
     if (r.purchasePrice === null || r.previousPurchasePrice === null) return null;
     if (r.previousPurchasePrice === 0) return null;
@@ -188,6 +201,7 @@ export default function ProductenPage() {
           base_unit_id: p.base_unit_id,
           avg_unit_quantity: p.avg_unit_quantity,
           avg_unit_name: null,
+          avgUnitKey: null,
           article_number: p.article_number,
           ean_code: p.ean_code,
           is_active: p.is_active,
@@ -212,6 +226,20 @@ export default function ProductenPage() {
         };
       });
 
+      // Gewicht/inhoud per stuk: voor de kilo-/literprijs naast de stuksprijs.
+      const needBridge = mapped.filter((m) => m.base_unit === "stuk" && m.avg_unit_quantity);
+      if (needBridge.length > 0) {
+        const [{ data: prods }, { data: unitRows }] = await Promise.all([
+          supabase.from("products").select("id, avg_unit_id").in("id", needBridge.map((m) => m.id)),
+          supabase.from("units").select("id, key"),
+        ]);
+        const keyById = new Map((unitRows ?? []).map((u) => [u.id as string, u.key as string]));
+        const avgById = new Map((prods ?? []).map((x) => [x.id as string, x.avg_unit_id as string | null]));
+        for (const m of needBridge) {
+          const uid = avgById.get(m.id);
+          m.avgUnitKey = uid ? (keyById.get(uid) ?? null) : null;
+        }
+      }
       setTotalCount(list.length > 0 ? Number(list[0].total_count) : 0);
       setRows((prev) => (append ? [...prev, ...mapped] : mapped));
       setLoading(false);
@@ -486,9 +514,17 @@ export default function ProductenPage() {
               render: (r) =>
                 packagingCell(
                   r,
-                  r.pricePerBaseUnit !== null
-                    ? `€ ${r.pricePerBaseUnit.toFixed(4)} / ${r.base_unit}`
-                    : "—"
+                  r.pricePerBaseUnit !== null ? (
+                    <span>
+                      {`€ ${r.pricePerBaseUnit.toFixed(4)} / ${r.base_unit}`}
+                      {(() => {
+                        const extra = perKiloOrLiter(r);
+                        return extra ? <span className="block text-xs text-muted">{extra}</span> : null;
+                      })()}
+                    </span>
+                  ) : (
+                    "—"
+                  )
                 ),
             },
             {
