@@ -1273,6 +1273,32 @@ export function RecipeForm({
       margin_free_costs: marginFreeCosts ? Number(marginFreeCosts) : 0,
     };
 
+    // Opgegeven gram/ml bij een stuks-regel (bv. "10 citroenen = 1000 gram")
+    // onthouden we bij het product zelf (1 stuk = x gram/ml), zodat het bij
+    // opslaan en heropenen blijft staan en overal meerekent.
+    if (recipeKind === "halfproduct") {
+      const targetUnit = unitsById.get(baseUnitId);
+      const bridgeUnit = targetUnit
+        ? units.find((u) => u.key === (targetUnit.dimension === "inhoud" ? "ml" : "g"))
+        : undefined;
+      if (bridgeUnit) {
+        for (const row of rows) {
+          if (row.type !== "ingrediënt" || !row.refId) continue;
+          const info = productPrices.get(row.refId);
+          if (info?.avgUnitQuantity && info.avgUnitId) continue;
+          const est = Number((stukEstimates[row.uid] ?? "").replace(",", "."));
+          const qty = Number(row.quantity.replace(",", "."));
+          if (!(est > 0) || !(qty > 0)) continue;
+          const rowUnit = row.unitId ? unitsById.get(row.unitId) : null;
+          if (rowUnit?.dimension !== "aantal") continue;
+          await supabase
+            .from("products")
+            .update({ avg_unit_quantity: est / qty, avg_unit_id: bridgeUnit.id })
+            .eq("id", row.refId);
+        }
+      }
+    }
+
     let recipeId = initialRecipe?.id;
 
     if (isEdit && recipeId) {
