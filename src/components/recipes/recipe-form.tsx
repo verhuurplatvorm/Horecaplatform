@@ -1711,7 +1711,7 @@ export function RecipeForm({
                           .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key) || u.id === baseUnitId)
                           .map((u) => (
                             <option key={u.id} value={u.id}>
-                              {u.name}
+                              {u.key === "stuk" ? "portie" : u.name}
                             </option>
                           ))}
                       </select>
@@ -1719,7 +1719,7 @@ export function RecipeForm({
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                     </div>
                     {!baseUnitId && (
-                      <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, stuks).</p>
+                      <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, porties).</p>
                     )}
                     {isEdit && baseUnitId !== (initialRecipe?.base_unit_id ?? "") && (
                       <p className="text-xs text-copper">
@@ -1989,7 +1989,7 @@ export function RecipeForm({
                       yieldIsCount ? "border-teal bg-teal/10 text-teal" : "border-border hover:bg-surface"
                     }`}
                   >
-                    Stuks (bollen, porties, plakken)
+                    Porties (bollen, plakken, stuks)
                   </button>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -2105,7 +2105,7 @@ export function RecipeForm({
                           .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key) || u.id === baseUnitId)
                           .map((u) => (
                             <option key={u.id} value={u.id}>
-                              {u.name}
+                              {u.key === "stuk" ? "portie" : u.name}
                             </option>
                           ))}
                       </select>
