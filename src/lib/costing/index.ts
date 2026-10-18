@@ -43,10 +43,12 @@ export function halfproductLineCost(args: {
   yieldQuantity: number | null | undefined;
   totalCost: number;
   unitsById: Map<string, UnitLike>;
+  /** "1 stuk = X gram/ml" van het halfproduct (netto), als de kok die heeft ingevuld. */
+  bridge?: UnitBridge | null;
 }): number | null {
-  const { quantity, unit, baseUnit, yieldQuantity, totalCost, unitsById } = args;
+  const { quantity, unit, baseUnit, yieldQuantity, totalCost, unitsById, bridge } = args;
   if (!yieldQuantity || !unit || !baseUnit) return null;
-  const qtyInBase = convertQuantity(quantity, unit, baseUnit, null, unitsById);
+  const qtyInBase = convertQuantity(quantity, unit, baseUnit, bridge ?? null, unitsById, true);
   if (qtyInBase === null) return null;
   return (qtyInBase / yieldQuantity) * totalCost;
 }

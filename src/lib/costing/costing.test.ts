@@ -111,3 +111,40 @@ describe("ml telt als gram", () => {
     assert.equal(convertQuantity(500, u("ml"), u("g"), null, byId), 500);
   });
 });
+
+describe("halfproduct met 1 stuk = X gram", () => {
+  it("0,5 stuk van een halfproduct in gram (1 stuk = 125 g, 125 g kost 1,0753)", () => {
+    close(
+      halfproductLineCost({
+        quantity: 0.5,
+        unit: u("stuk"),
+        baseUnit: u("g"),
+        yieldQuantity: 125,
+        totalCost: 1.0753,
+        unitsById: U,
+        bridge: { avgUnitQuantity: 125, avgUnitId: u("g").id },
+      }),
+      0.53765
+    );
+  });
+  it("zonder brug blijft stuk bij een gram-halfproduct onbekend", () => {
+    assert.equal(
+      halfproductLineCost({ quantity: 0.5, unit: u("stuk"), baseUnit: u("g"), yieldQuantity: 125, totalCost: 1.0753, unitsById: U }),
+      null
+    );
+  });
+  it("halfproduct in stuks (45 bollen) met 1 stuk = 100 ml: 200 ml = 2 bollen", () => {
+    close(
+      halfproductLineCost({
+        quantity: 200,
+        unit: u("ml"),
+        baseUnit: u("stuk"),
+        yieldQuantity: 45,
+        totalCost: 20.75,
+        unitsById: U,
+        bridge: { avgUnitQuantity: 100, avgUnitId: u("ml").id },
+      }),
+      (2 / 45) * 20.75
+    );
+  });
+});

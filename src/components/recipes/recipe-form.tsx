@@ -141,6 +141,12 @@ export function RecipeForm({
   // is de opbrengst = som van de ingrediënten × (1 − verlies). Wordt bij het
   // openen afgeleid uit de opgeslagen opbrengst.
   const [lossPct, setLossPct] = useState(0);
+  // "1 stuk = X gram/ml" van dit halfproduct (netto), zodat het ook in stuks
+  // (porties) in andere recepten gebruikt kan worden.
+  const [pieceQuantity, setPieceQuantity] = useState(
+    initialRecipe?.piece_quantity != null ? String(initialRecipe.piece_quantity) : ""
+  );
+  const [pieceUnitId, setPieceUnitId] = useState(initialRecipe?.piece_unit_id ?? "");
   // Bij een bestaand halfproduct wordt het verlies-% eerst uit de opgeslagen
   // opbrengst afgeleid; tot die stap klaar is mag de automatische stand de
   // opbrengst niet overschrijven (anders is het opgeslagen verlies weg).
@@ -246,6 +252,8 @@ export function RecipeForm({
         totalCost: number;
         yieldQuantity: number | null;
         baseUnitId: string | null;
+        pieceQuantity: number | null;
+        pieceUnitId: string | null;
         allergensContains: string[];
         allergensTraces: string[];
         nutritionTotals: Record<string, number>;
@@ -408,7 +416,7 @@ export function RecipeForm({
         }),
         supabase
           .from("recipes")
-          .select("yield_quantity, base_unit_id")
+          .select("yield_quantity, base_unit_id, piece_quantity, piece_unit_id")
           .eq("id", recipeId)
           .single(),
         supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
@@ -419,6 +427,8 @@ export function RecipeForm({
         totalCost: cost ?? 0,
         yieldQuantity: recipe?.yield_quantity ?? null,
         baseUnitId: recipe?.base_unit_id ?? null,
+        pieceQuantity: recipe?.piece_quantity ?? null,
+        pieceUnitId: recipe?.piece_unit_id ?? null,
         allergensContains: allergens?.bevat ?? [],
         allergensTraces: allergens?.sporen ?? [],
         nutritionTotals: nutrition ?? {},
@@ -459,11 +469,20 @@ export function RecipeForm({
     return `1 stuk = ${info.avgUnitQuantity} ${avgUnitName}`;
   }
 
-  function unitsForDimension(referenceUnitId: string | null, productRefId?: string | null) {
+  function unitsForDimension(
+    referenceUnitId: string | null,
+    productRefId?: string | null,
+    halfproductRefId?: string | null
+  ) {
     if (!referenceUnitId) return units;
     const ref = unitsById.get(referenceUnitId);
     if (!ref) return units;
-    const bridge = productRefId ? productPrices.get(productRefId) : null;
+    const hp = halfproductRefId ? halfproductCosts.get(halfproductRefId) : null;
+    const bridge = productRefId
+      ? productPrices.get(productRefId)
+      : hp
+      ? { avgUnitQuantity: hp.pieceQuantity, avgUnitId: hp.pieceUnitId }
+      : null;
     const avgUnit = bridge?.avgUnitId ? unitsById.get(bridge.avgUnitId) : null;
     const hasBridge = !!(bridge?.avgUnitQuantity && avgUnit);
     return units.filter((u) => {
@@ -503,6 +522,7 @@ export function RecipeForm({
         yieldQuantity: hpInfo.yieldQuantity,
         totalCost: hpInfo.totalCost,
         unitsById,
+        bridge: { avgUnitQuantity: hpInfo.pieceQuantity, avgUnitId: hpInfo.pieceUnitId },
       });
     });
   }, [rows, productPrices, halfproductCosts, unitsById]);
@@ -826,7 +846,7 @@ export function RecipeForm({
         if (!info || !info.yieldQuantity || !info.baseUnitId) return;
         const baseUnit = unitsById.get(info.baseUnitId);
         if (!baseUnit) return;
-        const convertedQty = convertQuantity(qty, chosenUnit, baseUnit, null, unitsById);
+        const convertedQty = convertQuantity(qty, chosenUnit, baseUnit, { avgUnitQuantity: info.pieceQuantity, avgUnitId: info.pieceUnitId }, unitsById);
         if (convertedQty === null) return;
         const ratio = convertedQty / info.yieldQuantity;
         for (const [key, value] of Object.entries(info.nutritionTotals)) {
@@ -1432,6 +1452,9 @@ export function RecipeForm({
       // Is automatisch niet betrouwbaar te berekenen, dan is wat er staat
       // per definitie door de kok bepaald.
       yield_is_manual: recipeKind === "halfproduct" ? yieldManual || !yieldAutoReliable : true,
+      piece_quantity:
+        recipeKind === "halfproduct" && Number(pieceQuantity) > 0 && pieceUnitId ? Number(pieceQuantity) : null,
+      piece_unit_id: recipeKind === "halfproduct" && Number(pieceQuantity) > 0 && pieceUnitId ? pieceUnitId : null,
       labour_minutes_kitchen: labourKitchen ? Number(labourKitchen) : null,
       labour_minutes_other: labourOther ? Number(labourOther) : null,
       labour_cost_per_hour: labourRate ? Number(labourRate) : null,
@@ -2119,6 +2142,38 @@ export function RecipeForm({
                       Vul je dit in, dan rekent het verlies-% direct mee. Dit is de opbrengst die in de receptuur en de kostprijs per {unitLabel} wordt gebruikt.
                     </p>
                   </div>
+                  <div className="col-span-full">
+                    <p className="text-xs text-muted">1 stuk (portie) van dit halfproduct = (optioneel)</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="bv. 300"
+                        aria-label="Gewicht of inhoud van 1 stuk"
+                        value={pieceQuantity}
+                        onChange={(e) => setPieceQuantity(e.target.value.replace(",", "."))}
+                        className="input h-8 w-28"
+                      />
+                      <select
+                        aria-label="Eenheid van 1 stuk"
+                        value={pieceUnitId}
+                        onChange={(e) => setPieceUnitId(e.target.value)}
+                        className="input h-8 w-28 shrink-0"
+                      >
+                        <option value="">Eenheid…</option>
+                        {units
+                          .filter((u) => ["g", "kg", "ml", "l"].includes(u.key))
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      Netto, dus na verlies. Zo kun je dit halfproduct in andere recepten ook in stuks (porties) gebruiken, bv. 1 portie = 300 gram.
+                    </p>
+                  </div>
                   {canViewFinancial && (
                     <div>
                       <p className="text-xs text-muted">Kostprijs</p>
@@ -2175,7 +2230,11 @@ export function RecipeForm({
                     <IngredientLine
                       key={row.uid}
                       row={row}
-                      units={unitsForDimension(row.baseUnitId, row.type === "ingrediënt" ? row.refId : null)}
+                      units={unitsForDimension(
+                        row.baseUnitId,
+                        row.type === "ingrediënt" ? row.refId : null,
+                        row.type === "halfproduct" ? row.refId : null
+                      )}
                       currentUnit={row.unitId ? unitsById.get(row.unitId) ?? null : null}
                       cost={lineCosts[i]}
                       canViewFinancial={canViewFinancial}
