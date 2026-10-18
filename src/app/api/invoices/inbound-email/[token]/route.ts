@@ -264,6 +264,27 @@ export async function POST(
       }
     }
 
+    // Horecavo stuurt ook documenten zonder factuurnummer (orders, leverbonnen).
+    // Die zijn geen factuur en worden direct afgewezen (zichtbaar onder
+    // "Afgewezen"), zonder batch.
+    if (/horecavo/i.test(`${sender ?? ""} ${fromHeader ?? ""}`) && !parsed?.header.invoiceNumber?.trim()) {
+      if (logId) {
+        await admin
+          .from("inbound_invoice_queue")
+          .update({
+            status: "afgewezen",
+            storage_path: storagePath,
+            file_kind: fileKind,
+            parsed_header: parsed?.header ?? null,
+            error_message: "Horecavo-document zonder factuurnummer (geen factuur) en is niet verwerkt.",
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", logId);
+      }
+      results.push({ filename: attachment.filename, outcome: "horecavo_zonder_factuurnummer" });
+      continue;
+    }
+
     // Vóór er iets aangemaakt wordt: is dit dezelfde factuur die al eens
     // via de mailbox is binnengekomen? Zelfde bijlage-inhoud, of zelfde
     // leverancier+factuurnummer+totaalbedrag. Dit voorkomt dat een per
