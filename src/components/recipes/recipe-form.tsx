@@ -141,6 +141,10 @@ export function RecipeForm({
   // is de opbrengst = som van de ingrediënten × (1 − verlies). Wordt bij het
   // openen afgeleid uit de opgeslagen opbrengst.
   const [lossPct, setLossPct] = useState(0);
+  // Bij een bestaand halfproduct wordt het verlies-% eerst uit de opgeslagen
+  // opbrengst afgeleid; tot die stap klaar is mag de automatische stand de
+  // opbrengst niet overschrijven (anders is het opgeslagen verlies weg).
+  const [lossReady, setLossReady] = useState(!initialRecipe || recipeKind !== "halfproduct");
   // Beginhoeveelheid die de kok zelf invult als het systeem hem niet kan
   // berekenen (bv. liters en kilo's door elkaar). Alleen om het verlies-% en
   // de bruikbare hoeveelheid aan elkaar te koppelen; wordt niet opgeslagen.
@@ -653,10 +657,6 @@ export function RecipeForm({
       yieldModeChecked.current = true;
       return;
     }
-    if (!yieldManual) {
-      yieldModeChecked.current = true;
-      return;
-    }
     const stored = Number(initialRecipe.yield_quantity) || 0;
     const missingInfo =
       initialIngredients.some((ri) => ri.product_id || ri.sub_recipe_id) &&
@@ -673,6 +673,9 @@ export function RecipeForm({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLossPct(loss);
         setYieldManual(false);
+      } else {
+        // Opgeslagen opbrengst blijft leidend.
+        setYieldManual(true);
       }
     } else if (!(stored > 0) && computedYieldFromIngredients > 0) {
       // Nog geen opbrengst ingevuld: dan volgt die gewoon de som (automatisch).
@@ -680,6 +683,7 @@ export function RecipeForm({
       setLossPct(0);
       setYieldManual(false);
     }
+    setLossReady(true);
   }, [
     computedYieldFromIngredients,
     yieldSkippedCount,
@@ -738,6 +742,7 @@ export function RecipeForm({
   useEffect(() => {
     if (
       recipeKind === "halfproduct" &&
+      lossReady &&
       !yieldManual &&
       yieldAutoReliable &&
       computedYieldFromIngredients !== null &&
@@ -750,7 +755,7 @@ export function RecipeForm({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setYieldQuantity(target.toFixed(3).replace(/\.?0+$/, ""));
     }
-  }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable, lossPct, yieldQuantity]);
+  }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable, lossPct, yieldQuantity, lossReady]);
 
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
