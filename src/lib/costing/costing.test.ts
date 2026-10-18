@@ -99,3 +99,15 @@ describe("halfproduct in stuks (bol vanille ijs: 45 bollen uit een bak van € 2
     close(t.costPerBaseUnit, 0.4611);
   });
 });
+
+describe("ml telt als gram", () => {
+  it("stuk met inhoud-brug rekent om naar gram/kilogram", async () => {
+    const { convertQuantity } = await import("@/lib/units/convert");
+    const byId = new Map([u("stuk"), u("ml"), u("g"), u("kg")].map((x) => [x.id, x]));
+    const bridge = { avgUnitQuantity: 10000, avgUnitId: u("ml").id, netUnitQuantity: null };
+    // 0,2 stuk = 2000 ml = 2000 g = 2 kg
+    assert.equal(convertQuantity(0.2, u("stuk"), u("kg"), bridge, byId), 2);
+    // zonder stuk: 500 ml telt als 500 g
+    assert.equal(convertQuantity(500, u("ml"), u("g"), null, byId), 500);
+  });
+});

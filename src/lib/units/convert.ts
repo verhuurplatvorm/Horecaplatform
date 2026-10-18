@@ -23,7 +23,8 @@ export interface UnitBridge {
  * 1. Zelfde dimensie (gram → kg, ml → liter): factor_from / factor_to.
  * 2. Aantal ↔ gewicht/inhoud: alleen via de brug van het product
  *    ("1 stuk = X [eenheid]"), in beide richtingen.
- * 3. Anders (geen brug ingesteld, of gewicht ↔ inhoud): `null`.
+ * 3. Gewicht ↔ inhoud: 1 ml telt als 1 g (als het niet anders kan).
+ * 4. Anders (geen brug ingesteld): `null`.
  *
  * `null` betekent bewust "kan niet" — nooit 0 of 1 teruggeven, want
  * dat zou een fout stilzwijgend in een berekening laten verdwijnen.
@@ -51,9 +52,13 @@ export function convertQuantity(
     return (quantity * from.factor_to_base) / to.factor_to_base;
   }
 
-  // Alleen aantal ↔ gewicht/inhoud is overbrugbaar; gewicht ↔ inhoud niet.
   const fromIsCount = from.dimension === "aantal";
   const toIsCount = to.dimension === "aantal";
+  // Gewicht ↔ inhoud: als het niet anders kan telt 1 ml als 1 g.
+  if (!fromIsCount && !toIsCount) {
+    if (!to.factor_to_base) return null;
+    return (quantity * from.factor_to_base) / to.factor_to_base;
+  }
   if (fromIsCount === toIsCount) return null;
 
   if (!bridge?.avgUnitQuantity || !bridge.avgUnitId) return null;
@@ -68,12 +73,12 @@ export function convertQuantity(
 
   if (fromIsCount) {
     // stuks → gewicht/inhoud: eerst naar avg-eenheid, dan naar doel.
-    if (avgUnit.dimension !== to.dimension || !to.factor_to_base) return null;
+    if (!to.factor_to_base) return null;
     return (quantity * bridgeQty * avgUnit.factor_to_base) / to.factor_to_base;
   }
 
   // gewicht/inhoud → stuks: eerst naar avg-eenheid, dan delen door 1 stuk.
-  if (avgUnit.dimension !== from.dimension || !avgUnit.factor_to_base) return null;
+  if (!avgUnit.factor_to_base) return null;
   const inAvgUnit = (quantity * from.factor_to_base) / avgUnit.factor_to_base;
   return inAvgUnit / bridgeQty;
 }
