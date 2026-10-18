@@ -536,7 +536,10 @@ export default function HalfproductenPage() {
     }
   }
 
-  const unfiledCount = rows.filter((r) => !r.halfproduct_folder_id).length;
+  // Tellers tonen alleen wat in de lijst te zien is: gearchiveerde
+  // halfproducten tellen pas mee als "Toon gearchiveerd" aan staat.
+  const countedRows = showArchived ? rows : rows.filter((r) => r.status !== "vervallen");
+  const unfiledCount = countedRows.filter((r) => !r.halfproduct_folder_id).length;
 
   return (
     <>
@@ -552,7 +555,7 @@ export default function HalfproductenPage() {
                 </button>
               </div>
               <FolderNavItem
-                label={`Alle mappen (${rows.length})`}
+                label={`Alle mappen (${countedRows.length})`}
                 selected={activeFolder === "__alle__"}
                 onSelect={() => setActiveFolder("__alle__")}
               />
@@ -560,7 +563,7 @@ export default function HalfproductenPage() {
                 <FolderRow
                   key={folder.id}
                   folder={folder}
-                  count={rows.filter((r) => r.halfproduct_folder_id === folder.id).length}
+                  count={countedRows.filter((r) => r.halfproduct_folder_id === folder.id).length}
                   selected={activeFolder === folder.id}
                   onSelect={() => setActiveFolder(folder.id)}
                   onRename={() => handleRenameFolder(folder)}
