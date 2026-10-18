@@ -1709,6 +1709,30 @@ export function RecipeForm({
                   <option value="21">21%</option>
                 </select>
               </Field>
+              <Field label="Adviesverkoopprijs (incl. btw)">
+                <div className="flex h-10 items-center gap-2">
+                  <span className="tabular text-base font-medium">
+                    {advisedPriceInclVat !== null && Number.isFinite(advisedPriceInclVat)
+                      ? `€ ${advisedPriceInclVat.toFixed(2)}`
+                      : "—"}
+                  </span>
+                  {advisedPriceInclVat !== null &&
+                    Number.isFinite(advisedPriceInclVat) &&
+                    advisedPriceInclVat > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSalesPrice(advisedPriceInclVat.toFixed(2))}
+                        className="text-xs text-teal hover:underline"
+                        title="Zet de adviesprijs in het veld Verkoopprijs"
+                      >
+                        overnemen
+                      </button>
+                    )}
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Bij {targetFoodCostPct || "—"}% foodcost
+                </p>
+              </Field>
             </>
           ) : (
             <>
