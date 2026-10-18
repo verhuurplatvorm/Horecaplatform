@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RetryWaitingButton } from "@/components/invoices/retry-waiting-button";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
@@ -77,6 +78,16 @@ export default async function FactuurmailboxOverzichtPage({
           aangemaakt — de prijzen zelf worden pas doorgevoerd nadat je die batch op het
           Facturen-scherm bevestigt.
         </p>
+
+        {activeTab.key === "controle" && (
+          <div className="space-y-1">
+            <RetryWaitingButton />
+            <p className="text-xs text-muted">
+              Zoekt voor alle facturen hieronder opnieuw de leverancier (btw-, kvk-nummer of IBAN). Alleen zekere
+              koppelingen worden verwerkt; de rest blijft hier staan.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-1 border-b border-border">
           {TABS.map((t) => (
