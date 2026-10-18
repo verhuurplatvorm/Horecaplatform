@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useReturnNavigation } from "@/lib/use-return-navigation";
+import { useReturnNavigation, withReturnTo } from "@/lib/use-return-navigation";
 import Link from "next/link";
 import {
   ArrowDown,
@@ -3173,18 +3173,32 @@ function IngredientLine({
       </div>
 
       {/* Onder de regel: alleen wat helpt bij controleren. */}
-      {(isLinked && row.type === "halfproduct") ||
+      {isLinked ||
       (isLinked && (purchasePrice != null || packagingDescription)) ||
       conversionNote ||
       isDuplicate ? (
         <div className="ml-4 mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
-          {isLinked && row.type === "halfproduct" && (
+          {isLinked && (row.type === "halfproduct" || row.type === "ingrediënt") && (
             <Link
-              href={`/halfproducten/${row.refId}/bewerken`}
+              href={
+                row.type === "halfproduct"
+                  ? `/halfproducten/${row.refId}/bewerken`
+                  : `/producten/${row.refId}/bewerken`
+              }
               target="_blank"
+              // Het adres van dit recept meegeven, zodat "Terug" na opslaan
+              // of annuleren weer hier uitkomt. Pas bij de klik, anders
+              // verschilt het adres tussen server en browser.
+              onClick={(e) => {
+                e.currentTarget.href = withReturnTo(
+                  row.type === "halfproduct"
+                    ? `/halfproducten/${row.refId}/bewerken`
+                    : `/producten/${row.refId}/bewerken`,
+                );
+              }}
               className="text-teal hover:underline"
             >
-              Halfproduct openen →
+              {row.type === "halfproduct" ? "Halfproduct openen →" : "Ingrediënt openen →"}
             </Link>
           )}
           {isLinked && row.type === "ingrediënt" && (purchasePrice != null || packagingDescription) && (
