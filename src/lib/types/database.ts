@@ -832,6 +832,12 @@ export type Database = {
         Update: Partial<PackagingCorrection>;
         Relationships: [];
       };
+      dismissed_price_alerts: {
+        Row: DismissedPriceAlert;
+        Insert: Partial<DismissedPriceAlert>;
+        Update: Partial<DismissedPriceAlert>;
+        Relationships: [];
+      };
       waste_reasons: {
         Row: WasteReason;
         Insert: Partial<WasteReason>;
@@ -1164,6 +1170,7 @@ export type Database = {
           difference_pct: number;
           changed_on: string;
           above_alert: boolean;
+          price_row_id: string;
         }[];
       };
       dashboard_margin_problems: {
@@ -1378,3 +1385,10 @@ export type Database = {
     };
   };
 }
+
+export type DismissedPriceAlert = {
+  supplier_product_id: string;
+  group_id: string;
+  dismissed_by: string | null;
+  dismissed_at: string;
+};

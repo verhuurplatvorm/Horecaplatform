@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, TriangleAlert, X } from "lucide-react";
 import { DashboardWidget, WidgetTable } from "./dashboard-widget";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -45,9 +45,23 @@ export function PriceChangesWidget({
       difference_pct: number;
       changed_on: string;
       above_alert: boolean;
+      price_row_id: string;
     }[]
   >([]);
   const [loading, setLoading] = useState(true);
+
+  // Een onterecht alarm (bv. met een verkeerd gewicht gerekend) weghalen.
+  // De prijshistorie blijft bestaan; alleen het alarm verdwijnt.
+  async function dismissAlert(priceRowId: string) {
+    const { error } = await createClient()
+      .from("dismissed_price_alerts")
+      .upsert({ supplier_product_id: priceRowId }, { onConflict: "supplier_product_id" });
+    if (error) {
+      window.alert("Alarm weghalen is niet gelukt: " + error.message);
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.price_row_id !== priceRowId));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -89,10 +103,14 @@ export function PriceChangesWidget({
             ? "Geen prijswijzigingen boven de alarmgrens."
             : "Geen prijswijzigingen in deze periode."
         }
-        headers={["Ingrediënt", "Leverancier", "Oud → nieuw", "Verschil", "Datum"]}
+        headers={
+          alertsOnly
+            ? ["Ingrediënt", "Leverancier", "Oud → nieuw", "Verschil", "Datum", ""]
+            : ["Ingrediënt", "Leverancier", "Oud → nieuw", "Verschil", "Datum"]
+        }
       >
         {rows.map((r) => (
-          <tr key={`${r.product_id}-${r.changed_on}`} className="border-t border-border">
+          <tr key={`${r.price_row_id}`} className="border-t border-border">
             <td className="px-4 py-2 font-medium">
               <Link
                 href={withReturnTo(`/producten/${r.product_id}/bewerken`)}
@@ -132,6 +150,19 @@ export function PriceChangesWidget({
             <td className="px-4 py-2 text-right text-xs text-muted">
               {new Date(r.changed_on).toLocaleDateString("nl-NL")}
             </td>
+            {alertsOnly && (
+              <td className="px-2 py-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => dismissAlert(r.price_row_id)}
+                  className="text-muted hover:text-danger"
+                  title="Alarm verwijderen (de prijs zelf blijft staan)"
+                  aria-label="Alarm verwijderen"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </td>
+            )}
           </tr>
         ))}
       </WidgetTable>
