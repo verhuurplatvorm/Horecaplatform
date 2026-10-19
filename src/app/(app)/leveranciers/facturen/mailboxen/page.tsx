@@ -78,6 +78,32 @@ export default function MailboxenPage() {
     load();
   }
 
+  async function handleDelete(m: InvoiceMailbox) {
+    if (
+      !window.confirm(
+        `Mailbox "${m.label}" definitief verwijderen?\n\n` +
+          "De webhook-URL werkt dan niet meer: mail die er nog naartoe gestuurd wordt " +
+          "komt niet meer binnen. Al ontvangen facturen blijven gewoon bewaard."
+      )
+    )
+      return;
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from("invoice_mailboxes")
+      .delete()
+      .eq("id", m.id);
+    if (deleteError) {
+      window.alert(
+        deleteError.message.includes("row-level security")
+          ? "Alleen groepsbeheerders mogen mailboxen verwijderen."
+          : "Verwijderen mislukt: " + deleteError.message
+      );
+      return;
+    }
+    if (ignoreEditId === m.id) setIgnoreEditId(null);
+    load();
+  }
+
   async function handleEditEmail(m: InvoiceMailbox) {
     const input = window.prompt(
       "Op welk e-mailadres ontvangt deze mailbox facturen? (alleen ter weergave; laat leeg om te wissen)",
@@ -287,6 +313,12 @@ export default function MailboxenPage() {
                             Uitschakelen
                           </button>
                         )}
+                        <button
+                          onClick={() => handleDelete(m)}
+                          className="text-xs text-muted hover:text-danger"
+                        >
+                          Verwijderen
+                        </button>
                       </div>
                     </td>
                   </tr>
