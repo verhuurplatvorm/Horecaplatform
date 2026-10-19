@@ -11,7 +11,7 @@ import { ProductForm } from "@/components/products/product-form";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
-import { importPackagingFromText, parsePackaging } from "@/lib/packaging";
+import { importPackagingFromText, parsePackaging, pieceCountFromName } from "@/lib/packaging";
 import { normalizeItemKey } from "@/lib/price-import/ignored-items";
 import { convertQuantity } from "@/lib/units/convert";
 import type {
@@ -911,6 +911,15 @@ function RowLine({
             )}
           />
         </div>
+        {(() => {
+          const fromName = pieceCountFromName(row.description);
+          return fromName && fromName.count === row.packaging_unit_count ? (
+            <p className="mt-1 text-xs text-copper">
+              {fromName.count} stuks afgeleid uit de naam ({fromName.matchedText}). Klopt het niet?
+              Pas het aantal hierboven aan.
+            </p>
+          ) : null;
+        })()}
         {product && (
           <div className="mt-1">
             <button

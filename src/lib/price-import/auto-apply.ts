@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { pieceCountFromName } from "@/lib/packaging";
 
 /**
  * Automatisch doorvoeren van een factuur-batch wanneer de procedure klopt
@@ -19,8 +20,10 @@ export function decideAutoRow(input: {
   newPrice: number | null;
   packagingUnitCount: number | null;
   existingPrice: number | null;
+  /** Productnaam van de factuurregel; om een uit de naam afgeleid aantal te herkennen. */
+  description?: string | null;
 }): { decision: AutoRowDecision; reason?: string } {
-  const { newPrice, packagingUnitCount, existingPrice } = input;
+  const { newPrice, packagingUnitCount, existingPrice, description } = input;
   if (newPrice === null || !(newPrice > 0)) return { decision: "controle", reason: "prijs ontbreekt" };
   if (existingPrice !== null && existingPrice > 0) {
     const pct = (Math.abs(newPrice - existingPrice) / existingPrice) * 100;
@@ -31,6 +34,13 @@ export function decideAutoRow(input: {
   }
   if (!packagingUnitCount || packagingUnitCount <= 0) {
     return { decision: "controle", reason: "verpakkingsaantal ontbreekt" };
+  }
+  // Nieuw artikel waarvan het aantal alleen uit de productnaam is afgeleid
+  // ("48x30" = 48 stuks): dat is een interpretatie, dus eerst laten controleren.
+  // De gebruiker kan het aantal op het controlescherm aanpassen.
+  const fromName = pieceCountFromName(description);
+  if (fromName && fromName.count === packagingUnitCount) {
+    return { decision: "controle", reason: `aantal (${fromName.count}) uit productnaam afgeleid` };
   }
   return { decision: "toepassen" };
 }
@@ -73,6 +83,7 @@ export async function autoApplyInvoiceBatch(
       newPrice: row.purchase_price === null ? null : Number(row.purchase_price),
       packagingUnitCount: row.packaging_unit_count === null ? null : Number(row.packaging_unit_count),
       existingPrice: existing.get(row.matched_product_id as string) ?? null,
+      description: row.description as string | null,
     });
     if (verdict.decision === "controle") continue;
     const { error } = await supabase.rpc("apply_price_import_row", { p_row_id: row.id });

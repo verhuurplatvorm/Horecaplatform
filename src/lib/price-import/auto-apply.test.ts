@@ -26,3 +26,24 @@ describe("decideAutoRow", () => {
     assert.equal(decideAutoRow({ newPrice: 0, packagingUnitCount: 6, existingPrice: 5 }).decision, "controle");
   });
 });
+
+describe("decideAutoRow — aantal uit productnaam", () => {
+  it("nieuw artikel met aantal uit de naam gaat naar controle", () => {
+    const r = decideAutoRow({
+      newPrice: 33.99,
+      packagingUnitCount: 48,
+      existingPrice: null,
+      description: "Croquetas espinasas/queso 48x30",
+    });
+    assert.equal(r.decision, "controle");
+  });
+  it("gewoon aantal zonder naamafleiding wordt toegepast", () => {
+    const r = decideAutoRow({
+      newPrice: 5,
+      packagingUnitCount: 10,
+      existingPrice: null,
+      description: "Tomaten",
+    });
+    assert.equal(r.decision, "toepassen");
+  });
+});

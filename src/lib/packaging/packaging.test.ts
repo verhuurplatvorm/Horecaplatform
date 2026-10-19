@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  pieceCountFromName,
   convertCountToNewBase,
   costForUsage,
   countInBaseUnit,
@@ -459,5 +460,29 @@ describe("sizePerPieceFromName", () => {
   });
   it("geen maat in de naam", () => {
     assert.equal(sizePerPieceFromName("Citroen 10st"), null);
+  });
+});
+
+describe("pieceCountFromName — aantal stuks uit de productnaam", () => {
+  it("48x30 is 48 stuks", () => {
+    assert.equal(pieceCountFromName("Croquetas espinasas/queso 48x30")?.count, 48);
+  });
+  it("met telwoord is het totaal het product", () => {
+    assert.equal(pieceCountFromName("Mix macarons schelpen diam. 38mm (5x14 st)")?.count, 70);
+    assert.equal(pieceCountFromName("Roggebrood gesneden 1x5 plk")?.count, 5);
+  });
+  it("afmetingen zijn geen aantal", () => {
+    assert.equal(pieceCountFromName("Aluminiumfolie in box 150x45cm"), null);
+    assert.equal(pieceCountFromName("Beslagkom rvs 300x118mm"), null);
+    assert.equal(pieceCountFromName("Bakmat glasvezel 583x384mm"), null);
+    assert.equal(pieceCountFromName("Gn-deksel 1/1 530x325"), null);
+  });
+  it("inhoud per verpakking is geen aantal", () => {
+    assert.equal(pieceCountFromName("Tomatenpuree 6x1 ltr"), null);
+    assert.equal(pieceCountFromName("Barra 18 x 260 g"), null);
+  });
+  it("zonder naam of getal: null", () => {
+    assert.equal(pieceCountFromName(null), null);
+    assert.equal(pieceCountFromName("Zalm porties"), null);
   });
 });

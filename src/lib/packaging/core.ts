@@ -462,3 +462,41 @@ export function sizePerPieceFromName(
   const ambiguous = found.some((f) => f.baseKey !== last.baseKey || Math.abs(f.perPiece - last.perPiece) > 1e-9);
   return { ...last, ambiguous };
 }
+
+
+/**
+ * Aantal stuks per verpakking uit een productnaam als "Croquetas 48x30"
+ * (48 stuks van 30 gram), "Mix macarons (5x14 st)" (70 stuks) of
+ * "Roggebrood 1x5 plk" (5 plakken). Geeft null als de naam geen aantal
+ * bevat of als achter het getal een afmeting staat ("150x45cm", "300x118mm").
+ *
+ * Zonder eenheid achter het tweede getal is het eerste getal het aantal
+ * (48x30 → 48). Met een telwoord (st, stuks, vel, plk, rol, pcs) is het
+ * totaal het product van beide getallen (5x14 st → 70).
+ */
+export function pieceCountFromName(
+  name: string | null | undefined
+): { count: number; matchedText: string } | null {
+  if (!name) return null;
+  const regex = /(?<![\d.,/])(\d{1,4})\s*[x×]\s*(\d{1,4})(?:[.,]\d+)?\s*([a-z]+\.?)?/gi;
+  let best: { count: number; matchedText: string } | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(name)) !== null) {
+    const a = Number(match[1]);
+    const b = Number(match[2]);
+    const word = (match[3] ?? "").toLowerCase().replace(/\.$/, "");
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a < 1 || b < 1) continue;
+    const countWords = ["st", "stuks", "stuk", "stk", "pcs", "vel", "vellen", "plk", "plakken", "rol", "rollen", "pc"];
+    if (word === "") {
+      // Alleen "AxB": het eerste getal is het aantal, het tweede de maat
+      // per stuk. Zonder maat per stuk (b > 100) is het waarschijnlijk een
+      // afmeting en laten we het met rust.
+      if (a < 2 || b > 100) continue;
+      best = { count: a, matchedText: match[0].trim() };
+    } else if (countWords.includes(word)) {
+      best = { count: a * b, matchedText: match[0].trim() };
+    }
+    // Elke andere eenheid (cm, mm, g, ml, kg, l …): afmeting of inhoud, geen aantal.
+  }
+  return best;
+}

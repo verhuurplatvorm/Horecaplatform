@@ -1,5 +1,5 @@
 import type { ParsedInvoiceLine } from "./parse-ubl";
-import { importPackagingFromText } from "@/lib/packaging";
+import { importPackagingFromText, pieceCountFromName } from "@/lib/packaging";
 import type { ParsedPriceRow } from "@/lib/price-import/columns";
 
 const UN_CEFACT_TO_BASE: Record<string, { baseUnitKey: string; factor: number }> = {
@@ -57,6 +57,18 @@ export function linesToRows(lines: ParsedInvoiceLine[]): ParsedPriceRow[] {
         packagingUnitKey = parsed.unitKey;
         matchedPackagingText = parsed.explanation;
         break;
+      }
+    }
+
+    // Staat het aantal in de productnaam ("Croquetas 48x30" = 48 stuks),
+    // gebruik dat dan boven de aanname "1 stuk". Alleen voor regels die
+    // in stuks gaan; kilo- en literregels hebben hierboven al hun verpakking.
+    if (packagingUnitCount === null && !perUnitText) {
+      const fromName = pieceCountFromName(line.description);
+      if (fromName) {
+        packagingUnitCount = fromName.count;
+        packagingUnitKey = "stuk";
+        matchedPackagingText = `${fromName.count} × 1 Stuks`;
       }
     }
 
