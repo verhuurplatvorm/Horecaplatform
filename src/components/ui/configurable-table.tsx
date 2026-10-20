@@ -149,6 +149,10 @@ export function ConfigurableTable<T extends { id: string }>({
   const byKey = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
   const visible = order.map((k) => byKey.get(k)).filter(Boolean) as DataColumn<T>[];
   const shown = visible.filter((c) => !hidden.includes(c.key));
+  const CHECKBOX_COL = 32;
+  const colWidth = (c: DataColumn<T>) => widths[c.key] ?? c.width ?? 120;
+  const tableWidth =
+    (selectedIds ? CHECKBOX_COL : 0) + shown.reduce((sum, c) => sum + colWidth(c), 0);
 
   const filtered = useMemo(() => {
     const active = Object.entries(filters).filter(([, v]) => v.trim() !== "");
@@ -342,7 +346,19 @@ export function ConfigurableTable<T extends { id: string }>({
         style={{ maxHeight: boxMaxHeight ?? undefined }}
         className="overflow-auto rounded-lg border border-border bg-surface"
       >
-        <table className="w-full text-sm" style={{ minWidth: "max-content" }}>
+        {/* Vaste kolombreedtes: elke kolom is precies zo breed als ingesteld (of
+            versleept), in plaats van dat de browser breedtes naar de inhoud
+            uitrekt. Lange teksten lopen door op een tweede regel. */}
+        <table
+          className="text-sm"
+          style={{ tableLayout: "fixed", width: tableWidth }}
+        >
+          <colgroup>
+            {selectedIds && <col style={{ width: CHECKBOX_COL }} />}
+            {shown.map((c) => (
+              <col key={c.key} style={{ width: colWidth(c) }} />
+            ))}
+          </colgroup>
           <thead className="sticky top-0 z-30 bg-surface">
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               {selectedIds && (
@@ -357,9 +373,8 @@ export function ConfigurableTable<T extends { id: string }>({
               {shown.map((c) => (
                 <th
                   key={c.key}
-                  style={{ width: widths[c.key] ?? c.width }}
                   className={cn(
-                    "relative whitespace-nowrap px-2 py-2 font-medium",
+                    "relative px-2 py-2 pr-3 align-bottom font-medium leading-tight",
                     c.sticky && "sticky z-20 bg-surface",
                     c.sticky && (selectedIds ? "left-8" : "left-0")
                   )}
@@ -367,7 +382,7 @@ export function ConfigurableTable<T extends { id: string }>({
                   <button
                     type="button"
                     onClick={() => toggleSort(c.key)}
-                    className="flex items-center gap-1 hover:text-foreground"
+                    className="flex items-center gap-1 text-left hover:text-foreground"
                   >
                     {c.label}
                     {sortKey === c.key &&
@@ -408,7 +423,7 @@ export function ConfigurableTable<T extends { id: string }>({
                       onChange={(e) =>
                         setFilters((f) => ({ ...f, [c.key]: e.target.value }))
                       }
-                      className="h-7 w-full min-w-[70px] rounded border border-border bg-background px-1.5 text-xs font-normal"
+                      className="h-7 w-full min-w-0 rounded border border-border bg-background px-1.5 text-xs font-normal"
                     />
                   )}
                 </th>
@@ -438,9 +453,8 @@ export function ConfigurableTable<T extends { id: string }>({
                   <td
                     key={c.key}
                     onClick={() => onRowClick?.(row)}
-                    style={{ width: widths[c.key] ?? c.width }}
                     className={cn(
-                      "px-2 py-1.5",
+                      "break-words px-2 py-1.5",
                       c.align === "right" && "text-right tabular",
                       c.sticky && "sticky z-10 bg-surface font-medium",
                       c.sticky && (selectedIds ? "left-8" : "left-0")
