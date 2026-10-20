@@ -85,6 +85,28 @@ export function ConfigurableTable<T extends { id: string }>({
   const [dragKey, setDragKey] = useState<string | null>(null);
   const resizeRef = useRef<{ key: string; startX: number; startW: number } | null>(null);
 
+  // Het tabelvak vult precies de ruimte onder zijn bovenkant tot de onderkant
+  // van het scherm, zodat de horizontale scrollbalk altijd in beeld is.
+  // Meebewegen bij scrollen en venster vergroten/verkleinen.
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [boxMaxHeight, setBoxMaxHeight] = useState<number | null>(null);
+  useEffect(() => {
+    function update() {
+      const el = boxRef.current;
+      if (!el) return;
+      const top = Math.max(el.getBoundingClientRect().top, 8);
+      setBoxMaxHeight(Math.max(240, Math.floor(window.innerHeight - top - 16)));
+    }
+    const frame = window.requestAnimationFrame(update);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, { passive: true, capture: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, []);
+
   // Instellingen laden (eenmalig, per scherm)
   useEffect(() => {
     try {
@@ -315,7 +337,11 @@ export function ConfigurableTable<T extends { id: string }>({
         </div>
       )}
 
-      <div className="max-h-[calc(100vh-13rem)] overflow-auto rounded-lg border border-border bg-surface">
+      <div
+        ref={boxRef}
+        style={{ maxHeight: boxMaxHeight ?? undefined }}
+        className="overflow-auto rounded-lg border border-border bg-surface"
+      >
         <table className="w-full text-sm" style={{ minWidth: "max-content" }}>
           <thead className="sticky top-0 z-30 bg-surface">
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
