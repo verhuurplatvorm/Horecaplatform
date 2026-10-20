@@ -315,9 +315,12 @@ export function ConfigurableTable<T extends { id: string }>({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+      {/* Eigen scrollvak in hoogte en breedte: zo staat de horizontale
+          scrollbalk onderaan het scherm in plaats van onderaan een lijst van
+          honderden rijen, en blijven de kolomkoppen in beeld. */}
+      <div className="max-h-[calc(100vh-13rem)] overflow-auto rounded-lg border border-border bg-surface">
         <table className="w-full text-sm" style={{ minWidth: "max-content" }}>
-          <thead>
+          <thead className="sticky top-0 z-30 bg-surface">
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               {selectedIds && (
                 <th className="sticky left-0 z-20 w-8 bg-surface px-2 py-2">
