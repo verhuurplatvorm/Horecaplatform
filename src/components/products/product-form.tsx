@@ -2,7 +2,7 @@
 
 import { PackagingHint } from "@/components/products/packaging-hint";
 import { isUnitKey } from "@/lib/packaging";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useReturnNavigation } from "@/lib/use-return-navigation";
 import { Plus, Trash2, TriangleAlert } from "lucide-react";
@@ -837,49 +837,82 @@ export function ProductForm({
                 Verpakking toevoegen
               </Button>
             </div>
-            <p className="mb-2 text-xs text-muted">
-              Geef de inhoud op in de basiseenheid hierboven. Bijvoorbeeld:
-              &quot;doos van 12 flessen&quot; met inhoud 9000 (als basiseenheid ml
-              is en één fles 750 ml bevat).
-            </p>
-            <div className="space-y-2">
-              {packagings.map((row, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    placeholder="Naam, bv. doos van 12 flessen"
-                    value={row.name}
-                    onChange={(e) => updatePackaging(i, { name: e.target.value })}
-                    className="input flex-1"
-                  />
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="Inhoud in basiseenheid"
-                    value={row.quantity_in_base_unit}
-                    onChange={(e) =>
-                      updatePackaging(i, { quantity_in_base_unit: e.target.value })
-                    }
-                    className="input w-48"
-                  />
-                  <label className="flex items-center gap-1 whitespace-nowrap text-xs text-muted">
-                    <input
-                      type="radio"
-                      name="default-packaging"
-                      checked={row.is_default}
-                      onChange={() => updatePackaging(i, { is_default: true })}
-                    />
-                    standaard
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removePackaging(i)}
-                    className="text-muted hover:text-danger"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+            {(() => {
+              const baseUnit = units.find((u) => u.id === baseUnitId);
+              const baseName = baseUnit?.name ?? "basiseenheid";
+              const baseIsPiece = baseUnit?.key === "stuk";
+              return (
+                <>
+                  <p className="mb-2 text-xs text-muted">
+                    Een verpakking is een vaste hoeveelheid waarin je dit ingrediënt inkoopt, zoals een
+                    doos of krat. Vul in hoeveel <strong>{baseName}</strong> erin zit.{" "}
+                    {baseIsPiece ? (
+                      <>
+                        Voorbeeld: een doos met 2 taarten is naam &quot;doos met 2 taarten&quot; en
+                        hoeveel stuks: <strong>2</strong> (niet 1).
+                      </>
+                    ) : (
+                      <>
+                        Voorbeeld: een &quot;doos van 12 flessen&quot; met 750 ml per fles is 9000 ml.
+                      </>
+                    )}{" "}
+                    De prijs per leverancier staat op het tabblad Prijs &amp; historie; dit hier is
+                    optioneel.
+                  </p>
+                  {packagings.length === 0 && (
+                    <p className="text-sm text-muted">
+                      Nog geen verpakkingen. Kies &quot;Verpakking toevoegen&quot; als je er een wilt vastleggen.
+                    </p>
+                  )}
+                  {packagings.length > 0 && (
+                    <div className="grid grid-cols-[minmax(0,1fr)_11rem_auto_auto] items-end gap-x-2 gap-y-2">
+                      <span className="text-xs font-medium text-muted">Naam van de verpakking</span>
+                      <span className="text-xs font-medium text-muted">Hoeveel {baseName}</span>
+                      <span className="text-xs font-medium text-muted">Standaard</span>
+                      <span />
+                      {packagings.map((row, i) => (
+                        <Fragment key={i}>
+                          <input
+                            placeholder={baseIsPiece ? "bv. doos met 2 taarten" : "bv. doos van 12 flessen"}
+                            value={row.name}
+                            onChange={(e) => updatePackaging(i, { name: e.target.value })}
+                            className="input"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder={baseIsPiece ? "bv. 2" : `aantal ${baseName}`}
+                            value={row.quantity_in_base_unit}
+                            onChange={(e) =>
+                              updatePackaging(i, { quantity_in_base_unit: e.target.value })
+                            }
+                            className="input"
+                          />
+                          <label className="flex h-10 items-center justify-center">
+                            <input
+                              type="radio"
+                              name="default-packaging"
+                              aria-label="Standaardverpakking"
+                              checked={row.is_default}
+                              onChange={() => updatePackaging(i, { is_default: true })}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removePackaging(i)}
+                            className="flex h-10 items-center text-muted hover:text-danger"
+                            aria-label="Verpakking verwijderen"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </Fragment>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
             </div>
           </details>
