@@ -14,6 +14,8 @@ import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { withReturnTo } from "@/lib/use-return-navigation";
+import Link from "next/link";
 import type { EventMenu, EventMenuLine, EventMenuSection, Unit } from "@/lib/types/database";
 
 const TABS = [
@@ -55,6 +57,9 @@ export default function MenuDetailPage({
   const { can } = usePermissions();
   const canViewFinancial = can("menukaarten").canViewFinancial;
 
+  // Per regel waar hij naartoe verwijst, om het ingrediënt, halfproduct of
+  // gerecht direct te kunnen openen.
+  const [lineTargets, setLineTargets] = useState<Record<string, { href: string; label: string }>>({});
   const [tab, setTab] = useState<TabKey>("algemeen");
   const [menu, setMenu] = useState<EventMenu | null>(null);
   const [sections, setSections] = useState<EventMenuSection[]>([]);
@@ -88,6 +93,30 @@ export default function MenuDetailPage({
     }
     setMenu(m as EventMenu);
     setSections((secs as EventMenuSection[]) ?? []);
+
+    // Waar elke regel naar verwijst (ingrediënt, halfproduct of gerecht).
+    const { data: lineRefs } = await supabase
+      .from("event_menu_lines")
+      .select("id, recipe_id, product_id")
+      .eq("menu_id", id);
+    const recipeIds = [...new Set((lineRefs ?? []).map((r) => r.recipe_id).filter(Boolean))] as string[];
+    const kindById = new Map<string, string>();
+    if (recipeIds.length > 0) {
+      const { data: recs } = await supabase.from("recipes").select("id, recipe_kind").in("id", recipeIds);
+      for (const r of recs ?? []) kindById.set(r.id as string, r.recipe_kind as string);
+    }
+    const targets: Record<string, { href: string; label: string }> = {};
+    for (const r of lineRefs ?? []) {
+      if (r.product_id) {
+        targets[r.id as string] = { href: `/producten/${r.product_id}/bewerken`, label: "Ingrediënt openen →" };
+      } else if (r.recipe_id) {
+        const half = kindById.get(r.recipe_id as string) === "halfproduct";
+        targets[r.id as string] = half
+          ? { href: `/halfproducten/${r.recipe_id}/bewerken`, label: "Halfproduct openen →" }
+          : { href: `/recepturen/${r.recipe_id}/bewerken`, label: "Gerecht openen →" };
+      }
+    }
+    setLineTargets(targets);
 
     // Samenstelling mét kostprijzen komt uit één databasefunctie, die
     // dezelfde prijsbronnen en conversies gebruikt als de rest van het
@@ -468,6 +497,20 @@ export default function MenuDetailPage({
                                 <tr key={l.line_id} className="border-t border-border">
                                   <td className="px-4 py-2 pl-8 font-medium">
                                     {l.display_name}
+                                    {lineTargets[l.line_id] && (
+                                      <Link
+                                        href={lineTargets[l.line_id].href}
+                                        target="_blank"
+                                        // Het adres van dit menu meegeven, zodat "Terug" na
+                                        // opslaan of annuleren weer hier uitkomt.
+                                        onClick={(e) => {
+                                          e.currentTarget.href = withReturnTo(lineTargets[l.line_id].href);
+                                        }}
+                                        className="block text-xs font-normal text-teal hover:underline"
+                                      >
+                                        {lineTargets[l.line_id].label}
+                                      </Link>
+                                    )}
                                     <input
                                       defaultValue={l.note ?? ""}
                                       onBlur={(e) => {
