@@ -8,6 +8,7 @@ const TABS = [
   { href: "/producten", label: "Alle ingrediënten" },
   { href: "/producten/opschonen", label: "Te controleren" },
   { href: "/producten/non-food-opruimen", label: "Non-food opruimen" },
+  { href: "/producten/allergenen", label: "Allergenen controleren" },
 ];
 
 /** Kleine tabbalk die "Ingrediënten" en "Ingrediënten opschonen" als twee weergaven van hetzelfde overzicht laat aanvoelen, in plaats van losse bestemmingen. */

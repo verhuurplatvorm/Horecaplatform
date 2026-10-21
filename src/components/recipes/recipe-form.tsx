@@ -238,6 +238,7 @@ export function RecipeForm({
         defaultLossPct: number | null;
         allergens: string[];
         traces: string[];
+        allergensChecked: boolean;
         nutritionPer100: Record<string, number> | null;
         priceDirection: "up" | "down" | null;
         purchasePrice: number | null;
@@ -358,7 +359,7 @@ export function RecipeForm({
           .maybeSingle(),
         supabase
           .from("products")
-          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, contains_traces, nutrition_per_100")
+          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, allergens_checked, contains_traces, nutrition_per_100")
           .eq("id", productId)
           .single(),
         supabase
@@ -397,6 +398,7 @@ export function RecipeForm({
         defaultLossPct: product?.default_loss_percentage ?? null,
         allergens: product?.allergens ?? [],
         traces: product?.contains_traces ?? [],
+        allergensChecked: product?.allergens_checked ?? false,
         nutritionPer100: product?.nutrition_per_100 ?? null,
         priceDirection,
         purchasePrice: activeSupplierPrice?.purchase_price ?? null,
@@ -801,7 +803,10 @@ export function RecipeForm({
       if (!row.refId) continue;
       if (row.type === "ingrediënt") {
         const info = productPrices.get(row.refId);
-        if (!info || (info.allergens.length === 0 && info.traces.length === 0)) {
+        if (
+          !info ||
+          (!info.allergensChecked && info.allergens.length === 0 && info.traces.length === 0)
+        ) {
           hasUnknownSource = true;
         }
       }

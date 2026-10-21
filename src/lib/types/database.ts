@@ -106,6 +106,7 @@ export type Product = {
   ean_code: string | null;
   article_number: string | null;
   allergens: string[];
+  allergens_checked: boolean;
   contains_traces: string[];
   dietary_flags: Record<string, boolean>;
   nutrition_per_100: Record<string, number> | null;

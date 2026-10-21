@@ -165,6 +165,9 @@ export function ProductForm({
   const [reorderQty, setReorderQty] = useState(
     initialProduct?.reorder_quantity?.toString() ?? ""
   );
+  const [allergensChecked, setAllergensChecked] = useState<boolean>(
+    initialProduct?.allergens_checked ?? false
+  );
   const [allergens, setAllergens] = useState<Set<string>>(
     new Set(initialProduct?.allergens ?? [])
   );
@@ -399,6 +402,8 @@ export function ProductForm({
       min_stock_quantity: minStock ? Number(minStock) : null,
       reorder_quantity: reorderQty ? Number(reorderQty) : null,
       allergens: Array.from(allergens),
+      // Er een allergeen aanvinken betekent dat het is beoordeeld.
+      allergens_checked: allergensChecked || allergens.size > 0,
       contains_traces: Array.from(traces),
       dietary_flags: dietaryFlags,
       nutrition_per_100: Object.fromEntries(
@@ -1003,6 +1008,20 @@ export function ProductForm({
           <CardTitle>Allergenen &amp; dieetkenmerken</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <label className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={allergensChecked || allergens.size > 0}
+              disabled={allergens.size > 0}
+              onChange={(e) => setAllergensChecked(e.target.checked)}
+            />
+            <span>
+              Allergenen gecontroleerd{" "}
+              <span className="text-muted">
+                (vink aan als dit product geen allergenen bevat; zonder vinkje geldt het als onbekend)
+              </span>
+            </span>
+          </label>
           <div>
             <p className="mb-2 text-sm font-medium text-foreground">
               Allergenen (14 wettelijk verplichte EU-allergenen)
