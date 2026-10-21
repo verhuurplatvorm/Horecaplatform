@@ -173,6 +173,16 @@ export type HalfproductFolder = {
   created_at: string;
 }
 
+export type RecipeFolder = {
+  id: string;
+  group_id: string;
+  name: string;
+  parent_id: string | null;
+  is_main: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
 export type PackagingCorrection = {
   id: string;
   group_id: string;
@@ -824,6 +834,12 @@ export type Database = {
         Row: HalfproductFolder;
         Insert: Partial<HalfproductFolder>;
         Update: Partial<HalfproductFolder>;
+        Relationships: [];
+      };
+      recipe_folders: {
+        Row: RecipeFolder;
+        Insert: Partial<RecipeFolder>;
+        Update: Partial<RecipeFolder>;
         Relationships: [];
       };
       packaging_corrections: {

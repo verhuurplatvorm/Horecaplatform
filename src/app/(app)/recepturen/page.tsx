@@ -2,15 +2,31 @@
 
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
-import { useEffect, useState } from "react";
-import { Plus, Search, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderPlus,
+  Folders,
+  GripVertical,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
-import type { Recipe } from "@/lib/types/database";
+import { getCurrentGroupId } from "@/lib/supabase/current-group";
+import { cn } from "@/lib/utils";
+import type { Recipe, RecipeFolder } from "@/lib/types/database";
+
+const RECIPE_DRAG = "text/recipe-id";
+const FOLDER_DRAG = "text/recipe-folder-id";
 
 type RecipeListItem = Pick<
   Recipe,
@@ -44,6 +60,45 @@ export default function RecepturenPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [rematchBusy, setRematchBusy] = useState(false);
   const [rematchMessage, setRematchMessage] = useState<string | null>(null);
+  const [folderRows, setFolderRows] = useState<RecipeFolder[]>([]);
+  const [foldersLoaded, setFoldersLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const registeredRef = useRef(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("recipe_folders")
+      .select("id, group_id, name, parent_id, is_main, sort_order, created_at")
+      .order("sort_order")
+      .order("name")
+      .then(({ data }) => {
+        setFolderRows((data ?? []) as RecipeFolder[]);
+        setFoldersLoaded(true);
+      });
+  }, []);
+
+  // Categorieën die nog geen map zijn (bv. net via Excel geïmporteerd)
+  // worden automatisch als losse map vastgelegd.
+  useEffect(() => {
+    if (!foldersLoaded || loading || registeredRef.current) return;
+    registeredRef.current = true;
+    const known = new Set(folderRows.map((f) => f.name.toLowerCase()));
+    const missing = Array.from(
+      new Set(recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c))
+    ).filter((c) => !known.has(c.toLowerCase()));
+    if (missing.length === 0) return;
+    (async () => {
+      const supabase = createClient();
+      const groupId = await getCurrentGroupId(supabase);
+      if (!groupId) return;
+      const { data } = await supabase
+        .from("recipe_folders")
+        .insert(missing.map((name, i) => ({ group_id: groupId, name, sort_order: folderRows.length + i })))
+        .select("id, group_id, name, parent_id, is_main, sort_order, created_at");
+      if (data) setFolderRows((prev) => [...prev, ...(data as RecipeFolder[])]);
+    })();
+  }, [foldersLoaded, loading, recipes, folderRows]);
 
   // Voor de kostprijsberekening is een concreet bedrijf nodig (recepten
   // kunnen groepsbreed of lokaal zijn, maar inkoopprijzen kunnen per
@@ -262,33 +317,156 @@ export default function RecepturenPage() {
     }
   }
 
-  /**
-   * Map verwijderen — de recepten zelf blijven bestaan en verhuizen naar
-   * "Zonder map" (de categorie wordt leeggemaakt). Recepten verwijderen
-   * gaat bewust per recept, nooit per hele map tegelijk.
-   */
-  async function handleDeleteFolder(folder: string) {
-    const count = recipes.filter((r) => r.category?.trim() === folder).length;
-    const ok = window.confirm(
-      `Map "${folder}" verwijderen?\n\n` +
-        `De ${count} recept(en) in deze map worden NIET verwijderd — ze ` +
-        `verhuizen naar "Zonder map".`
-    );
-    if (!ok) return;
-    const supabase = createClient();
-    const { error: updateError } = await supabase
-      .from("recipes")
-      .update({ category: null })
-      .eq("category", folder)
-      .eq("recipe_kind", "gerecht");
-    if (updateError) {
-      window.alert("Map verwijderen mislukt: " + updateError.message);
+  const mainFolders = folderRows.filter((f) => f.is_main);
+  const mapFolders = folderRows.filter((f) => !f.is_main);
+  const childrenOf = (mainId: string) => mapFolders.filter((f) => f.parent_id === mainId);
+  const looseFolders = mapFolders.filter(
+    (f) => !f.parent_id || !mainFolders.some((m) => m.id === f.parent_id)
+  );
+
+  async function handleAddFolder(isMain: boolean) {
+    const name = window.prompt(
+      isMain
+        ? "Naam van de nieuwe hoofdmap (bv. Zomers, Kerst, 2 voor 1, Het Strand):"
+        : "Naam van de nieuwe map:"
+    )?.trim();
+    if (!name) return;
+    if (folderRows.some((f) => f.name.toLowerCase() === name.toLowerCase())) {
+      window.alert("Er bestaat al een map met die naam.");
       return;
     }
-    setRecipes((prev) =>
-      prev.map((r) => (r.category?.trim() === folder ? { ...r, category: null } : r))
-    );
+    const active = folderRows.find((f) => f.id === activeFolder);
+    const parentId = isMain ? null : active ? (active.is_main ? active.id : active.parent_id) : null;
+    const supabase = createClient();
+    const groupId = await getCurrentGroupId(supabase);
+    if (!groupId) return;
+    const { data, error: insertError } = await supabase
+      .from("recipe_folders")
+      .insert({ group_id: groupId, name, is_main: isMain, parent_id: parentId, sort_order: folderRows.length })
+      .select("id, group_id, name, parent_id, is_main, sort_order, created_at")
+      .single();
+    if (insertError || !data) {
+      window.alert("Map aanmaken mislukt: " + (insertError?.message ?? "onbekende fout"));
+      return;
+    }
+    setFolderRows((prev) => [...prev, data as RecipeFolder]);
+    setActiveFolder(data.id);
+    if (parentId)
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        next.delete(parentId);
+        return next;
+      });
+  }
+
+  async function handleRenameFolder(folder: RecipeFolder) {
+    const name = window.prompt("Nieuwe naam:", folder.name)?.trim();
+    if (!name || name === folder.name) return;
+    if (folderRows.some((f) => f.id !== folder.id && f.name.toLowerCase() === name.toLowerCase())) {
+      window.alert("Er bestaat al een map met die naam.");
+      return;
+    }
+    const supabase = createClient();
+    const { error: renameError } = await supabase
+      .from("recipe_folders")
+      .update({ name })
+      .eq("id", folder.id);
+    if (renameError) {
+      window.alert("Hernoemen mislukt: " + renameError.message);
+      return;
+    }
+    if (!folder.is_main) {
+      const { error: catError } = await supabase
+        .from("recipes")
+        .update({ category: name })
+        .eq("category", folder.name)
+        .eq("recipe_kind", "gerecht");
+      if (catError) {
+        window.alert("Gerechten bijwerken mislukt: " + catError.message);
+        return;
+      }
+      setRecipes((prev) =>
+        prev.map((r) => (r.category?.trim() === folder.name ? { ...r, category: name } : r))
+      );
+    }
+    setFolderRows((prev) => prev.map((f) => (f.id === folder.id ? { ...f, name } : f)));
+  }
+
+  /**
+   * Map verwijderen — de gerechten zelf blijven bestaan en verhuizen naar
+   * "Zonder map". Een hoofdmap verwijderen laat de mappen eronder los
+   * achter; er verdwijnen nooit gerechten.
+   */
+  async function handleDeleteFolder(folder: RecipeFolder) {
+    const supabase = createClient();
+    if (folder.is_main) {
+      const n = childrenOf(folder.id).length;
+      if (!window.confirm(`Hoofdmap "${folder.name}" verwijderen?\n\nDe ${n} map(pen) erin blijven bestaan als losse map.`))
+        return;
+      const { error: delError } = await supabase.from("recipe_folders").delete().eq("id", folder.id);
+      if (delError) {
+        window.alert("Verwijderen mislukt: " + delError.message);
+        return;
+      }
+      setFolderRows((prev) =>
+        prev.filter((f) => f.id !== folder.id).map((f) => (f.parent_id === folder.id ? { ...f, parent_id: null } : f))
+      );
+    } else {
+      const count = recipes.filter((r) => r.category?.trim() === folder.name).length;
+      if (!window.confirm(`Map "${folder.name}" verwijderen?\n\nDe ${count} recept(en) in deze map worden NIET verwijderd — ze verhuizen naar "Zonder map".`))
+        return;
+      const { error: updateError } = await supabase
+        .from("recipes")
+        .update({ category: null })
+        .eq("category", folder.name)
+        .eq("recipe_kind", "gerecht");
+      if (updateError) {
+        window.alert("Map verwijderen mislukt: " + updateError.message);
+        return;
+      }
+      await supabase.from("recipe_folders").delete().eq("id", folder.id);
+      setRecipes((prev) =>
+        prev.map((r) => (r.category?.trim() === folder.name ? { ...r, category: null } : r))
+      );
+      setFolderRows((prev) => prev.filter((f) => f.id !== folder.id));
+    }
     setActiveFolder("__alle__");
+  }
+
+  async function moveFolderToMain(folderId: string, mainId: string | null) {
+    const folder = folderRows.find((f) => f.id === folderId);
+    if (!folder || folder.is_main || folder.parent_id === mainId) return;
+    const supabase = createClient();
+    const { error: moveError } = await supabase
+      .from("recipe_folders")
+      .update({ parent_id: mainId })
+      .eq("id", folderId);
+    if (moveError) {
+      window.alert("Verplaatsen mislukt: " + moveError.message);
+      return;
+    }
+    setFolderRows((prev) => prev.map((f) => (f.id === folderId ? { ...f, parent_id: mainId } : f)));
+    if (mainId)
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        next.delete(mainId);
+        return next;
+      });
+  }
+
+  async function moveRecipeToCategory(recipeId: string, category: string | null) {
+    const row = recipes.find((r) => r.id === recipeId);
+    if (!row || (row.category?.trim() || null) === category) return;
+    const supabase = createClient();
+    const { error: moveError } = await supabase
+      .from("recipes")
+      .update({ category })
+      .eq("id", recipeId);
+    if (moveError) {
+      window.alert("Verplaatsen mislukt: " + moveError.message);
+      return;
+    }
+    setRecipes((prev) => prev.map((r) => (r.id === recipeId ? { ...r, category } : r)));
   }
 
   // Bulkacties: meerdere recepten tegelijk naar een map verplaatsen of
@@ -355,24 +533,138 @@ export default function RecepturenPage() {
       )
     : recipes;
 
-  // Mappen (categorieën) als tabbladen: elk recept staat alleen in zijn
-  // eigen map, met "Alle mappen" als totaaloverzicht en "Zonder map"
-  // voor recepten zonder categorie.
-  const folders = Array.from(
-    new Set(recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c))
-  ).sort((a, b) => a.localeCompare(b, "nl"));
-  const hasUnfiled = recipes.some((r) => !r.category?.trim());
+  // Mappen: elk gerecht staat in één map (category). Mappen kunnen onder
+  // een hoofdmap hangen; "Zonder map" zijn gerechten zonder categorie.
+  const folders = Array.from(new Set(mapFolders.map((f) => f.name))).sort((a, b) =>
+    a.localeCompare(b, "nl")
+  );
+  const countIn = (names: string[]) =>
+    searchedRecipes.filter((r) => names.includes(r.category?.trim() ?? "")).length;
+  const unfiledCount = searchedRecipes.filter((r) => !r.category?.trim()).length;
+  const activeF = folderRows.find((f) => f.id === activeFolder);
   const filteredRecipes =
     activeFolder === "__alle__"
       ? searchedRecipes
       : activeFolder === "__zonder__"
         ? searchedRecipes.filter((r) => !r.category?.trim())
-        : searchedRecipes.filter((r) => r.category?.trim() === activeFolder);
+        : activeF?.is_main
+          ? searchedRecipes.filter((r) =>
+              childrenOf(activeF.id).some((c) => c.name === r.category?.trim())
+            )
+          : searchedRecipes.filter((r) => r.category?.trim() === activeF?.name);
 
   return (
     <>
       <Topbar title="Recepten (Gerechten)" />
-      <main className="p-6 space-y-4">
+      <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[260px_1fr] md:p-6">
+        <div>
+          <Card>
+            <CardContent className="p-2">
+              <div className="mb-2 flex items-center justify-between px-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted">Mappen</p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleAddFolder(true)} title="Nieuwe hoofdmap">
+                    <Folders className="h-4 w-4 text-muted hover:text-teal" />
+                  </button>
+                  <button onClick={() => handleAddFolder(false)} title="Nieuwe map">
+                    <FolderPlus className="h-4 w-4 text-muted hover:text-teal" />
+                  </button>
+                </div>
+              </div>
+              <TreeRow
+                label={`Alle mappen (${searchedRecipes.length})`}
+                selected={activeFolder === "__alle__"}
+                onSelect={() => setActiveFolder("__alle__")}
+              />
+              {mainFolders.map((main) => {
+                const kids = childrenOf(main.id);
+                const isOpen = !collapsed.has(main.id);
+                return (
+                  <div key={main.id}>
+                    <TreeRow
+                      label={main.name}
+                      count={countIn(kids.map((k) => k.name))}
+                      bold
+                      selected={activeFolder === main.id}
+                      onSelect={() => setActiveFolder(main.id)}
+                      toggle={{
+                        open: isOpen,
+                        onToggle: () =>
+                          setCollapsed((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(main.id)) next.delete(main.id);
+                            else next.add(main.id);
+                            return next;
+                          }),
+                      }}
+                      onRename={() => handleRenameFolder(main)}
+                      onDelete={() => handleDeleteFolder(main)}
+                      onDropFolder={(fid) => moveFolderToMain(fid, main.id)}
+                    />
+                    {isOpen &&
+                      kids.map((k) => (
+                        <TreeRow
+                          key={k.id}
+                          label={k.name}
+                          count={countIn([k.name])}
+                          indent
+                          selected={activeFolder === k.id}
+                          onSelect={() => setActiveFolder(k.id)}
+                          onRename={() => handleRenameFolder(k)}
+                          onDelete={() => handleDeleteFolder(k)}
+                          dragFolderId={k.id}
+                          onDropRecipe={(rid) => moveRecipeToCategory(rid, k.name)}
+                        />
+                      ))}
+                    {isOpen && kids.length === 0 && (
+                      <p className="py-1 pl-8 text-xs text-muted">Sleep hier mappen naartoe</p>
+                    )}
+                  </div>
+                );
+              })}
+              <p
+                className="mt-2 px-2 pt-2 text-xs font-medium uppercase tracking-wide text-muted"
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes(FOLDER_DRAG)) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fid = e.dataTransfer.getData(FOLDER_DRAG);
+                  if (fid) moveFolderToMain(fid, null);
+                }}
+                title="Sleep een map hierheen om uit een hoofdmap te halen"
+              >
+                {mainFolders.length > 0 ? "Losse mappen" : "Mappen"}
+              </p>
+              {looseFolders.map((f) => (
+                <TreeRow
+                  key={f.id}
+                  label={f.name}
+                  count={countIn([f.name])}
+                  selected={activeFolder === f.id}
+                  onSelect={() => setActiveFolder(f.id)}
+                  onRename={() => handleRenameFolder(f)}
+                  onDelete={() => handleDeleteFolder(f)}
+                  dragFolderId={f.id}
+                  onDropRecipe={(rid) => moveRecipeToCategory(rid, f.name)}
+                />
+              ))}
+              {unfiledCount > 0 && (
+                <TreeRow
+                  label={`Zonder map (${unfiledCount})`}
+                  selected={activeFolder === "__zonder__"}
+                  onSelect={() => setActiveFolder("__zonder__")}
+                  onDropRecipe={(rid) => moveRecipeToCategory(rid, null)}
+                />
+              )}
+              <p className="px-2 pt-3 text-xs text-muted">
+                Sleep een map op een hoofdmap om hem erin te zetten. Sleep een gerecht (greep links in de rij) op een map om te verplaatsen.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="min-w-0 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
@@ -423,61 +715,6 @@ export default function RecepturenPage() {
             </Button>
           </Link>
         </div>
-
-        {(folders.length > 0 || hasUnfiled) && (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setActiveFolder("__alle__")}
-              className={`rounded-full px-3 py-1.5 text-sm ${
-                activeFolder === "__alle__"
-                  ? "bg-teal text-white"
-                  : "bg-surface text-muted hover:bg-background"
-              }`}
-            >
-              Alle mappen ({searchedRecipes.length})
-            </button>
-            {folders.map((folder) => {
-              const count = searchedRecipes.filter(
-                (r) => r.category?.trim() === folder
-              ).length;
-              return (
-                <button
-                  key={folder}
-                  onClick={() => setActiveFolder(folder)}
-                  className={`rounded-full px-3 py-1.5 text-sm ${
-                    activeFolder === folder
-                      ? "bg-teal text-white"
-                      : "bg-surface text-muted hover:bg-background"
-                  }`}
-                >
-                  {folder} ({count})
-                </button>
-              );
-            })}
-            {activeFolder !== "__alle__" && activeFolder !== "__zonder__" && (
-              <button
-                onClick={() => handleDeleteFolder(activeFolder)}
-                title={'Map "' + activeFolder + '" verwijderen (recepten verhuizen naar Zonder map)'}
-                className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-danger/10 hover:text-danger"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Map verwijderen
-              </button>
-            )}
-            {hasUnfiled && (
-              <button
-                onClick={() => setActiveFolder("__zonder__")}
-                className={`rounded-full px-3 py-1.5 text-sm ${
-                  activeFolder === "__zonder__"
-                    ? "bg-teal text-white"
-                    : "bg-surface text-muted hover:bg-background"
-                }`}
-              >
-                Zonder map ({searchedRecipes.filter((r) => !r.category?.trim()).length})
-              </button>
-            )}
-          </div>
-        )}
 
         {selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-md border border-teal bg-teal/5 px-3 py-2 text-sm">
@@ -552,6 +789,7 @@ export default function RecepturenPage() {
                       }
                     />
                   </th>
+                  <th className="w-6 px-1 py-3"></th>
                   <th className="px-5 py-3 font-medium">Naam</th>
                   <th className="px-5 py-3 font-medium">Categorie</th>
                   <th className="px-5 py-3 font-medium">Bereik</th>
@@ -584,6 +822,19 @@ export default function RecepturenPage() {
                           checked={selectedIds.has(r.id)}
                           onChange={() => toggleSelect(r.id)}
                         />
+                      </td>
+                      <td className="px-1 py-3">
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(RECIPE_DRAG, r.id);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          title="Sleep naar een map links om te verplaatsen"
+                          className="flex cursor-grab items-center justify-center text-muted hover:text-teal active:cursor-grabbing"
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </span>
                       </td>
                       <td className="px-5 py-3 font-medium">
                         <Link
@@ -641,7 +892,7 @@ export default function RecepturenPage() {
                 })}
                 {filteredRecipes.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={canViewFinancial ? 9 : 7} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={canViewFinancial ? 10 : 8} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
                         : q
@@ -664,6 +915,7 @@ export default function RecepturenPage() {
               }, op basis van de actuele inkoopprijzen. Halfproducten beheer je nu apart onder "Halfproducten".`
             : "Selecteer een bedrijf via de bedrijfsselector rechtsboven om actuele kostprijzen te zien."}
         </p>
+        </div>
       </main>
     </>
   );
@@ -684,5 +936,102 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`rounded-full px-2 py-0.5 text-xs ${styles[status] ?? styles.concept}`}>
       {labels[status] ?? status}
     </span>
+  );
+}
+
+/** Rij in de mappenboom: selecteerbaar, hernoembaar, sleepbaar (map) en drop-doel (gerecht of map). */
+function TreeRow({
+  label,
+  count,
+  selected,
+  indent,
+  bold,
+  toggle,
+  dragFolderId,
+  onSelect,
+  onRename,
+  onDelete,
+  onDropRecipe,
+  onDropFolder,
+}: {
+  label: string;
+  count?: number;
+  selected: boolean;
+  indent?: boolean;
+  bold?: boolean;
+  toggle?: { open: boolean; onToggle: () => void };
+  dragFolderId?: string;
+  onSelect: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+  onDropRecipe?: (recipeId: string) => void;
+  onDropFolder?: (folderId: string) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const accepts = (types: readonly string[]) =>
+    (!!onDropRecipe && types.includes(RECIPE_DRAG)) ||
+    (!!onDropFolder && types.includes(FOLDER_DRAG));
+  return (
+    <div
+      draggable={!!dragFolderId}
+      onDragStart={(e) => {
+        if (!dragFolderId) return;
+        e.dataTransfer.setData(FOLDER_DRAG, dragFolderId);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className={cn(
+        "group flex items-center gap-1 rounded-md px-2 py-2 text-sm hover:bg-background",
+        indent && "ml-5",
+        bold && "font-medium",
+        selected && "bg-teal/10 text-teal",
+        dragOver && "bg-teal/25 outline outline-2 outline-teal"
+      )}
+      onDragOver={(e) => {
+        if (accepts(e.dataTransfer.types)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }
+      }}
+      onDragEnter={(e) => {
+        if (accepts(e.dataTransfer.types)) setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const rid = e.dataTransfer.getData(RECIPE_DRAG);
+        const fid = e.dataTransfer.getData(FOLDER_DRAG);
+        if (rid && onDropRecipe) onDropRecipe(rid);
+        else if (fid && onDropFolder) onDropFolder(fid);
+      }}
+    >
+      {toggle && (
+        <button onClick={toggle.onToggle} title={toggle.open ? "Inklappen" : "Uitklappen"}>
+          {toggle.open ? (
+            <ChevronDown className="h-4 w-4 text-muted" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted" />
+          )}
+        </button>
+      )}
+      <button onClick={onSelect} className="flex-1 truncate text-left">
+        {label}
+        {count !== undefined && <span className="ml-1 text-xs text-muted">({count})</span>}
+      </button>
+      {(onRename || onDelete) && (
+        <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
+          {onRename && (
+            <button onClick={onRename} title="Hernoemen">
+              <Pencil className="h-3 w-3 text-muted hover:text-teal" />
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={onDelete} title="Verwijderen">
+              <Trash2 className="h-3 w-3 text-muted hover:text-danger" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
