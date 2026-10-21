@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
-import { Plus, Search, Trash2, Upload } from "lucide-react";
+import { FolderPlus, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,6 +42,9 @@ export default function RecepturenPage() {
   const [activeFolder, setActiveFolder] = useState<string>("__alle__");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Nieuwe, nog lege mappen: een map bestaat pas echt zodra er een gerecht
+  // in staat (de map is de categorie van het gerecht).
+  const [extraFolders, setExtraFolders] = useState<string[]>([]);
   const [rematchBusy, setRematchBusy] = useState(false);
   const [rematchMessage, setRematchMessage] = useState<string | null>(null);
 
@@ -288,6 +291,7 @@ export default function RecepturenPage() {
     setRecipes((prev) =>
       prev.map((r) => (r.category?.trim() === folder ? { ...r, category: null } : r))
     );
+    setExtraFolders((prev) => prev.filter((f) => f !== folder));
     setActiveFolder("__alle__");
   }
 
@@ -337,6 +341,23 @@ export default function RecepturenPage() {
     setSelectedIds(new Set());
   }
 
+  async function handleNewFolder() {
+    const raw = window.prompt("Naam van de nieuwe map:");
+    const name = raw?.trim();
+    if (!name) return;
+    const existing = [...folders, ...extraFolders].find(
+      (f) => f.toLowerCase() === name.toLowerCase()
+    );
+    const target = existing ?? name;
+    if (selectedIds.size > 0) {
+      // Geselecteerde gerechten verhuizen meteen naar de nieuwe map.
+      await bulkMoveToFolder(target);
+    } else if (!existing) {
+      setExtraFolders((prev) => [...prev, target]);
+    }
+    setActiveFolder(target);
+  }
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -359,7 +380,10 @@ export default function RecepturenPage() {
   // eigen map, met "Alle mappen" als totaaloverzicht en "Zonder map"
   // voor recepten zonder categorie.
   const folders = Array.from(
-    new Set(recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c))
+    new Set([
+      ...recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c),
+      ...extraFolders,
+    ])
   ).sort((a, b) => a.localeCompare(b, "nl"));
   const hasUnfiled = recipes.some((r) => !r.category?.trim());
   const filteredRecipes =
@@ -424,7 +448,7 @@ export default function RecepturenPage() {
           </Link>
         </div>
 
-        {(folders.length > 0 || hasUnfiled) && (
+        {(folders.length > 0 || hasUnfiled || recipes.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setActiveFolder("__alle__")}
@@ -464,6 +488,18 @@ export default function RecepturenPage() {
                 Map verwijderen
               </button>
             )}
+            <button
+              onClick={handleNewFolder}
+              title={
+                selectedIds.size > 0
+                  ? `Nieuwe map maken en de ${selectedIds.size} geselecteerde gerechten daarin zetten`
+                  : "Nieuwe map maken"
+              }
+              className="flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-sm text-muted hover:bg-background"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              Nieuwe map
+            </button>
             {hasUnfiled && (
               <button
                 onClick={() => setActiveFolder("__zonder__")}
