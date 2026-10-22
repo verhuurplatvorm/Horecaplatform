@@ -16,6 +16,8 @@ interface Row {
   certain: AllergenKey[];
   assumed: AllergenKey[];
   reasons: string[];
+  /** Al vastgelegde allergenen (bv. uit een eerdere import) — blijven staan. */
+  stored: string[];
 }
 
 type Filter = "alle" | "zeker" | "aanname" | "geen_verwacht" | "onbekend";
@@ -45,7 +47,7 @@ export default function AllergenenPage() {
       for (let from = 0; ; from += PAGE) {
         const { data, error: e } = await supabase
           .from("products")
-          .select("id, name, custom_name")
+          .select("id, name, custom_name, allergens")
           .eq("allergens_checked", false)
           .order("name")
           .range(from, from + PAGE - 1);
@@ -60,6 +62,7 @@ export default function AllergenenPage() {
             certain: g.certain,
             assumed: g.assumed,
             reasons: g.reasons,
+            stored: ((p.allergens as string[] | null) ?? []).filter(Boolean),
           });
         }
         if (!data || data.length < PAGE) break;
@@ -67,7 +70,7 @@ export default function AllergenenPage() {
       const ch = new Map<string, Set<string>>();
       const sel = new Set<string>();
       for (const r of out) {
-        ch.set(r.id, new Set<string>([...r.certain, ...r.assumed]));
+        ch.set(r.id, new Set<string>([...r.stored, ...r.certain, ...r.assumed]));
         // Alleen vooraf aangevinkt wat zeker is: een naam die het ingrediënt
         // noemt, of een eenvoudig vers product. Aannames en onbekend niet.
         if (r.status === "geen_verwacht" || (r.status === "gevonden" && r.assumed.length === 0))
