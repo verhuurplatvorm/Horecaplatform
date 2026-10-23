@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,59 +42,77 @@ export default function AllergenenPage() {
   const [webBusy, setWebBusy] = useState(false);
   const [webMsg, setWebMsg] = useState<string | null>(null);
 
-  async function lookupWeb() {
-    // Proef: de eerste 50 ingrediënten uit de huidige lijst die een EAN-code
-    // hebben en nog niet zijn opgezocht.
-    const ids = visible
-      .filter((r) => r.ean && !web.has(r.id))
-      .slice(0, 50)
+  const stopRef = useRef(false);
+  const [webProgress, setWebProgress] = useState<string | null>(null);
+
+  // limit = 50 voor de proef, Infinity voor alle ingrediënten met EAN in de lijst.
+  async function lookupWeb(limit: number) {
+    const ids = rows
+      .filter((r) => r.ean && !web.has(r.id) && (limit === Infinity ? true : visible.includes(r)))
+      .slice(0, limit)
       .map((r) => r.id);
     if (ids.length === 0) {
-      setWebMsg("Niets om op te zoeken: geen (nieuwe) ingrediënten met EAN-code in deze lijst. Probeer het filter 'Geen verwacht', 'Onbekend' of 'Alles'.");
+      setWebMsg("Niets om op te zoeken: geen (nieuwe) ingrediënten met EAN-code.");
       return;
     }
     setWebBusy(true);
     setWebMsg(null);
+    stopRef.current = false;
+    let gevonden = 0, nietBekend = 0, geenInfo = 0, fouten = 0, done = 0;
     try {
-      const found = new Map<string, WebAllergenResult>();
-      for (let i = 0; i < ids.length; i += 15) {
-        const res = await fetch("/api/allergens/web-lookup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: ids.slice(i, i + 15) }),
+      for (let i = 0; i < ids.length && !stopRef.current; i += 15) {
+        const batch = ids.slice(i, i + 15);
+        let json: { results?: Record<string, WebAllergenResult>; error?: string } = {};
+        try {
+          const res = await fetch("/api/allergens/web-lookup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: batch }),
+          });
+          json = await res.json();
+          if (!res.ok) throw new Error(json.error ?? "Opzoeken mislukt.");
+        } catch {
+          fouten += batch.length;
+          done += batch.length;
+          setWebProgress(`${done} van ${ids.length} opgezocht…`);
+          continue;
+        }
+        const found = new Map(Object.entries(json.results ?? {}));
+        const usable = [...found.entries()].filter(([, r]) => r.status === "gevonden");
+        for (const [, r] of found) {
+          if (r.status === "gevonden") gevonden++;
+          else if (r.status === "niet_gevonden") nietBekend++;
+          else if (r.status === "onvolledig") geenInfo++;
+          else fouten++;
+        }
+        done += batch.length;
+        // Fouten niet bewaren, zodat ze later opnieuw geprobeerd kunnen worden.
+        const keep = [...found.entries()].filter(([, r]) => r.status !== "fout");
+        setWeb((prev) => new Map([...prev, ...keep]));
+        // Het webvoorstel vervangt het naamvoorstel; opslaan gebeurt pas na jouw controle.
+        setChosen((prev) => {
+          const next = new Map(prev);
+          for (const [id, r] of usable) next.set(id, new Set<string>(r.allergens));
+          return next;
         });
-        const json = (await res.json()) as { results?: Record<string, WebAllergenResult>; error?: string };
-        if (!res.ok) throw new Error(json.error ?? "Opzoeken mislukt.");
-        for (const [id, r] of Object.entries(json.results ?? {})) found.set(id, r);
+        setSelected((prev) => {
+          const next = new Set(prev);
+          for (const [id] of usable) next.delete(id);
+          return next;
+        });
+        setWebProgress(`${done} van ${ids.length} opgezocht…`);
       }
-      const usable = [...found.entries()].filter(([, r]) => r.status === "gevonden");
-      setWeb((prev) => new Map([...prev, ...found]));
-      // De webuitkomst vervangt het naamvoorstel in de keuzes, maar wordt pas
-      // opgeslagen nadat jij het product aanvinkt en op Opslaan klikt.
-      setChosen((prev) => {
-        const next = new Map(prev);
-        for (const [id, r] of usable) next.set(id, new Set<string>(r.allergens));
-        return next;
-      });
-      setSelected((prev) => {
-        const next = new Set(prev);
-        for (const [id] of usable) next.delete(id);
-        return next;
-      });
-      const notFound = [...found.values()].filter((r) => r.status === "niet_gevonden").length;
-      const noData = [...found.values()].filter((r) => r.status === "onvolledig").length;
-      const errs = [...found.values()].filter((r) => r.status === "fout").length;
       setWebMsg(
-        `${usable.length} van ${ids.length} gevonden op het web` +
-          (notFound > 0 ? `, ${notFound} niet bekend bij Open Food Facts` : "") +
-          (noData > 0 ? `, ${noData} zonder allergeneninfo` : "") +
-          (errs > 0 ? `, ${errs} mislukt (probeer later opnieuw)` : "") +
+        `${gevonden} van ${done} gevonden op het web` +
+          (nietBekend > 0 ? `, ${nietBekend} niet bekend bij Open Food Facts` : "") +
+          (geenInfo > 0 ? `, ${geenInfo} zonder allergeneninfo` : "") +
+          (fouten > 0 ? `, ${fouten} mislukt (probeer later opnieuw)` : "") +
+          (stopRef.current ? " (gestopt)" : "") +
           ". Controleer de gevonden producten en vink ze aan om op te slaan."
       );
-    } catch (err) {
-      setWebMsg(err instanceof Error ? err.message : "Opzoeken mislukt.");
     } finally {
       setWebBusy(false);
+      setWebProgress(null);
     }
   }
 
@@ -311,9 +329,20 @@ export default function AllergenenPage() {
           <span className="text-muted">
             {selectedVisible} van {visible.length} geselecteerd
           </span>
-          <Button variant="secondary" onClick={lookupWeb} disabled={webBusy || loading}>
-            {webBusy ? "Zoeken…" : `Opzoeken op het web (${Math.min(50, visible.filter((r) => r.ean && !web.has(r.id)).length)} met EAN)`}
-          </Button>
+          {webBusy ? (
+            <Button variant="secondary" onClick={() => (stopRef.current = true)}>
+              Stoppen ({webProgress ?? "bezig…"})
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => lookupWeb(50)} disabled={loading}>
+                Proef: 50 opzoeken
+              </Button>
+              <Button variant="secondary" onClick={() => lookupWeb(Infinity)} disabled={loading}>
+                Alles opzoeken ({rows.filter((r) => r.ean && !web.has(r.id)).length} met EAN)
+              </Button>
+            </>
+          )}
           {[...web.values()].some((r) => r.status === "gevonden") && (
             <button className="text-teal hover:underline" onClick={selectWebFound}>
               Gevonden op web selecteren
