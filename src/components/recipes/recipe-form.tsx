@@ -784,6 +784,40 @@ export function RecipeForm({
     }
   }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable, lossPct, yieldQuantity, lossReady]);
 
+  // Wat het systeem zelf per allergeen bepaalt (zonder handmatige keuzes);
+  // getoond bij "Automatisch" zodat de kok alleen hoeft af te wijken.
+  const autoAllergenState = useMemo(() => {
+    const contains = new Set<string>();
+    const traces = new Set<string>();
+    let unknownSource = false;
+    for (const row of rows) {
+      if (!row.refId) continue;
+      if (row.type === "ingrediënt") {
+        const info = productPrices.get(row.refId);
+        info?.allergens.forEach((a) => contains.add(a));
+        info?.traces.forEach((a) => traces.add(a));
+        if (!info || (!info.allergensChecked && info.allergens.length === 0 && info.traces.length === 0)) {
+          unknownSource = true;
+        }
+      } else {
+        const info = halfproductCosts.get(row.refId);
+        info?.allergensContains.forEach((a) => contains.add(a));
+        info?.allergensTraces.forEach((a) => traces.add(a));
+      }
+    }
+    const state: Record<string, string> = {};
+    for (const a of EU_ALLERGENS) {
+      state[a] = contains.has(a)
+        ? "Bevat"
+        : traces.has(a)
+          ? "Kan sporen bevatten"
+          : unknownSource
+            ? "Onbekend"
+            : "Bevat niet";
+    }
+    return state;
+  }, [rows, productPrices, halfproductCosts]);
+
   const allergenSummary = useMemo(() => {
     const contains = new Set<string>();
     const traces = new Set<string>();
@@ -2657,9 +2691,9 @@ export function RecipeForm({
                         return next;
                       });
                     }}
-                    className={`input h-8 w-44 shrink-0 ${allergenOverrides[a] ? "font-medium" : ""}`}
+                    className={`input h-8 w-56 shrink-0 ${allergenOverrides[a] ? "font-medium" : ""}`}
                   >
-                    <option value="">Automatisch</option>
+                    <option value="">Automatisch: {autoAllergenState[a]}</option>
                     <option value="bevat">Bevat</option>
                     <option value="sporen">Kan sporen bevatten</option>
                     <option value="bevat_niet">Bevat niet</option>
