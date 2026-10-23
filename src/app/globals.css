@@ -14,6 +14,7 @@
   --foreground: #101A1C;       /* bijna-zwart, koele ondertoon */
   --muted: #5B6B6E;
   --border: #DCE3E2;
+  --input-border: #8FA0A3;     /* invoervelden moeten ook zonder focus zichtbaar zijn */
 
   --navy: #0B2B30;             /* dieptint, sidebar */
   --navy-light: #123B42;
@@ -73,4 +74,19 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Invoervelden: de lichte kaartrand (--border) is op wit nauwelijks te zien,
+   waardoor velden pas verschenen als je erin klikte. Daarom een duidelijke
+   rand voor alle tekst-, getal- en keuzevelden.
+   !important omdat veel schermen een eigen (scoped) .input-stijl hebben. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+select,
+textarea {
+  border-color: var(--input-border) !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--teal) !important;
 }

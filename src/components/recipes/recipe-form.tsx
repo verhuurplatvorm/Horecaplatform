@@ -147,6 +147,11 @@ export function RecipeForm({
     initialRecipe?.piece_quantity != null ? String(initialRecipe.piece_quantity) : ""
   );
   const [pieceUnitId, setPieceUnitId] = useState(initialRecipe?.piece_unit_id ?? "");
+  // Handmatige allergeenkeuzes van de kok; wat hier niet in staat volgt de
+  // automatische afleiding uit de ingrediënten.
+  const [allergenOverrides, setAllergenOverrides] = useState<
+    Record<string, "bevat" | "sporen" | "bevat_niet">
+  >(initialRecipe?.allergen_overrides ?? {});
   // Bij een bestaand halfproduct wordt het verlies-% eerst uit de opgeslagen
   // opbrengst afgeleid; tot die stap klaar is mag de automatische stand de
   // opbrengst niet overschrijven (anders is het opgeslagen verlies weg).
@@ -811,10 +816,20 @@ export function RecipeForm({
         }
       }
     }
-    const known = new Set([...contains, ...traces]);
+    // Handmatige keuzes van de kok gaan boven de automatische afleiding.
+    for (const [a, choice] of Object.entries(allergenOverrides)) {
+      contains.delete(a);
+      traces.delete(a);
+      if (choice === "bevat") contains.add(a);
+      else if (choice === "sporen") traces.add(a);
+    }
+    for (const a of contains) traces.delete(a);
+    const manualFree = EU_ALLERGENS.filter((a) => allergenOverrides[a] === "bevat_niet");
+
+    const known = new Set([...contains, ...traces, ...manualFree]);
     const free = hasUnknownSource
-      ? []
-      : EU_ALLERGENS.filter((a) => !known.has(a));
+      ? [...manualFree]
+      : EU_ALLERGENS.filter((a) => !contains.has(a) && !traces.has(a));
     const unknown = hasUnknownSource
       ? EU_ALLERGENS.filter((a) => !known.has(a))
       : [];
@@ -825,7 +840,7 @@ export function RecipeForm({
       free: [...free].sort(),
       unknown: [...unknown].sort(),
     };
-  }, [rows, productPrices, halfproductCosts]);
+  }, [rows, productPrices, halfproductCosts, allergenOverrides]);
 
   const nutritionTotals = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -1471,6 +1486,7 @@ export function RecipeForm({
       vat_rate: Number(vatRate),
       waste_percentage: wastePercentage ? Number(wastePercentage) : 0,
       margin_free_costs: marginFreeCosts ? Number(marginFreeCosts) : 0,
+      allergen_overrides: allergenOverrides,
     };
 
     // Opgegeven gram/ml bij een stuks-regel (bv. "10 citroenen = 1000 gram")
@@ -2522,7 +2538,7 @@ export function RecipeForm({
   const allergenenCard = (
       <Card>
         <CardHeader>
-          <CardTitle>Allergenen &amp; voedingswaarden (automatisch)</CardTitle>
+          <CardTitle>Allergenen &amp; voedingswaarden</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -2606,6 +2622,50 @@ export function RecipeForm({
                   Alle 14 allergenen zijn bekend voor dit recept.
                 </p>
               )}
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">Allergenen handmatig aanpassen</p>
+              {Object.keys(allergenOverrides).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAllergenOverrides({})}
+                  className="text-xs text-muted hover:text-danger"
+                >
+                  Alles terug naar automatisch
+                </button>
+              )}
+            </div>
+            <p className="mb-3 text-xs text-muted">
+              Standaard volgen de allergenen de ingrediënten. Kies hier zelf een stand als je het
+              beter weet; die keuze gaat voor en werkt ook door in gerechten die dit gebruiken.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {EU_ALLERGENS.map((a) => (
+                <label key={a} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="capitalize">{a}</span>
+                  <select
+                    value={allergenOverrides[a] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value as "" | "bevat" | "sporen" | "bevat_niet";
+                      setAllergenOverrides((prev) => {
+                        const next = { ...prev };
+                        if (v === "") delete next[a];
+                        else next[a] = v;
+                        return next;
+                      });
+                    }}
+                    className={`input h-8 w-44 shrink-0 ${allergenOverrides[a] ? "font-medium" : ""}`}
+                  >
+                    <option value="">Automatisch</option>
+                    <option value="bevat">Bevat</option>
+                    <option value="sporen">Kan sporen bevatten</option>
+                    <option value="bevat_niet">Bevat niet</option>
+                  </select>
+                </label>
+              ))}
             </div>
           </div>
 

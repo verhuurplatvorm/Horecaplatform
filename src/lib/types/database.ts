@@ -361,6 +361,7 @@ export type Recipe = {
   portion_size: number | null;
   portion_unit: string | null;
   yield_quantity: number | null;
+  allergen_overrides: Record<string, "bevat" | "sporen" | "bevat_niet"> | null;
   yield_is_manual: boolean;
   yield_unit: string | null;
   piece_quantity: number | null;
