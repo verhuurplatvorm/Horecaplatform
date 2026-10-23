@@ -4,6 +4,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import { IgnoreSenderButton } from "@/components/invoices/ignore-sender-button";
 import { DeleteInvoiceButton } from "@/components/invoices/delete-invoice-button";
 
 export default async function FacturenPage({
@@ -25,7 +26,7 @@ export default async function FacturenPage({
 
   const { data: mailItems } = await supabase
     .from("inbound_invoice_queue")
-    .select("id, original_filename, sender_email, received_at, status")
+    .select("id, original_filename, sender_email, received_at, status, mailbox_id")
     .in("status", ["wacht_op_leverancier", "fout"])
     .order("received_at", { ascending: false })
     .limit(10);
@@ -79,12 +80,15 @@ export default async function FacturenPage({
                       {m.original_filename}
                       <span className="ml-2 text-muted">{m.sender_email ?? ""}</span>
                     </span>
-                    <Link
-                      href={`/leveranciers/facturen/postvak-in/${m.id}`}
-                      className="shrink-0 text-teal hover:underline"
-                    >
-                      Verwerken →
-                    </Link>
+                    <span className="flex shrink-0 items-center gap-4">
+                      <IgnoreSenderButton queueId={m.id} mailboxId={m.mailbox_id} sender={m.sender_email} />
+                      <Link
+                        href={`/leveranciers/facturen/postvak-in/${m.id}`}
+                        className="text-teal hover:underline"
+                      >
+                        Verwerken →
+                      </Link>
+                    </span>
                   </li>
                 ))}
               </ul>
