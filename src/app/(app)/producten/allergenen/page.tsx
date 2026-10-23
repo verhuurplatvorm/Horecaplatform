@@ -17,6 +17,7 @@ interface Row {
   certain: AllergenKey[];
   assumed: AllergenKey[];
   reasons: string[];
+  ean: string;
 }
 
 type Filter = "alle" | "zeker" | "aanname" | "geen_verwacht" | "onbekend";
@@ -42,9 +43,16 @@ export default function AllergenenPage() {
   const [webMsg, setWebMsg] = useState<string | null>(null);
 
   async function lookupWeb() {
-    // Proef: alleen de ingrediënten die nu op deze pagina staan (max. 50).
-    const ids = pageRows.map((r) => r.id);
-    if (ids.length === 0) return;
+    // Proef: de eerste 50 ingrediënten uit de huidige lijst die een EAN-code
+    // hebben en nog niet zijn opgezocht.
+    const ids = visible
+      .filter((r) => r.ean && !web.has(r.id))
+      .slice(0, 50)
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      setWebMsg("Niets om op te zoeken: geen (nieuwe) ingrediënten met EAN-code in deze lijst. Probeer het filter 'Geen verwacht', 'Onbekend' of 'Alles'.");
+      return;
+    }
     setWebBusy(true);
     setWebMsg(null);
     try {
@@ -73,11 +81,13 @@ export default function AllergenenPage() {
         for (const [id] of usable) next.delete(id);
         return next;
       });
-      const noEan = ids.filter((id) => !found.has(id)).length;
+      const notFound = [...found.values()].filter((r) => r.status === "niet_gevonden").length;
+      const noData = [...found.values()].filter((r) => r.status === "onvolledig").length;
       const errs = [...found.values()].filter((r) => r.status === "fout").length;
       setWebMsg(
         `${usable.length} van ${ids.length} gevonden op het web` +
-          (noEan > 0 ? `, ${noEan} zonder EAN-code` : "") +
+          (notFound > 0 ? `, ${notFound} niet bekend bij Open Food Facts` : "") +
+          (noData > 0 ? `, ${noData} zonder allergeneninfo` : "") +
           (errs > 0 ? `, ${errs} mislukt (probeer later opnieuw)` : "") +
           ". Controleer de gevonden producten en vink ze aan om op te slaan."
       );
@@ -105,7 +115,7 @@ export default function AllergenenPage() {
       for (let from = 0; ; from += PAGE) {
         const { data, error: e } = await supabase
           .from("products")
-          .select("id, name, custom_name")
+          .select("id, name, custom_name, ean_code")
           .eq("allergens_checked", false)
           .order("name")
           .range(from, from + PAGE - 1);
@@ -120,6 +130,7 @@ export default function AllergenenPage() {
             certain: g.certain,
             assumed: g.assumed,
             reasons: g.reasons,
+            ean: ((p.ean_code as string | null) ?? "").trim(),
           });
         }
         if (!data || data.length < PAGE) break;
@@ -300,8 +311,8 @@ export default function AllergenenPage() {
           <span className="text-muted">
             {selectedVisible} van {visible.length} geselecteerd
           </span>
-          <Button variant="secondary" onClick={lookupWeb} disabled={webBusy || loading || pageRows.length === 0}>
-            {webBusy ? "Zoeken…" : `Opzoeken op het web (${pageRows.length} op deze pagina)`}
+          <Button variant="secondary" onClick={lookupWeb} disabled={webBusy || loading}>
+            {webBusy ? "Zoeken…" : `Opzoeken op het web (${Math.min(50, visible.filter((r) => r.ean && !web.has(r.id)).length)} met EAN)`}
           </Button>
           {[...web.values()].some((r) => r.status === "gevonden") && (
             <button className="text-teal hover:underline" onClick={selectWebFound}>

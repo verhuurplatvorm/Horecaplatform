@@ -1676,7 +1676,7 @@ export function RecipeForm({
               </select>
             </Field>
           )}
-          <Field label="Naam" required>
+          <Field label="Naam" required span2>
             <input required value={name} onChange={(e) => setName(e.target.value)} className="input" />
           </Field>
           <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
