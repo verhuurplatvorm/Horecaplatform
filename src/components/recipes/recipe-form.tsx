@@ -2583,9 +2583,12 @@ export function RecipeForm({
                   {allergenSummary.contains.map((a) => (
                     <span
                       key={a}
-                      className="rounded-full bg-danger/10 px-2 py-0.5 text-xs capitalize text-danger"
+                      title={allergenOverrides[a] ? "Handmatig aangepast" : undefined}
+                      className={`rounded-full bg-danger/10 px-2 py-0.5 text-xs capitalize text-danger ${
+                        allergenOverrides[a] ? "ring-2 ring-teal ring-offset-1" : ""
+                      }`}
                     >
-                      {a}
+                      {a}{allergenOverrides[a] ? " ✎" : ""}
                     </span>
                   ))}
                 </div>
@@ -2602,9 +2605,12 @@ export function RecipeForm({
                   {allergenSummary.traces.map((a) => (
                     <span
                       key={a}
-                      className="rounded-full bg-copper/10 px-2 py-0.5 text-xs capitalize text-copper"
+                      title={allergenOverrides[a] ? "Handmatig aangepast" : undefined}
+                      className={`rounded-full bg-copper/10 px-2 py-0.5 text-xs capitalize text-copper ${
+                        allergenOverrides[a] ? "ring-2 ring-teal ring-offset-1" : ""
+                      }`}
                     >
-                      {a}
+                      {a}{allergenOverrides[a] ? " ✎" : ""}
                     </span>
                   ))}
                 </div>
@@ -2619,9 +2625,12 @@ export function RecipeForm({
                   {allergenSummary.free.map((a) => (
                     <span
                       key={a}
-                      className="rounded-full bg-success/10 px-2 py-0.5 text-xs capitalize text-success"
+                      title={allergenOverrides[a] ? "Handmatig aangepast" : undefined}
+                      className={`rounded-full bg-success/10 px-2 py-0.5 text-xs capitalize text-success ${
+                        allergenOverrides[a] ? "ring-2 ring-teal ring-offset-1" : ""
+                      }`}
                     >
-                      {a}
+                      {a}{allergenOverrides[a] ? " ✎" : ""}
                     </span>
                   ))}
                 </div>
@@ -2659,6 +2668,16 @@ export function RecipeForm({
             </div>
           </div>
 
+          {Object.keys(allergenOverrides).length > 0 && (
+            <p className="flex items-center gap-2 text-xs text-muted">
+              <span className="rounded-full bg-muted/10 px-2 py-0.5 capitalize ring-2 ring-teal ring-offset-1">
+                voorbeeld ✎
+              </span>
+              = met de hand aangepast ({Object.keys(allergenOverrides).length}); de rest volgt automatisch
+              de ingrediënten.
+            </p>
+          )}
+
           <div className="border-t border-border pt-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-medium text-foreground">Allergenen handmatig aanpassen</p>
@@ -2679,7 +2698,10 @@ export function RecipeForm({
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {EU_ALLERGENS.map((a) => (
                 <label key={a} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="capitalize">{a}</span>
+                  <span className="capitalize">
+                    {a}
+                    {allergenOverrides[a] && <span className="ml-1 text-teal">✎</span>}
+                  </span>
                   <select
                     value={allergenOverrides[a] ?? ""}
                     onChange={(e) => {
@@ -2691,7 +2713,7 @@ export function RecipeForm({
                         return next;
                       });
                     }}
-                    className={`input h-8 w-56 shrink-0 ${allergenOverrides[a] ? "font-medium" : ""}`}
+                    className={`input h-8 w-56 shrink-0 ${allergenOverrides[a] ? "bg-teal/10 font-medium ring-2 ring-teal" : ""}`}
                   >
                     <option value="">Automatisch: {autoAllergenState[a]}</option>
                     <option value="bevat">Bevat</option>
