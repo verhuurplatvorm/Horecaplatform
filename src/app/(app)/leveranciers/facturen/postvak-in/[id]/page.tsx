@@ -6,6 +6,7 @@ import { TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { normalizeIban } from "@/lib/invoice-import/iban";
 import { createClient } from "@/lib/supabase/client";
 import type { InboundInvoiceQueueItem, Supplier } from "@/lib/types/database";
 import type { ParsedInvoiceHeader } from "@/lib/invoice-import/parse-ubl";
@@ -117,7 +118,7 @@ export default function PostvakInDetailPage({
     );
   }
 
-  const hasIbanMismatch = (item.supplier_candidates as { iban_mismatch?: boolean }[] | null)?.some(
+  const storedMismatch = (item.supplier_candidates as { iban_mismatch?: boolean }[] | null)?.some(
     (c) => c.iban_mismatch
   );
 
@@ -126,6 +127,11 @@ export default function PostvakInDetailPage({
     selectedSupplierId || candidates.find((c) => c.iban_mismatch)?.supplier_id || candidates.find((c) => c.iban_mismatch)?.id || "";
   const knownIban = suppliers.find((sp) => sp.id === mismatchSupplierId)?.iban ?? null;
   const invoiceIban = (item.parsed_header as { supplierIban?: string | null } | null)?.supplierIban ?? null;
+  // Vergelijk zonder spaties/hoofdletters; de opgeslagen vlag kan daar nog door misgaan.
+  const hasIbanMismatch =
+    knownIban && invoiceIban
+      ? normalizeIban(knownIban) !== normalizeIban(invoiceIban)
+      : storedMismatch;
   const formatIban = (v: string) => v.replace(/\s+/g, "").replace(/(.{4})/g, "$1 ").trim();
 
   return (

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeIban } from "@/lib/invoice-import/iban";
 import { createClient } from "@/lib/supabase/server";
 import { createImportBatch } from "@/lib/price-import/create-batch";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
         name: newSupplierName.trim(),
         vat_number: header.supplierVatNumber,
         kvk_number: header.supplierKvkNumber,
-        iban: header.supplierIban,
+        iban: normalizeIban(header.supplierIban),
         iban_verified_at: header.supplierIban ? new Date().toISOString() : null,
       })
       .select("id")
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
       .select("iban")
       .eq("id", supplierId)
       .single();
-    if (supplier?.iban && supplier.iban !== header.supplierIban) {
+    if (supplier?.iban && normalizeIban(supplier.iban) !== normalizeIban(header.supplierIban)) {
       return NextResponse.json(
         {
           error:
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
   if (confirmIbanMismatch && header.supplierIban) {
     await supabase
       .from("suppliers")
-      .update({ iban: header.supplierIban, iban_verified_at: new Date().toISOString() })
+      .update({ iban: normalizeIban(header.supplierIban), iban_verified_at: new Date().toISOString() })
       .eq("id", supplierId);
   }
 
@@ -165,7 +166,7 @@ async function rememberSupplierLink(
       if (!supplier.vat_number && header.supplierVatNumber) patch.vat_number = header.supplierVatNumber;
       if (!supplier.kvk_number && header.supplierKvkNumber) patch.kvk_number = header.supplierKvkNumber;
       if (!supplier.iban && header.supplierIban) {
-        patch.iban = header.supplierIban;
+        patch.iban = normalizeIban(header.supplierIban)!;
         patch.iban_verified_at = new Date().toISOString();
       }
       if (Object.keys(patch).length > 0) {
