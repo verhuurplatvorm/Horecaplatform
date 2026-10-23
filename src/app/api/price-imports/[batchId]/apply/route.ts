@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeName } from "@/lib/price-import/match";
 
 export async function POST(
   _request: Request,
@@ -18,6 +19,38 @@ export async function POST(
       { error: "Kan importregels niet ophalen." },
       { status: 500 }
     );
+  }
+
+  // Onthoud per leverancier welke omschrijving bij welk ingrediënt hoort, zodat
+  // dezelfde regel op de volgende factuur automatisch wordt gekoppeld.
+  try {
+    const { data: batch } = await supabase
+      .from("price_import_batches")
+      .select("group_id, supplier_id")
+      .eq("id", batchId)
+      .single();
+    if (batch?.supplier_id && batch.group_id) {
+      const memory = new Map<string, { group_id: string; supplier_id: string; normalized_description: string; product_id: string; updated_at: string }>();
+      for (const r of rows) {
+        if (!r.matched_product_id || !r.description) continue;
+        const key = normalizeName(r.description);
+        if (!key) continue;
+        memory.set(key, {
+          group_id: batch.group_id,
+          supplier_id: batch.supplier_id,
+          normalized_description: key,
+          product_id: r.matched_product_id,
+          updated_at: new Date().toISOString(),
+        });
+      }
+      if (memory.size > 0) {
+        await supabase
+          .from("supplier_description_matches")
+          .upsert([...memory.values()], { onConflict: "supplier_id,normalized_description" });
+      }
+    }
+  } catch {
+    // Het geheugen is een gemak; mislukt het, dan gaat het toepassen gewoon door.
   }
 
   const toApply = rows.filter(

@@ -1048,6 +1048,12 @@ export type Database = {
         Update: Partial<IgnoredInvoiceItem>;
         Relationships: [];
       };
+      supplier_description_matches: {
+        Row: SupplierDescriptionMatch;
+        Insert: Partial<SupplierDescriptionMatch>;
+        Update: Partial<SupplierDescriptionMatch>;
+        Relationships: [];
+      };
       inbound_invoice_queue: {
         Row: InboundInvoiceQueueItem;
         Insert: Partial<InboundInvoiceQueueItem>;
@@ -1409,4 +1415,13 @@ export type DismissedPriceAlert = {
   group_id: string;
   dismissed_by: string | null;
   dismissed_at: string;
+};
+
+export type SupplierDescriptionMatch = {
+  id: string;
+  group_id: string;
+  supplier_id: string;
+  normalized_description: string;
+  product_id: string;
+  updated_at: string;
 };

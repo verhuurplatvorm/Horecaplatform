@@ -15,7 +15,7 @@ export interface MatchedRow extends ParsedPriceRow {
   suggestions: { id: string; name: string }[];
 }
 
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -50,7 +50,7 @@ export async function matchRowsToProducts(
     ...new Set(rows.map((r) => r.articleNumber).filter(Boolean)),
   ];
 
-  const [byEan, byArticle, allProducts, bySupplierCode] = await Promise.all([
+  const [byEan, byArticle, allProducts, bySupplierCode, byDescription] = await Promise.all([
     eanCodes.length > 0
       ? supabase
           .from("products")
@@ -85,7 +85,21 @@ export async function matchRowsToProducts(
             valid_to: string | null;
           }[],
         }),
+    // Geheugen per leverancier voor regels zonder codes: dezelfde omschrijving
+    // eerder bevestigd = direct dezelfde koppeling.
+    supplierId
+      ? supabase
+          .from("supplier_description_matches")
+          .select("normalized_description, product_id")
+          .eq("supplier_id", supplierId)
+      : Promise.resolve({
+          data: [] as { normalized_description: string; product_id: string }[],
+        }),
   ]);
+
+  const descriptionMap = new Map<string, string>(
+    (byDescription.data ?? []).map((d) => [d.normalized_description, d.product_id])
+  );
 
   // code -> product; bij een code die naar meerdere producten wijst is het
   // niet zeker welke bedoeld is, dan laten we de koppeling over aan een mens.
@@ -140,6 +154,19 @@ export async function matchRowsToProducts(
         confidence: "gekoppeld" as const,
         suggestions: [],
       };
+    }
+
+    if (row.description) {
+      const remembered = descriptionMap.get(normalizeName(row.description));
+      if (remembered) {
+        return {
+          ...row,
+          matchedProductId: remembered,
+          matchMethod: "artikelnummer" as const,
+          confidence: "gekoppeld" as const,
+          suggestions: [],
+        };
+      }
     }
 
     // Geen exacte match: zoek op naamgelijkenis voor suggesties.
