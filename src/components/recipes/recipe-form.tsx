@@ -2695,10 +2695,10 @@ export function RecipeForm({
               Standaard volgen de allergenen de ingrediënten. Kies hier zelf een stand als je het
               beter weet; die keuze gaat voor en werkt ook door in gerechten die dit gebruiken.
             </p>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-x-6 gap-y-2 md:grid-cols-2">
               {EU_ALLERGENS.map((a) => (
-                <label key={a} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="capitalize">
+                <label key={a} className="flex items-center gap-3 text-sm">
+                  <span className="w-28 shrink-0 capitalize">
                     {a}
                     {allergenOverrides[a] && <span className="ml-1 text-teal">✎</span>}
                   </span>
@@ -2713,7 +2713,7 @@ export function RecipeForm({
                         return next;
                       });
                     }}
-                    className={`input h-8 w-56 shrink-0 ${allergenOverrides[a] ? "bg-teal/10 font-medium ring-2 ring-teal" : ""}`}
+                    className={`input h-8 min-w-0 flex-1 ${allergenOverrides[a] ? "bg-teal/10 font-medium ring-2 ring-teal" : ""}`}
                   >
                     <option value="">Automatisch: {autoAllergenState[a]}</option>
                     <option value="bevat">Bevat</option>
