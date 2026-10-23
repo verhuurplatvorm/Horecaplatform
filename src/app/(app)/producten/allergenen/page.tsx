@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
 import { ALLERGEN_LIST, inferAllergens, type AllergenKey } from "@/lib/allergens/infer";
 import { cn } from "@/lib/utils";
+import type { WebAllergenResult } from "@/lib/allergens/openfoodfacts";
 
 interface Row {
   id: string;
@@ -35,6 +36,65 @@ export default function AllergenenPage() {
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  // Resultaten van het opzoeken op het web (Open Food Facts), per product.
+  const [web, setWeb] = useState<Map<string, WebAllergenResult>>(new Map());
+  const [webBusy, setWebBusy] = useState(false);
+  const [webMsg, setWebMsg] = useState<string | null>(null);
+
+  async function lookupWeb() {
+    // Proef: alleen de ingrediënten die nu op deze pagina staan (max. 50).
+    const ids = pageRows.map((r) => r.id);
+    if (ids.length === 0) return;
+    setWebBusy(true);
+    setWebMsg(null);
+    try {
+      const found = new Map<string, WebAllergenResult>();
+      for (let i = 0; i < ids.length; i += 15) {
+        const res = await fetch("/api/allergens/web-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(i, i + 15) }),
+        });
+        const json = (await res.json()) as { results?: Record<string, WebAllergenResult>; error?: string };
+        if (!res.ok) throw new Error(json.error ?? "Opzoeken mislukt.");
+        for (const [id, r] of Object.entries(json.results ?? {})) found.set(id, r);
+      }
+      const usable = [...found.entries()].filter(([, r]) => r.status === "gevonden");
+      setWeb((prev) => new Map([...prev, ...found]));
+      // De webuitkomst vervangt het naamvoorstel in de keuzes, maar wordt pas
+      // opgeslagen nadat jij het product aanvinkt en op Opslaan klikt.
+      setChosen((prev) => {
+        const next = new Map(prev);
+        for (const [id, r] of usable) next.set(id, new Set<string>(r.allergens));
+        return next;
+      });
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const [id] of usable) next.delete(id);
+        return next;
+      });
+      const noEan = ids.filter((id) => !found.has(id)).length;
+      const errs = [...found.values()].filter((r) => r.status === "fout").length;
+      setWebMsg(
+        `${usable.length} van ${ids.length} gevonden op het web` +
+          (noEan > 0 ? `, ${noEan} zonder EAN-code` : "") +
+          (errs > 0 ? `, ${errs} mislukt (probeer later opnieuw)` : "") +
+          ". Controleer de gevonden producten en vink ze aan om op te slaan."
+      );
+    } catch (err) {
+      setWebMsg(err instanceof Error ? err.message : "Opzoeken mislukt.");
+    } finally {
+      setWebBusy(false);
+    }
+  }
+
+  function selectWebFound() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const r of visible) if (web.get(r.id)?.status === "gevonden") next.add(r.id);
+      return next;
+    });
+  }
 
   async function load() {
     setLoading(true);
@@ -240,10 +300,19 @@ export default function AllergenenPage() {
           <span className="text-muted">
             {selectedVisible} van {visible.length} geselecteerd
           </span>
+          <Button variant="secondary" onClick={lookupWeb} disabled={webBusy || loading || pageRows.length === 0}>
+            {webBusy ? "Zoeken…" : `Opzoeken op het web (${pageRows.length} op deze pagina)`}
+          </Button>
+          {[...web.values()].some((r) => r.status === "gevonden") && (
+            <button className="text-teal hover:underline" onClick={selectWebFound}>
+              Gevonden op web selecteren
+            </button>
+          )}
           <Button onClick={save} disabled={busy || selected.size === 0} className="ml-auto">
             {busy ? "Bezig…" : `Opslaan (${selected.size})`}
           </Button>
         </div>
+        {webMsg && <p className="text-sm text-teal">{webMsg}</p>}
         {result && <p className="text-sm text-teal">{result}</p>}
         {error && <p className="text-sm text-danger">{error}</p>}
 
@@ -274,6 +343,22 @@ export default function AllergenenPage() {
                         {r.reasons.length > 0 && (
                           <div className="text-xs text-muted">{r.reasons.join(" · ")}</div>
                         )}
+                        {(() => {
+                          const w = web.get(r.id);
+                          if (!w) return null;
+                          if (w.status === "gevonden")
+                            return (
+                              <div className="text-xs text-teal">
+                                Bron: Open Food Facts{w.productName ? ` (${w.productName})` : ""}
+                                {w.traces.length > 0 ? ` · sporen: ${w.traces.join(", ")}` : ""}
+                              </div>
+                            );
+                          if (w.status === "onvolledig")
+                            return <div className="text-xs text-muted">Op het web gevonden, maar zonder allergeneninfo.</div>;
+                          if (w.status === "fout")
+                            return <div className="text-xs text-danger">Opzoeken mislukt, probeer later opnieuw.</div>;
+                          return <div className="text-xs text-muted">Niet gevonden op het web.</div>;
+                        })()}
                         {r.status === "onbekend" && (
                           <div className="text-xs text-muted">Niets herkend. Zonder vinkjes = geen allergenen.</div>
                         )}
