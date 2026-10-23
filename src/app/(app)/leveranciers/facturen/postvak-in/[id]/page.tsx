@@ -121,6 +121,13 @@ export default function PostvakInDetailPage({
     (c) => c.iban_mismatch
   );
 
+  const candidates = (item.supplier_candidates as { iban_mismatch?: boolean; supplier_id?: string; id?: string }[] | null) ?? [];
+  const mismatchSupplierId =
+    selectedSupplierId || candidates.find((c) => c.iban_mismatch)?.supplier_id || candidates.find((c) => c.iban_mismatch)?.id || "";
+  const knownIban = suppliers.find((sp) => sp.id === mismatchSupplierId)?.iban ?? null;
+  const invoiceIban = (item.parsed_header as { supplierIban?: string | null } | null)?.supplierIban ?? null;
+  const formatIban = (v: string) => v.replace(/\s+/g, "").replace(/(.{4})/g, "$1 ").trim();
+
   return (
     <>
       <Topbar title={`Factuur verwerken — ${item.original_filename}`} />
@@ -156,6 +163,13 @@ export default function PostvakInDetailPage({
             <span>
               Het IBAN op deze factuur wijkt af van het bekende IBAN van de leverancier.
               Controleer dit telefonisch bij de leverancier zelf voordat je verder gaat.
+              <span className="mt-2 block text-foreground">
+                IBAN op de factuur:{" "}
+                <b>{invoiceIban ? formatIban(invoiceIban) : "niet herkend op de factuur (kijk in de pdf)"}</b>
+                <br />
+                Bekend IBAN van de leverancier:{" "}
+                <b>{knownIban ? formatIban(knownIban) : "nog niet vastgelegd"}</b>
+              </span>
             </span>
           </div>
         )}
