@@ -32,6 +32,7 @@ export type Group = {
   updated_at: string;
   price_alert_threshold_pct: number;
   foodcost_norm_pct: number;
+  auto_apply_max_change_pct: number;
 }
 
 export type LegalEntity = {

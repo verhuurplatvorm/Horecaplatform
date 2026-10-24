@@ -12,6 +12,7 @@ export default function FactuurverwerkingInstellingenPage() {
   const [groupId, setGroupId] = useState<string | null>(null);
   const [foodcostNorm, setFoodcostNorm] = useState("33");
   const [priceAlertThreshold, setPriceAlertThreshold] = useState("10");
+  const [autoApplyMax, setAutoApplyMax] = useState("15");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -31,12 +32,13 @@ export default function FactuurverwerkingInstellingenPage() {
     }
     const { data } = await supabase
       .from("groups")
-      .select("foodcost_norm_pct, price_alert_threshold_pct")
+      .select("foodcost_norm_pct, price_alert_threshold_pct, auto_apply_max_change_pct")
       .eq("id", id)
       .maybeSingle();
     if (data) {
       setFoodcostNorm(String(data.foodcost_norm_pct));
       setPriceAlertThreshold(String(data.price_alert_threshold_pct));
+      setAutoApplyMax(String(data.auto_apply_max_change_pct ?? 15));
     }
     setLoading(false);
   }
@@ -53,6 +55,7 @@ export default function FactuurverwerkingInstellingenPage() {
       .update({
         foodcost_norm_pct: Number(foodcostNorm),
         price_alert_threshold_pct: Number(priceAlertThreshold),
+        auto_apply_max_change_pct: Number(autoApplyMax),
       })
       .eq("id", groupId);
     setSaving(false);
@@ -145,6 +148,25 @@ export default function FactuurverwerkingInstellingenPage() {
                   step={0.5}
                   value={priceAlertThreshold}
                   onChange={(e) => setPriceAlertThreshold(e.target.value)}
+                  className="input w-32"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-foreground">
+                  Maximale prijswijziging bij automatisch doorvoeren (%)
+                </label>
+                <p className="mb-1.5 text-xs text-muted">
+                  Factuurregels waarvan de prijs meer dan dit percentage verandert, worden niet
+                  automatisch doorgevoerd maar blijven staan om te controleren. Lager = strenger
+                  (meer controle), hoger = minder werk. Standaard 15%.
+                </p>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={autoApplyMax}
+                  onChange={(e) => setAutoApplyMax(e.target.value)}
                   className="input w-32"
                 />
               </div>

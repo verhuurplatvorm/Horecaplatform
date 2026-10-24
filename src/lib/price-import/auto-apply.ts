@@ -22,12 +22,15 @@ export function decideAutoRow(input: {
   existingPrice: number | null;
   /** Productnaam van de factuurregel; om een uit de naam afgeleid aantal te herkennen. */
   description?: string | null;
+  /** Maximale prijswijziging (%) voor automatisch doorvoeren; standaard MAX_AUTO_CHANGE_PCT. */
+  maxChangePct?: number;
 }): { decision: AutoRowDecision; reason?: string } {
   const { newPrice, packagingUnitCount, existingPrice, description } = input;
+  const maxPct = input.maxChangePct ?? MAX_AUTO_CHANGE_PCT;
   if (newPrice === null || !(newPrice > 0)) return { decision: "controle", reason: "prijs ontbreekt" };
   if (existingPrice !== null && existingPrice > 0) {
     const pct = (Math.abs(newPrice - existingPrice) / existingPrice) * 100;
-    if (pct > MAX_AUTO_CHANGE_PCT) {
+    if (pct > maxPct) {
       return { decision: "controle", reason: `prijssprong van ${pct.toFixed(0)}%` };
     }
     return { decision: "toepassen" };
@@ -52,9 +55,13 @@ export async function autoApplyInvoiceBatch(
 ): Promise<{ applied: number; left: number; errors: string[] }> {
   const { data: batch } = await supabase
     .from("price_import_batches")
-    .select("id, supplier_id, company_id")
+    .select("id, supplier_id, company_id, group_id")
     .eq("id", batchId)
     .single();
+  const { data: grp } = batch?.group_id
+    ? await supabase.from("groups").select("auto_apply_max_change_pct").eq("id", batch.group_id).maybeSingle()
+    : { data: null };
+  const maxChangePct = grp?.auto_apply_max_change_pct != null ? Number(grp.auto_apply_max_change_pct) : MAX_AUTO_CHANGE_PCT;
   const { data: rows } = await supabase
     .from("price_import_rows")
     .select("id, matched_product_id, status, purchase_price, packaging_unit_count, description, row_number")
@@ -84,6 +91,7 @@ export async function autoApplyInvoiceBatch(
       packagingUnitCount: row.packaging_unit_count === null ? null : Number(row.packaging_unit_count),
       existingPrice: existing.get(row.matched_product_id as string) ?? null,
       description: row.description as string | null,
+      maxChangePct,
     });
     if (verdict.decision === "controle") continue;
     const { error } = await supabase.rpc("apply_price_import_row", { p_row_id: row.id });
