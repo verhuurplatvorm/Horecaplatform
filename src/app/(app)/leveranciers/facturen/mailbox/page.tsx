@@ -127,8 +127,28 @@ export default async function FactuurmailboxOverzichtPage({
                     const badge = STATUS_BADGE[item.status];
                     return (
                       <tr key={item.id} className="border-t border-border">
-                        <td className="px-5 py-3 font-medium">{item.original_filename}</td>
-                        <td className="px-5 py-3 text-muted">{item.sender_email ?? "—"}</td>
+                        <td className="px-5 py-3 font-medium">
+                          {item.status === "wacht_op_leverancier" ? (
+                            <Link
+                              href={`/leveranciers/facturen/postvak-in/${item.id}`}
+                              className="text-teal hover:underline"
+                            >
+                              {item.original_filename}
+                            </Link>
+                          ) : item.status === "verwerkt" && item.resulting_batch_id ? (
+                            <Link
+                              href={`/leveranciers/prijzen/importeren/${item.resulting_batch_id}`}
+                              className="text-teal hover:underline"
+                            >
+                              {item.original_filename}
+                            </Link>
+                          ) : (
+                            item.original_filename
+                          )}
+                        </td>
+                        <td className="max-w-[14rem] truncate px-5 py-3 text-muted" title={item.sender_email ?? undefined}>
+                          {item.sender_email ?? "—"}
+                        </td>
                         <td className="px-5 py-3 text-muted">
                           {/* @ts-expect-error -- geneste relatie, niet in het handmatige Database-type */}
                           {item.suppliers?.name ?? "—"}
