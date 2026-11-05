@@ -69,6 +69,8 @@ interface IngredientRow {
   lossPercentage: string;
   isOptional: boolean;
   note: string;
+  /** Bewerking, bv. "sap" of "zeste". Het ingrediënt blijft meetellen in de kostprijs. */
+  preparation: string;
 }
 
 export interface RecipeFormProps {
@@ -227,6 +229,7 @@ export function RecipeForm({
           lossPercentage: ri.loss_percentage?.toString() ?? "",
           isOptional: ri.is_optional,
           note: ri.note ?? "",
+          preparation: ri.preparation ?? "",
         }))
       : [emptyRow()]
   );
@@ -922,7 +925,9 @@ export function RecipeForm({
     const dupes = new Set<number>();
     rows.forEach((row, i) => {
       if (!row.refId) return;
-      const key = `${row.type}:${row.refId}`;
+      // Zelfde ingrediënt met een andere bewerking (bv. limoen: sap én zeste)
+      // is geen dubbele regel.
+      const key = `${row.type}:${row.refId}:${row.preparation.trim().toLowerCase()}`;
       if (seen.has(key)) {
         dupes.add(i);
         dupes.add(seen.get(key)!);
@@ -1595,6 +1600,7 @@ export function RecipeForm({
         loss_percentage: r.lossPercentage ? Number(r.lossPercentage) : null,
         is_optional: r.isOptional,
         note: r.note.trim() || null,
+        preparation: r.preparation.trim() || null,
         sort_order: i,
       }))
     );
@@ -2990,6 +2996,7 @@ function emptyRow(): IngredientRow {
     lossPercentage: "",
     isOptional: false,
     note: "",
+    preparation: "",
   };
 }
 
@@ -3277,6 +3284,17 @@ function IngredientLine({
           )}
           {isSearching && <span className="shrink-0 text-xs text-copper">zoeken…</span>}
         </button>
+
+        {/* Bewerking: wat er met het ingrediënt gebeurt (sap, zeste, fijngesneden).
+            Het ingrediënt zelf blijft gekoppeld en telt mee in de kostprijs. */}
+        <input
+          placeholder="Bewerking, bv. sap"
+          aria-label="Bewerking"
+          title="Bewerking van het ingrediënt, bv. sap, zeste of fijngesneden. Telt niet apart mee in de kostprijs."
+          value={row.preparation}
+          onChange={(e) => onChange({ preparation: e.target.value })}
+          className="h-8 w-36 rounded-md border border-border bg-surface px-2 text-sm"
+        />
 
         {canViewFinancial && (
           <div className="tabular flex w-28 shrink-0 items-center justify-end gap-1 text-sm font-medium">

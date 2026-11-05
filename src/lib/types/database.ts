@@ -391,6 +391,8 @@ export type RecipeIngredient = {
   is_optional: boolean;
   sort_order: number;
   note: string | null;
+  /** Bewerking van het ingrediënt, bv. "sap" of "zeste" (alleen weergave). */
+  preparation: string | null;
 }
 
 export type ProductMissingUnitBridge = {
