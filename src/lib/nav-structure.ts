@@ -40,10 +40,10 @@ export const NAV_TABS: NavTab[] = [
     key: "keuken",
     label: "Keuken",
     items: [
+      { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
       { href: "/recepturen", label: "Gerechten", icon: BookOpen, moduleKey: "recepturen" },
       { href: "/halfproducten", label: "Halfproducten", icon: SoupIcon, moduleKey: "halfproducten" },
       { href: "/menus", label: "Menu's & buffetten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
-      { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
       { href: "/afval", label: "Afvalregistratie", icon: Trash2, moduleKey: "afval" },
       { href: "/voorraad", label: "Producties", icon: Warehouse, moduleKey: "producties" },
     ],
