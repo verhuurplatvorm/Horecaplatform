@@ -14,6 +14,8 @@ interface Filters {
   days: number;
   supplierName: string | null;
   category: string | null;
+  /** Alleen de actuele kaart: actieve menukaarten + actuele halfproducten. */
+  onlyCurrent?: boolean;
 }
 
 /** Blok 1/2/3: prijswijzigingen, grootste stijgers/dalers en prijsalarmen. */
@@ -67,10 +69,11 @@ export function PriceChangesWidget({
     let cancelled = false;
     setLoading(true);
     createClient()
-      .rpc("dashboard_price_changes", {
+      .rpc("dashboard_price_changes_scoped", {
         p_days: filters.days,
         p_limit: alertsOnly ? 25 : 10,
         p_direction: direction,
+        p_only_current: Boolean(filters.onlyCurrent),
       })
       .then(({ data }) => {
         if (cancelled) return;
@@ -85,7 +88,7 @@ export function PriceChangesWidget({
     return () => {
       cancelled = true;
     };
-  }, [filters.days, filters.supplierName, direction, alertsOnly]);
+  }, [filters.days, filters.supplierName, filters.onlyCurrent, direction, alertsOnly]);
 
   return (
     <DashboardWidget
@@ -208,10 +211,11 @@ export function MarginProblemsWidget({
           .maybeSingle();
         if (group?.foodcost_norm_pct) norm = group.foodcost_norm_pct;
       }
-      return supabase.rpc("dashboard_margin_problems", {
+      return supabase.rpc("dashboard_margin_problems_scoped", {
         p_company_id: filters.companyId,
         p_foodcost_norm: norm,
         p_limit: 15,
+        p_only_current: Boolean(filters.onlyCurrent),
       });
     }
     run()
@@ -225,7 +229,7 @@ export function MarginProblemsWidget({
     return () => {
       cancelled = true;
     };
-  }, [filters.companyId, filters.category]);
+  }, [filters.companyId, filters.category, filters.onlyCurrent]);
 
   return (
     <DashboardWidget
@@ -271,9 +275,11 @@ export function MarginProblemsWidget({
 export function UnmatchedIngredientsWidget({
   onHide,
   hidden,
+  onlyCurrent,
 }: {
   onHide?: (id: string) => void;
   hidden?: boolean;
+  onlyCurrent?: boolean;
 }) {
   const [rows, setRows] = useState<
     {
@@ -291,20 +297,31 @@ export function UnmatchedIngredientsWidget({
 
   useEffect(() => {
     let cancelled = false;
-    createClient()
-      .from("dashboard_unmatched_ingredients")
-      .select("*")
-      .order("changed_at", { ascending: false })
-      .limit(20)
-      .then(({ data }) => {
-        if (cancelled) return;
-        setRows(data ?? []);
-        setLoading(false);
-      });
+    async function run() {
+      const supabase = createClient();
+      let query = supabase
+        .from("dashboard_unmatched_ingredients")
+        .select("*")
+        .order("changed_at", { ascending: false })
+        .limit(20);
+      if (onlyCurrent) {
+        const { data: ids } = await supabase.rpc("current_recipe_ids");
+        const recipeIds = [...new Set((ids ?? []).map((x) => x.recipe_id))];
+        if (recipeIds.length === 0) return [];
+        query = query.in("recipe_id", recipeIds);
+      }
+      const { data } = await query;
+      return data ?? [];
+    }
+    run().then((data) => {
+      if (cancelled) return;
+      setRows(data);
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onlyCurrent]);
 
   return (
     <DashboardWidget

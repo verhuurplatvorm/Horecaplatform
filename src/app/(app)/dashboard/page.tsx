@@ -55,6 +55,26 @@ export default function DashboardPage() {
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>([]);
+  // Standaard alleen de actuele kaart; "Alles" blijft één klik weg.
+  const [onlyCurrent, setOnlyCurrent] = useState(true);
+
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (localStorage.getItem("dash:scope") === "alles") setOnlyCurrent(false);
+    } catch {
+      /* geblokkeerde opslag mag het dashboard niet breken */
+    }
+  }, []);
+
+  function changeOnlyCurrent(value: boolean) {
+    setOnlyCurrent(value);
+    try {
+      localStorage.setItem("dash:scope", value ? "actueel" : "alles");
+    } catch {
+      /* niets aan te doen */
+    }
+  }
 
   useEffect(() => {
     try {
@@ -89,7 +109,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
     supabase
-      .rpc("dashboard_summary", { p_company_id: referenceCompanyId })
+      .rpc("dashboard_summary_scoped", { p_company_id: referenceCompanyId, p_only_current: onlyCurrent })
       .then(({ data }) => {
         if (data && data.length > 0) setSummary(data[0] as Summary);
       });
@@ -108,9 +128,9 @@ export default function DashboardPage() {
           [...new Set((data ?? []).map((r) => r.category).filter(Boolean) as string[])].sort()
         );
       });
-  }, [referenceCompanyId]);
+  }, [referenceCompanyId, onlyCurrent]);
 
-  const filters = { companyId: referenceCompanyId, days, supplierName, category };
+  const filters = { companyId: referenceCompanyId, days, supplierName, category, onlyCurrent };
   const isHidden = (id: string) => hiddenWidgets.includes(id);
 
   return (
@@ -151,6 +171,27 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm">
+          <div className="flex gap-1 rounded-md bg-background p-0.5" title="Actueel = gerechten op actieve menukaarten en de actuele halfproducten, met hun ingrediënten">
+            {(
+              [
+                [true, "Actuele kaart"],
+                [false, "Alles"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={label}
+                onClick={() => changeOnlyCurrent(value)}
+                className={cn(
+                  "rounded px-2 py-1 text-xs",
+                  onlyCurrent === value
+                    ? "bg-surface font-medium text-foreground shadow-sm"
+                    : "text-muted hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <span className="text-xs uppercase tracking-wide text-muted">Periode</span>
           <div className="flex gap-1 rounded-md bg-background p-0.5">
             {PERIODS.map((p) => (
@@ -207,7 +248,7 @@ export default function DashboardPage() {
 
           <div className="space-y-4">
             <WasteWidget filters={filters} hidden={isHidden("afval")} onHide={hideWidget} />
-            <UnmatchedIngredientsWidget hidden={isHidden("nietherkend")} onHide={hideWidget} />
+            <UnmatchedIngredientsWidget onlyCurrent={onlyCurrent} hidden={isHidden("nietherkend")} onHide={hideWidget} />
 
           </div>
         </div>

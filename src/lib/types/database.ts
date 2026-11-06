@@ -1214,6 +1214,53 @@ export type Database = {
           margin_pct: number;
         }[];
       };
+      dashboard_summary_scoped: {
+        Args: { p_company_id?: string | null; p_only_current?: boolean };
+        Returns: {
+          price_alerts: number;
+          cost_problems: number;
+          unmatched_ingredients: number;
+          invoices_to_check: number;
+          upcoming_menus: number;
+          flagged_prices: number;
+        }[];
+      };
+      dashboard_price_changes_scoped: {
+        Args: { p_days?: number; p_limit?: number; p_direction?: string; p_only_current?: boolean };
+        Returns: {
+          product_id: string;
+          product_name: string;
+          supplier_name: string | null;
+          old_price: number;
+          new_price: number;
+          difference_eur: number;
+          difference_pct: number;
+          changed_on: string;
+          above_alert: boolean;
+          price_row_id: string;
+        }[];
+      };
+      dashboard_margin_problems_scoped: {
+        Args: {
+          p_company_id: string | null;
+          p_foodcost_norm?: number;
+          p_limit?: number;
+          p_only_current?: boolean;
+        };
+        Returns: {
+          recipe_id: string;
+          recipe_name: string;
+          category: string | null;
+          cost_price: number;
+          sales_price: number;
+          foodcost_pct: number;
+          margin_pct: number;
+        }[];
+      };
+      current_recipe_ids: {
+        Args: Record<string, never>;
+        Returns: { recipe_id: string }[];
+      };
       rollback_recipe_import: {
         Args: { p_batch_id: string };
         Returns: number;
