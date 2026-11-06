@@ -1324,6 +1324,10 @@ export type Database = {
         Args: { p_menu_id: string };
         Returns: { product_id: string; quantity_in_base: number }[];
       };
+      get_halfproduct_overview: {
+        Args: { p_company_id: string | null; p_only_current?: boolean };
+        Returns: { recipe_id: string; cost_price: number | null; usage_count: number }[];
+      };
       calculate_recipe_cost: {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
         Returns: number;

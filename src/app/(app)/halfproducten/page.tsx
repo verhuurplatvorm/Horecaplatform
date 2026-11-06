@@ -153,40 +153,36 @@ export default function HalfproductenPage() {
       const unitNameById = new Map((units ?? []).map((u) => [u.id, u.name]));
       const favoriteIds = new Set((favorites ?? []).map((f) => f.recipe_id));
 
-      const withCost = await Promise.all(
-        recipes.map(async (r) => {
-          let costPrice: number | null = null;
-          if (referenceCompanyId) {
-            const { data: cost } = await supabase.rpc("calculate_recipe_cost", {
-              p_recipe_id: r.id,
-              p_company_id: referenceCompanyId,
-            });
-            costPrice = cost ?? null;
-          }
-          const { count } = await supabase
-            .from("recipe_ingredients")
-            .select("id", { count: "exact", head: true })
-            .eq("sub_recipe_id", r.id);
+      // Kostprijs en gebruik voor alle halfproducten in één aanroep
+      // (voorheen twee aanvragen per halfproduct).
+      const { data: overview } = await supabase.rpc("get_halfproduct_overview", {
+        p_company_id: referenceCompanyId,
+        p_only_current: view === "actueel",
+      });
+      if (cancelled) return;
+      const overviewById = new Map((overview ?? []).map((o) => [o.recipe_id, o]));
 
-          return {
-            id: r.id,
-            name: r.name,
-            category: r.category,
-            halfproduct_folder_id: r.halfproduct_folder_id,
-            yield_quantity: r.yield_quantity,
-            base_unit_id: r.base_unit_id,
-            status: r.status,
-            updated_at: r.updated_at,
-            unitName: r.base_unit_id ? unitNameById.get(r.base_unit_id) ?? null : null,
-            costPrice,
-            costPerBaseUnit:
-              costPrice !== null && r.yield_quantity ? costPrice / r.yield_quantity : null,
-            usageCount: count ?? 0,
-            isFavorite: favoriteIds.has(r.id),
-            isCurrent: Boolean(r.is_current_menu),
-          };
-        })
-      );
+      const withCost: HalfproductRow[] = recipes.map((r) => {
+        const o = overviewById.get(r.id);
+        const costPrice = o?.cost_price != null ? Number(o.cost_price) : null;
+        return {
+          id: r.id,
+          name: r.name,
+          category: r.category,
+          halfproduct_folder_id: r.halfproduct_folder_id,
+          yield_quantity: r.yield_quantity,
+          base_unit_id: r.base_unit_id,
+          status: r.status,
+          updated_at: r.updated_at,
+          unitName: r.base_unit_id ? unitNameById.get(r.base_unit_id) ?? null : null,
+          costPrice,
+          costPerBaseUnit:
+            costPrice !== null && r.yield_quantity ? costPrice / r.yield_quantity : null,
+          usageCount: Number(o?.usage_count ?? 0),
+          isFavorite: favoriteIds.has(r.id),
+          isCurrent: Boolean(r.is_current_menu),
+        };
+      });
 
       if (!cancelled) {
         setRows(withCost);
