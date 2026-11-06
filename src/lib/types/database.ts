@@ -1325,6 +1325,22 @@ export type Database = {
         Args: { p_menu_id: string };
         Returns: { product_id: string; quantity_in_base: number }[];
       };
+      get_current_products: {
+        Args: { p_company_id: string | null };
+        Returns: {
+          product_id: string;
+          name: string;
+          custom_name: string | null;
+          base_unit: string;
+          is_provisional: boolean;
+          price_per_base_unit: number | null;
+          supplier_name: string | null;
+          purchase_price: number | null;
+          packaging_description: string | null;
+          usage_count: number;
+          used_in: string | null;
+        }[];
+      };
       get_halfproduct_overview: {
         Args: { p_company_id: string | null; p_only_current?: boolean };
         Returns: { recipe_id: string; cost_price: number | null; usage_count: number }[];

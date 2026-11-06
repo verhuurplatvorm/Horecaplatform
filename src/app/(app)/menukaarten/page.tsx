@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, FileUp } from "lucide-react";
+import { Plus, FileUp, ClipboardList } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +33,28 @@ export default function MenukaartenPage() {
   const [cards, setCards] = useState<MenuCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("alle");
+  // "Actuele menukaarten" = menukaarten met status Actief (geen apart veld).
+  const [view, setView] = useState<"actueel" | "alle">("actueel");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  /** Aanvinken = status Actief; uitvinken = status Verlopen. */
+  async function toggleCurrent(card: MenuCard) {
+    const next = card.status === "actief" ? "verlopen" : "actief";
+    if (
+      next === "verlopen" &&
+      !window.confirm(`"${card.name}" van de actuele kaarten halen? De status wordt Verlopen.`)
+    )
+      return;
+    setBusyId(card.id);
+    const supabase = createClient();
+    const { error } = await supabase.from("menu_cards").update({ status: next }).eq("id", card.id);
+    setBusyId(null);
+    if (error) {
+      window.alert("Bijwerken mislukt: " + error.message);
+      return;
+    }
+    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, status: next } : c)));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -53,13 +75,40 @@ export default function MenukaartenPage() {
   }, []);
 
   const companyNameById = new Map(companies.map((c) => [c.id, c.name]));
-  const filtered = cards.filter((c) => statusFilter === "alle" || c.status === statusFilter);
+  const currentCount = cards.filter((c) => c.status === "actief").length;
+  const filtered = cards.filter((c) =>
+    view === "actueel" ? c.status === "actief" : statusFilter === "alle" || c.status === statusFilter
+  );
 
   return (
     <>
       <Topbar title="Menukaarten" />
       <main className="p-6 space-y-4">
+        <div className="flex gap-1 border-b border-border" role="tablist">
+          {(
+            [
+              ["actueel", `Actuele menukaarten${loading ? "" : ` (${currentCount})`}`],
+              ["alle", "Alle menukaarten"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setView(key)}
+              className={cn(
+                "-mb-px border-b-2 px-4 py-2 text-sm font-medium",
+                view === key
+                  ? "border-teal text-teal"
+                  : "border-transparent text-muted hover:text-foreground"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center justify-between">
+          {view === "alle" ? (
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -72,6 +121,12 @@ export default function MenukaartenPage() {
               </option>
             ))}
           </select>
+          ) : (
+            <p className="text-xs text-muted">
+              Menukaarten met status Actief. Vink in &quot;Alle menukaarten&quot; een kaart aan om
+              hem actueel te maken.
+            </p>
+          )}
           <Link href="/menukaarten/pdf-importeren">
             <Button variant="secondary">
               <FileUp className="h-4 w-4" />
@@ -92,6 +147,7 @@ export default function MenukaartenPage() {
 <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="w-10 px-3 py-3" title="Actuele menukaart"></th>
                   <th className="px-5 py-3 font-medium">Naam</th>
                   <th className="px-5 py-3 font-medium">Bedrijf</th>
                   <th className="px-5 py-3 font-medium">Periode</th>
@@ -102,6 +158,21 @@ export default function MenukaartenPage() {
               <tbody>
                 {filtered.map((c) => (
                   <tr key={c.id} className="border-t border-border hover:bg-background">
+                    <td className="px-3 py-3">
+                      <button
+                        disabled={busyId === c.id}
+                        onClick={() => toggleCurrent(c)}
+                        title={
+                          c.status === "actief"
+                            ? "Actuele menukaart — klik om eraf te halen"
+                            : "Actueel maken (status Actief)"
+                        }
+                      >
+                        <ClipboardList
+                          className={cn("h-4 w-4", c.status === "actief" ? "text-teal" : "text-muted/50")}
+                        />
+                      </button>
+                    </td>
                     <td className="px-5 py-3 font-medium">
                       <Link href={`/menukaarten/${c.id}`} className="hover:text-teal hover:underline">
                         {c.name}
@@ -124,8 +195,10 @@ export default function MenukaartenPage() {
                 ))}
                 {filtered.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-6 text-center text-muted">
-                      Nog geen menukaarten aangemaakt.
+                    <td colSpan={6} className="px-5 py-6 text-center text-muted">
+                      {view === "actueel" && cards.length > 0
+                        ? "Geen actuele menukaarten. Vink er een aan in \"Alle menukaarten\"."
+                        : "Nog geen menukaarten aangemaakt."}
                     </td>
                   </tr>
                 )}

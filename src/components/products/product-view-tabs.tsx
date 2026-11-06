@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const TABS = [
+  { href: "/producten/actueel", label: "Actuele ingrediënten" },
   { href: "/producten", label: "Alle ingrediënten" },
   { href: "/producten/opschonen", label: "Te controleren" },
   { href: "/producten/non-food-opruimen", label: "Non-food opruimen" },
