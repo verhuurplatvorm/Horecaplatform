@@ -344,6 +344,7 @@ export type Recipe = {
   name: string;
   category: string | null;
   halfproduct_folder_id: string | null;
+  is_current_menu: boolean;
   labour_minutes_kitchen: number | null;
   labour_minutes_other: number | null;
   labour_cost_per_hour: number | null;

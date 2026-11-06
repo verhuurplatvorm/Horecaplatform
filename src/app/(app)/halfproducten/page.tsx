@@ -15,6 +15,7 @@ import {
   FolderPlus,
   Pencil,
   GripVertical,
+  ClipboardList,
 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
@@ -45,9 +46,13 @@ interface HalfproductRow {
   costPerBaseUnit: number | null;
   usageCount: number;
   isFavorite: boolean;
+  isCurrent: boolean;
 }
 
 type SortKey = "name" | "updated_at" | "costPerBaseUnit" | "usageCount";
+type View = "actueel" | "alle";
+
+const VIEW_STORAGE_KEY = "halfproducten:view";
 
 const DRAG_TYPE = "text/halfproduct-id";
 
@@ -69,6 +74,33 @@ export default function HalfproductenPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [rematchBusy, setRematchBusy] = useState(false);
   const [rematchMessage, setRematchMessage] = useState<string | null>(null);
+  // "Actuele halfproducten" laadt alleen de halfproducten van de huidige
+  // kaart en is daardoor snel; "Alle halfproducten" is het volledige overzicht.
+  const [view, setView] = useState<View>("actueel");
+  const [currentCount, setCurrentCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VIEW_STORAGE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved === "alle" || saved === "actueel") setView(saved);
+    } catch {
+      // geen opslag beschikbaar: standaard "actueel"
+    }
+  }, []);
+
+  function switchView(next: View) {
+    if (next === view) return;
+    setView(next);
+    setSelectedIds(new Set());
+    setRows([]);
+    setLoading(true);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // negeren
+    }
+  }
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -78,15 +110,22 @@ export default function HalfproductenPage() {
       const supabase = createClient();
       const groupId = await getCurrentGroupId(supabase);
 
-      const [{ data: recipes }, { data: units }, { data: favorites }, { data: folderRows }] =
-        await Promise.all([
-          supabase
-            .from("recipes")
-            .select(
-              "id, name, category, halfproduct_folder_id, yield_quantity, base_unit_id, status, updated_at"
-            )
-            .eq("recipe_kind", "halfproduct")
-            .order("name"),
+      let recipeQuery = supabase
+        .from("recipes")
+        .select(
+          "id, name, category, halfproduct_folder_id, yield_quantity, base_unit_id, status, updated_at, is_current_menu"
+        )
+        .eq("recipe_kind", "halfproduct");
+      if (view === "actueel") recipeQuery = recipeQuery.eq("is_current_menu", true);
+
+      const [
+        { data: recipes },
+        { data: units },
+        { data: favorites },
+        { data: folderRows },
+        { count: currentTotal },
+      ] = await Promise.all([
+          recipeQuery.order("name"),
           supabase.from("units").select("id, name"),
           groupId
             ? supabase.from("recipe_favorites").select("recipe_id")
@@ -98,7 +137,14 @@ export default function HalfproductenPage() {
                 .eq("group_id", groupId)
                 .order("sort_order")
             : Promise.resolve({ data: [] }),
+          supabase
+            .from("recipes")
+            .select("id", { count: "exact", head: true })
+            .eq("recipe_kind", "halfproduct")
+            .eq("is_current_menu", true)
+            .neq("status", "vervallen"),
         ]);
+      if (!cancelled) setCurrentCount(currentTotal ?? 0);
       if (cancelled || !recipes) {
         setLoading(false);
         return;
@@ -137,6 +183,7 @@ export default function HalfproductenPage() {
               costPrice !== null && r.yield_quantity ? costPrice / r.yield_quantity : null,
             usageCount: count ?? 0,
             isFavorite: favoriteIds.has(r.id),
+            isCurrent: Boolean(r.is_current_menu),
           };
         })
       );
@@ -152,7 +199,30 @@ export default function HalfproductenPage() {
     return () => {
       cancelled = true;
     };
-  }, [referenceCompanyId, scopeLoading]);
+  }, [referenceCompanyId, scopeLoading, view]);
+
+  /** Halfproducten op of van de actuele kaart zetten (gedeeld voor de hele groep). */
+  async function setCurrent(ids: string[], value: boolean) {
+    if (ids.length === 0) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("recipes")
+      .update({ is_current_menu: value })
+      .in("id", ids);
+    if (error) {
+      window.alert("Bijwerken mislukt: " + error.message);
+      return;
+    }
+    const changed = rows.filter(
+      (r) => ids.includes(r.id) && r.isCurrent !== value && r.status !== "vervallen"
+    ).length;
+    setCurrentCount((c) => (c === null ? c : Math.max(0, c + (value ? changed : -changed))));
+    setRows((prev) =>
+      view === "actueel" && !value
+        ? prev.filter((r) => !ids.includes(r.id))
+        : prev.map((r) => (ids.includes(r.id) ? { ...r, isCurrent: value } : r))
+    );
+  }
 
   async function toggleFavorite(recipeId: string, current: boolean) {
     const supabase = createClient();
@@ -214,7 +284,7 @@ export default function HalfproductenPage() {
 
     const { data: created } = await supabase
       .from("recipes")
-      .insert({ ...rest, name: `${original.name} (kopie)`, status: "concept" })
+      .insert({ ...rest, name: `${original.name} (kopie)`, status: "concept", is_current_menu: false })
       .select("id")
       .single();
     if (!created) return;
@@ -589,6 +659,36 @@ export default function HalfproductenPage() {
         </div>
 
         <div className="space-y-4">
+          <div className="flex gap-1 border-b border-border" role="tablist">
+            {(
+              [
+                ["actueel", `Actuele halfproducten${currentCount !== null ? ` (${currentCount})` : ""}`],
+                ["alle", "Alle halfproducten"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={view === key}
+                onClick={() => switchView(key)}
+                className={cn(
+                  "-mb-px border-b-2 px-4 py-2 text-sm font-medium",
+                  view === key
+                    ? "border-teal text-teal"
+                    : "border-transparent text-muted hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "actueel" && (
+            <p className="text-xs text-muted">
+              De halfproducten van de kaart die nu draait. Toevoegen doe je in &quot;Alle
+              halfproducten&quot;: vink ze aan en kies &quot;Op actuele kaart&quot;, of klik op het
+              lijst-icoon in de regel.
+            </p>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="relative max-w-sm flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
@@ -676,6 +776,31 @@ export default function HalfproductenPage() {
                   </option>
                 ))}
               </select>
+              {view === "alle" ? (
+                <button
+                  disabled={bulkBusy}
+                  onClick={async () => {
+                    await setCurrent([...selectedIds], true);
+                    setSelectedIds(new Set());
+                  }}
+                  className="flex items-center gap-1 rounded-md border border-teal px-2 py-1 text-xs text-teal hover:bg-teal/10"
+                >
+                  <ClipboardList className="h-3 w-3" />
+                  Op actuele kaart
+                </button>
+              ) : (
+                <button
+                  disabled={bulkBusy}
+                  onClick={async () => {
+                    await setCurrent([...selectedIds], false);
+                    setSelectedIds(new Set());
+                  }}
+                  className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-background"
+                >
+                  <ClipboardList className="h-3 w-3" />
+                  Van actuele kaart halen
+                </button>
+              )}
               <button
                 disabled={bulkBusy}
                 onClick={bulkArchive}
@@ -723,6 +848,7 @@ export default function HalfproductenPage() {
                       />
                     </th>
                     <th className="w-8 px-3 py-3"></th>
+                    <th className="w-8 px-1 py-3" title="Op de actuele kaart"></th>
                     <th className="w-6 px-1 py-3"></th>
                     <th
                       className="cursor-pointer px-2 py-3 font-medium"
@@ -781,6 +907,20 @@ export default function HalfproductenPage() {
                                 ? "fill-copper text-copper"
                                 : "text-muted"
                             )}
+                          />
+                        </button>
+                      </td>
+                      <td className="px-1 py-3">
+                        <button
+                          onClick={() => setCurrent([r.id], !r.isCurrent)}
+                          title={
+                            r.isCurrent
+                              ? "Staat op de actuele kaart — klik om eraf te halen"
+                              : "Op de actuele kaart zetten"
+                          }
+                        >
+                          <ClipboardList
+                            className={cn("h-4 w-4", r.isCurrent ? "text-teal" : "text-muted/50")}
                           />
                         </button>
                       </td>
@@ -866,9 +1006,25 @@ export default function HalfproductenPage() {
                   ))}
                   {filteredRows.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={canViewFinancial ? 11 : 9} className="px-5 py-6 text-center text-muted">
-                        Nog geen halfproducten. Maak het eerste aan, of voeg er
-                        een toe via de zoekfunctie binnen een gerecht.
+                      <td colSpan={canViewFinancial ? 12 : 10} className="px-5 py-6 text-center text-muted">
+                        {view === "actueel" ? (
+                          <>
+                            Nog geen actuele halfproducten. Ga naar{" "}
+                            <button
+                              onClick={() => switchView("alle")}
+                              className="text-teal hover:underline"
+                            >
+                              Alle halfproducten
+                            </button>
+                            , vink de halfproducten van de huidige kaart aan en kies
+                            &quot;Op actuele kaart&quot;.
+                          </>
+                        ) : (
+                          <>
+                            Nog geen halfproducten. Maak het eerste aan, of voeg er
+                            een toe via de zoekfunctie binnen een gerecht.
+                          </>
+                        )}
                       </td>
                     </tr>
                   )}
