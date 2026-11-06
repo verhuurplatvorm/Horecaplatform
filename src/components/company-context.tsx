@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -31,6 +32,7 @@ const CompanyContext = createContext<CompanyContextValue | null>(null);
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const companiesRef = useRef<Company[]>([]);
   const [scope, setScopeState] = useState<CompanyScope>(() => {
     // Lazy init (i.p.v. setState in een effect) leest de eerder gekozen
     // bedrijfsselectie uit localStorage vóór de eerste render.
@@ -47,28 +49,49 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    const supabase = createClient();
 
-    async function loadCompanies() {
-      setLoading(true);
-      const supabase = createClient();
-      // RLS zorgt dat hier alleen bedrijven binnen bereik terugkomen
-      // (spec §2, §31): group admins zien alles, anderen alleen wat
-      // via user_company_access is toegekend.
+    // RLS zorgt dat hier alleen bedrijven binnen bereik terugkomen
+    // (spec §2, §31): group admins zien alles, anderen alleen wat
+    // via user_company_access is toegekend.
+    async function loadCompanies(attempt = 0): Promise<void> {
+      if (attempt === 0) setLoading(true);
       const { data, error } = await supabase
         .from("companies")
         .select("*")
         .eq("is_active", true)
         .order("name");
+      if (cancelled) return;
 
-      if (!cancelled) {
-        if (!error && data) setCompanies(data as Company[]);
-        setLoading(false);
+      if (error && attempt < 2) {
+        // Meestal een verlopen sessie (401): sessie vernieuwen en opnieuw
+        // proberen, anders blijft de bedrijvenlijst leeg en rekent geen
+        // enkel scherm kostprijzen ("Selecteer een bedrijf…").
+        await supabase.auth.refreshSession().catch(() => undefined);
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        return loadCompanies(attempt + 1);
       }
+      if (!error && data) {
+        companiesRef.current = data as Company[];
+        setCompanies(data as Company[]);
+      }
+      setLoading(false);
     }
 
     loadCompanies();
+
+    // Na inloggen of een vernieuwd token opnieuw laden als de lijst nog
+    // leeg is (bv. omdat de eerste aanvraag met een verlopen token ging).
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        if (companiesRef.current.length === 0) void loadCompanies();
+      }
+    });
+
     return () => {
       cancelled = true;
+      sub.subscription.unsubscribe();
     };
   }, []);
 
