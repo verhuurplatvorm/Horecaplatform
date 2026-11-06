@@ -47,6 +47,8 @@ interface HalfproductRow {
   usageCount: number;
   isFavorite: boolean;
   isCurrent: boolean;
+  /** Automatisch actueel: zit in een gerecht op een actieve menukaart. */
+  viaMenu: boolean;
 }
 
 type SortKey = "name" | "updated_at" | "costPerBaseUnit" | "usageCount";
@@ -77,7 +79,11 @@ export default function HalfproductenPage() {
   // "Actuele halfproducten" laadt alleen de halfproducten van de huidige
   // kaart en is daardoor snel; "Alle halfproducten" is het volledige overzicht.
   const [view, setView] = useState<View>("actueel");
-  const [currentCount, setCurrentCount] = useState<number | null>(null);
+  // Actueel = handmatig aangevinkt óf gebruikt op een actieve menukaart.
+  const [manualCurrentIds, setManualCurrentIds] = useState<Set<string> | null>(null);
+  const [menuCurrentIds, setMenuCurrentIds] = useState<Set<string>>(new Set());
+  const currentCount =
+    manualCurrentIds === null ? null : new Set([...manualCurrentIds, ...menuCurrentIds]).size;
 
   useEffect(() => {
     try {
@@ -110,20 +116,38 @@ export default function HalfproductenPage() {
       const supabase = createClient();
       const groupId = await getCurrentGroupId(supabase);
 
+      const [{ data: menuRows }, { data: manualRows }] = await Promise.all([
+        supabase.rpc("current_menu_halfproduct_ids"),
+        supabase
+          .from("recipes")
+          .select("id")
+          .eq("recipe_kind", "halfproduct")
+          .eq("is_current_menu", true)
+          .neq("status", "vervallen"),
+      ]);
+      if (cancelled) return;
+      const menuIds = new Set((menuRows ?? []).map((m) => m.recipe_id));
+      setMenuCurrentIds(menuIds);
+      setManualCurrentIds(new Set((manualRows ?? []).map((m) => m.id)));
+
       let recipeQuery = supabase
         .from("recipes")
         .select(
           "id, name, category, halfproduct_folder_id, yield_quantity, base_unit_id, status, updated_at, is_current_menu"
         )
         .eq("recipe_kind", "halfproduct");
-      if (view === "actueel") recipeQuery = recipeQuery.eq("is_current_menu", true);
+      if (view === "actueel") {
+        recipeQuery =
+          menuIds.size > 0
+            ? recipeQuery.or(`is_current_menu.eq.true,id.in.(${[...menuIds].join(",")})`)
+            : recipeQuery.eq("is_current_menu", true);
+      }
 
       const [
         { data: recipes },
         { data: units },
         { data: favorites },
         { data: folderRows },
-        { count: currentTotal },
       ] = await Promise.all([
           recipeQuery.order("name"),
           supabase.from("units").select("id, name"),
@@ -137,14 +161,7 @@ export default function HalfproductenPage() {
                 .eq("group_id", groupId)
                 .order("sort_order")
             : Promise.resolve({ data: [] }),
-          supabase
-            .from("recipes")
-            .select("id", { count: "exact", head: true })
-            .eq("recipe_kind", "halfproduct")
-            .eq("is_current_menu", true)
-            .neq("status", "vervallen"),
         ]);
-      if (!cancelled) setCurrentCount(currentTotal ?? 0);
       if (cancelled || !recipes) {
         setLoading(false);
         return;
@@ -181,6 +198,7 @@ export default function HalfproductenPage() {
           usageCount: Number(o?.usage_count ?? 0),
           isFavorite: favoriteIds.has(r.id),
           isCurrent: Boolean(r.is_current_menu),
+          viaMenu: menuIds.has(r.id),
         };
       });
 
@@ -209,13 +227,23 @@ export default function HalfproductenPage() {
       window.alert("Bijwerken mislukt: " + error.message);
       return;
     }
-    const changed = rows.filter(
-      (r) => ids.includes(r.id) && r.isCurrent !== value && r.status !== "vervallen"
-    ).length;
-    setCurrentCount((c) => (c === null ? c : Math.max(0, c + (value ? changed : -changed))));
+    const activeIds = rows
+      .filter((r) => ids.includes(r.id) && r.status !== "vervallen")
+      .map((r) => r.id);
+    setManualCurrentIds((prev) => {
+      const next = new Set(prev ?? []);
+      for (const id of activeIds) {
+        if (value) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
     setRows((prev) =>
       view === "actueel" && !value
-        ? prev.filter((r) => !ids.includes(r.id))
+        // Halfproducten van een actieve menukaart blijven staan (automatisch).
+        ? prev
+            .filter((r) => !ids.includes(r.id) || r.viaMenu)
+            .map((r) => (ids.includes(r.id) ? { ...r, isCurrent: false } : r))
         : prev.map((r) => (ids.includes(r.id) ? { ...r, isCurrent: value } : r))
     );
   }
@@ -680,9 +708,10 @@ export default function HalfproductenPage() {
           </div>
           {view === "actueel" && (
             <p className="text-xs text-muted">
-              De halfproducten van de kaart die nu draait. Toevoegen doe je in &quot;Alle
-              halfproducten&quot;: vink ze aan en kies &quot;Op actuele kaart&quot;, of klik op het
-              lijst-icoon in de regel.
+              De halfproducten van de kaart die nu draait. Halfproducten die in een gerecht op
+              een actieve menukaart zitten staan er automatisch in (&quot;via menukaart&quot;). Andere
+              voeg je toe in &quot;Alle halfproducten&quot;: vink ze aan en kies &quot;Op actuele
+              kaart&quot;, of klik op het lijst-icoon in de regel.
             </p>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -911,12 +940,18 @@ export default function HalfproductenPage() {
                           onClick={() => setCurrent([r.id], !r.isCurrent)}
                           title={
                             r.isCurrent
-                              ? "Staat op de actuele kaart — klik om eraf te halen"
-                              : "Op de actuele kaart zetten"
+                              ? "Staat op de actuele kaart — klik om eraf te halen" +
+                                (r.viaMenu ? " (blijft actueel via een actieve menukaart)" : "")
+                              : r.viaMenu
+                                ? "Automatisch actueel: gebruikt in een gerecht op een actieve menukaart"
+                                : "Op de actuele kaart zetten"
                           }
                         >
                           <ClipboardList
-                            className={cn("h-4 w-4", r.isCurrent ? "text-teal" : "text-muted/50")}
+                            className={cn(
+                              "h-4 w-4",
+                              r.isCurrent || r.viaMenu ? "text-teal" : "text-muted/50"
+                            )}
                           />
                         </button>
                       </td>
@@ -940,6 +975,14 @@ export default function HalfproductenPage() {
                         >
                           {r.name}
                         </Link>
+                        {r.viaMenu && (
+                          <span
+                            className="ml-2 rounded bg-teal/10 px-1.5 text-xs font-normal text-teal"
+                            title="Gebruikt in een gerecht op een actieve menukaart"
+                          >
+                            via menukaart
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-3">
                         <select

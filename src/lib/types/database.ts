@@ -1325,6 +1325,10 @@ export type Database = {
         Args: { p_menu_id: string };
         Returns: { product_id: string; quantity_in_base: number }[];
       };
+      current_menu_halfproduct_ids: {
+        Args: Record<string, never>;
+        Returns: { recipe_id: string }[];
+      };
       get_current_products: {
         Args: { p_company_id: string | null };
         Returns: {
