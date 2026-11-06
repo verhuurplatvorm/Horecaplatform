@@ -251,6 +251,7 @@ export function RecipeForm({
         priceDirection: "up" | "down" | null;
         purchasePrice: number | null;
         packagingDescription: string | null;
+        isProvisional: boolean;
       }
     >
   >(new Map());
@@ -367,7 +368,7 @@ export function RecipeForm({
           .maybeSingle(),
         supabase
           .from("products")
-          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, allergens_checked, contains_traces, nutrition_per_100")
+          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, allergens_checked, contains_traces, nutrition_per_100, is_provisional")
           .eq("id", productId)
           .single(),
         supabase
@@ -411,6 +412,7 @@ export function RecipeForm({
         priceDirection,
         purchasePrice: activeSupplierPrice?.purchase_price ?? null,
         packagingDescription: activeSupplierPrice?.packaging_description ?? null,
+        isProvisional: Boolean(product?.is_provisional),
       })
     );
   }
@@ -2338,6 +2340,11 @@ export function RecipeForm({
                           ? productPrices.get(row.refId)?.packagingDescription ?? null
                           : null
                       }
+                      isProvisional={
+                        row.type === "ingrediënt" && row.refId
+                          ? productPrices.get(row.refId)?.isProvisional ?? false
+                          : false
+                      }
                       conversionNote={
                         row.type === "ingrediënt" && row.refId
                           ? describeConversion(
@@ -3150,6 +3157,7 @@ function IngredientLine({
   priceDirection,
   purchasePrice,
   packagingDescription,
+  isProvisional = false,
   conversionNote,
   isDuplicate,
   isIncomplete,
@@ -3172,6 +3180,7 @@ function IngredientLine({
   priceDirection?: "up" | "down" | null;
   purchasePrice?: number | null;
   packagingDescription?: string | null;
+  isProvisional?: boolean;
   conversionNote?: string | null;
   isDuplicate: boolean;
   isIncomplete: boolean;
@@ -3363,6 +3372,14 @@ function IngredientLine({
             >
               {row.type === "halfproduct" ? "Halfproduct openen →" : "Ingrediënt openen →"}
             </Link>
+          )}
+          {isLinked && row.type === "ingrediënt" && isProvisional && (
+            <span
+              className="rounded bg-copper/10 px-1.5 text-copper"
+              title="Nog niet besteld: rekent met de geschatte prijs tot het artikel op een factuur of prijslijst gekoppeld wordt"
+            >
+              voorlopig · geschatte prijs
+            </span>
           )}
           {isLinked && row.type === "ingrediënt" && (purchasePrice != null || packagingDescription) && (
             <span>

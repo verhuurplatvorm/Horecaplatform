@@ -5,6 +5,7 @@ import { Check, Package, Search, SoupIcon, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { ProductForm } from "@/components/products/product-form";
 import { HalfproductQuickForm } from "@/components/recipes/halfproduct-quick-form";
+import { ProvisionalProductQuickForm } from "@/components/recipes/provisional-product-quick-form";
 import { createClient } from "@/lib/supabase/client";
 
 export interface PickedIngredient {
@@ -126,6 +127,7 @@ export function IngredientSearch({
   const [added, setAdded] = useState<string[]>([]);
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [creatingHalfproduct, setCreatingHalfproduct] = useState(false);
+  const [creatingProvisional, setCreatingProvisional] = useState(false);
   const requestId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -378,6 +380,14 @@ export function IngredientSearch({
                 >
                   + Nieuw halfproduct aanmaken
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCreatingProvisional(true)}
+                  title="Voor een product dat nog niet besteld is: rekent met een geschatte prijs tot het artikel op een factuur of prijslijst staat"
+                  className="text-muted hover:text-teal hover:underline"
+                >
+                  + Voorlopig ingrediënt (nog niet besteld)
+                </button>
               </div>
               {added.length > 0 ? (
                 <span className="flex items-center gap-1 text-xs text-success">
@@ -410,6 +420,25 @@ export function IngredientSearch({
               close();
             }}
             onCancel={() => setCreatingProduct(false)}
+          />
+        </Modal>
+      )}
+
+      {creatingProvisional && (
+        <Modal title="Voorlopig ingrediënt" onClose={() => setCreatingProvisional(false)}>
+          <ProvisionalProductQuickForm
+            prefillName={query}
+            onSaved={(product) => {
+              setCreatingProvisional(false);
+              onPick({
+                type: "ingrediënt",
+                id: product.id,
+                name: product.custom_name || product.name,
+                baseUnitId: product.base_unit_id,
+              });
+              close();
+            }}
+            onCancel={() => setCreatingProvisional(false)}
           />
         </Modal>
       )}

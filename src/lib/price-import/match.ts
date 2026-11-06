@@ -67,7 +67,10 @@ export async function matchRowsToProducts(
       : Promise.resolve({
           data: [] as { id: string; article_number: string | null }[],
         }),
-    supabase.from("products").select("id, name").eq("group_id", groupId),
+    supabase
+      .from("products")
+      .select("id, name, custom_name, is_provisional")
+      .eq("group_id", groupId),
     // Geheugen per leverancier: een artikelnummer van DEZE leverancier dat
     // eerder aan een ingrediënt is gekoppeld (bevestigd bij een eerdere
     // factuur of prijslijst) wordt bij een terugkerende factuur direct
@@ -125,7 +128,30 @@ export async function matchRowsToProducts(
       .filter((p) => p.article_number)
       .map((p) => [p.article_number as string, p.id])
   );
-  const productList: { id: string; name: string }[] = allProducts.data ?? [];
+  const productList: {
+    id: string;
+    name: string;
+    custom_name: string | null;
+    is_provisional: boolean | null;
+  }[] = allProducts.data ?? [];
+  // Voorlopige ingrediënten (nog niet besteld) wachten op hun eerste
+  // leveranciersartikel. Die stellen we met voorrang voor — nooit
+  // automatisch gekoppeld, de gebruiker bevestigt met één klik.
+  const provisionalList = productList.filter((p) => p.is_provisional);
+
+  /** Alle woorden van de voorlopige naam komen voor in de omschrijving. */
+  function provisionalScore(description: string, p: (typeof provisionalList)[number]): number {
+    const descWords = new Set(normalizeName(description).split(" ").filter(Boolean));
+    let best = 0;
+    for (const candidate of [p.name, p.custom_name]) {
+      if (!candidate) continue;
+      const words = normalizeName(candidate).split(" ").filter(Boolean);
+      if (words.length === 0) continue;
+      const covered = words.filter((w) => descWords.has(w)).length / words.length;
+      best = Math.max(best, covered, nameSimilarity(description, candidate));
+    }
+    return best;
+  }
 
   return rows.map((row) => {
     if (row.articleNumber && supplierCodeMap.has(row.articleNumber)) {
@@ -179,8 +205,33 @@ export async function matchRowsToProducts(
           .slice(0, 3)
       : [];
 
-    const suggestions = scored.map((s) => ({ id: s.p.id, name: s.p.name }));
+    const provisional = name
+      ? provisionalList
+          .map((p) => ({ p, score: provisionalScore(name, p) }))
+          .filter((s) => s.score >= 0.5)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 2)
+      : [];
+
+    const suggestions = [
+      ...provisional.map((s) => ({ id: s.p.id, name: s.p.custom_name || s.p.name })),
+      ...scored
+        .filter((s) => !provisional.some((v) => v.p.id === s.p.id))
+        .map((s) => ({ id: s.p.id, name: s.p.name })),
+    ].slice(0, 3);
     const bestScore = scored[0]?.score ?? 0;
+
+    // Een passend voorlopig ingrediënt: voorstellen in plaats van een
+    // nieuw (dubbel) ingrediënt aan te maken.
+    if (provisional.length > 0) {
+      return {
+        ...row,
+        matchedProductId: null,
+        matchMethod: null,
+        confidence: "waarschijnlijk" as const,
+        suggestions,
+      };
+    }
 
     return {
       ...row,

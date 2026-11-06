@@ -1039,7 +1039,12 @@ function RowLine({
                     onClick={() => onManualMatch(p.id)}
                     className="block text-xs text-teal hover:underline"
                   >
-                    → {p.name}?
+                    → {p.custom_name || p.name}?
+                    {p.is_provisional && (
+                      <span className="ml-1 rounded bg-copper/10 px-1 text-copper">
+                        voorlopig ingrediënt — nog niet besteld
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
