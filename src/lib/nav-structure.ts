@@ -31,6 +31,8 @@ export interface NavTab {
   key: string;
   label: string;
   items: NavItem[];
+  /** Pagina die opent als je op het tabblad klikt (als die zichtbaar is); anders het eerste item. */
+  homeHref?: string;
 }
 
 // Hoofdindeling: 4 tabbladen. Geen enkele functie is verwijderd — alleen
@@ -39,6 +41,7 @@ export const NAV_TABS: NavTab[] = [
   {
     key: "keuken",
     label: "Keuken",
+    homeHref: "/recepturen",
     items: [
       { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
       { href: "/recepturen", label: "Gerechten", icon: BookOpen, moduleKey: "recepturen" },

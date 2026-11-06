@@ -59,7 +59,11 @@ export function TopTabBar() {
           return (
             <Link
               key={tab.key}
-              href={tab.items[0].href}
+              href={
+                tab.homeHref && tab.items.some((i) => i.href === tab.homeHref)
+                  ? tab.homeHref
+                  : tab.items[0].href
+              }
               className={cn(
                 "flex items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors",
                 active
