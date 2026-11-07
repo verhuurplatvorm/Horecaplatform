@@ -11,7 +11,18 @@ import { createClient } from "@/lib/supabase/client";
 import { useCompanyScope } from "@/components/company-context";
 import type { Recipe, StockMovement, UserProfile } from "@/lib/types/database";
 
-const FORMATS: { value: string; label: string; widthMm: number; heightMm: number }[] = [
+const FORMATS: {
+  value: string;
+  label: string;
+  widthMm: number;
+  heightMm: number;
+}[] = [
+  {
+    value: "60x30mm",
+    label: "60 × 30 mm (standaard)",
+    widthMm: 60,
+    heightMm: 30,
+  },
   { value: "29x90mm", label: "29 × 90 mm", widthMm: 29, heightMm: 90 },
   { value: "38x90mm", label: "38 × 90 mm", widthMm: 38, heightMm: 90 },
   { value: "50x30mm", label: "50 × 30 mm", widthMm: 50, heightMm: 30 },
@@ -48,10 +59,10 @@ export default function NieuweStickerPage({
   const [movement, setMovement] = useState<StockMovement | null>(null);
   const [existingLabelCount, setExistingLabelCount] = useState<number>(0);
   const [quickQuantity, setQuickQuantity] = useState(
-    () => searchParams.get("quantity") ?? ""
+    () => searchParams.get("quantity") ?? "",
   );
   const [quickProducedBy, setQuickProducedBy] = useState(
-    () => searchParams.get("producedBy") ?? ""
+    () => searchParams.get("producedBy") ?? "",
   );
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
@@ -65,11 +76,13 @@ export default function NieuweStickerPage({
   const [extraText, setExtraText] = useState("");
   const [stickerCount, setStickerCount] = useState("1");
   const [numberSticker, setNumberSticker] = useState(false);
-  const [format, setFormat] = useState("62x100mm");
+  const [format, setFormat] = useState("60x30mm");
   const [reprintReason, setReprintReason] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(() => Boolean(searchParams.get("movementId")));
+  const [loading, setLoading] = useState(() =>
+    Boolean(searchParams.get("movementId")),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
@@ -79,17 +92,27 @@ export default function NieuweStickerPage({
     let cancelled = false;
     async function run() {
       const supabase = createClient();
-      const [{ data: r }, { data: allergenData }, { data: userData }, { data: authUser }] =
-        await Promise.all([
-          supabase.from("recipes").select("*").eq("id", recipeId).single(),
-          supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
-          supabase.from("user_profiles").select("*").eq("is_active", true).order("full_name"),
-          supabase.auth.getUser(),
-        ]);
+      const [
+        { data: r },
+        { data: allergenData },
+        { data: userData },
+        { data: authUser },
+      ] = await Promise.all([
+        supabase.from("recipes").select("*").eq("id", recipeId).single(),
+        supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
+        supabase
+          .from("user_profiles")
+          .select("*")
+          .eq("is_active", true)
+          .order("full_name"),
+        supabase.auth.getUser(),
+      ]);
       if (cancelled) return;
 
       setRecipe(r as Recipe);
-      setAllergens((allergenData as AllergenSummary) ?? { bevat: [], sporen: [] });
+      setAllergens(
+        (allergenData as AllergenSummary) ?? { bevat: [], sporen: [] },
+      );
       setUsers((userData as UserProfile[]) ?? []);
 
       if (r?.base_unit_id) {
@@ -164,7 +187,8 @@ export default function NieuweStickerPage({
       const prodAt = new Date(m.created_at);
       setProductionAt(toLocalDatetimeInput(prodAt));
       setBatchNumber(
-        m.batch_number ?? `HP-${prodAt.toISOString().slice(0, 10).replace(/-/g, "")}-001`
+        m.batch_number ??
+          `HP-${prodAt.toISOString().slice(0, 10).replace(/-/g, "")}-001`,
       );
 
       setLoading(false);
@@ -200,7 +224,9 @@ export default function NieuweStickerPage({
     };
   }, [movement, recipeId]);
 
-  const formatInfo = FORMATS.find((f) => f.value === format) ?? FORMATS[4];
+  const formatInfo = FORMATS.find((f) => f.value === format) ?? FORMATS[0];
+  // Kleine stickers (bv. 60 × 30 mm): compacte opmaak met QR-code rechts.
+  const compact = formatInfo.heightMm <= 30;
   const isReprint = existingLabelCount > 0;
   const count = Math.max(1, parseInt(stickerCount, 10) || 1);
 
@@ -217,7 +243,9 @@ export default function NieuweStickerPage({
 
   function toggleUser(userId: string) {
     setSelectedUserIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId],
     );
   }
 
@@ -228,7 +256,9 @@ export default function NieuweStickerPage({
       return;
     }
     if (producedByLabel === "—") {
-      setError("Naam producent is verplicht voordat je een sticker kunt afdrukken.");
+      setError(
+        "Naam producent is verplicht voordat je een sticker kunt afdrukken.",
+      );
       return;
     }
 
@@ -248,23 +278,27 @@ export default function NieuweStickerPage({
         .eq("id", movement.id);
     }
 
-    const { error: insertError } = await supabase.from("production_labels").insert({
-      stock_movement_id: movement.id,
-      produced_by_user_ids: selectedUserIds,
-      produced_by_manual_names: manualNames
-        .split(",")
-        .map((n) => n.trim())
-        .filter(Boolean),
-      production_at: new Date(productionAt).toISOString(),
-      expiry_at: effectiveExpiry || null,
-      expiry_manually_set: expiryManuallySet,
-      extra_text: extraText.trim() || null,
-      sticker_format: format,
-      sticker_count: count,
-      printed_by: user?.id ?? null,
-      reprint_of: isReprint ? await getLatestLabelId(supabase, movement.id) : null,
-      reprint_reason: isReprint ? reprintReason.trim() : null,
-    });
+    const { error: insertError } = await supabase
+      .from("production_labels")
+      .insert({
+        stock_movement_id: movement.id,
+        produced_by_user_ids: selectedUserIds,
+        produced_by_manual_names: manualNames
+          .split(",")
+          .map((n) => n.trim())
+          .filter(Boolean),
+        production_at: new Date(productionAt).toISOString(),
+        expiry_at: effectiveExpiry || null,
+        expiry_manually_set: expiryManuallySet,
+        extra_text: extraText.trim() || null,
+        sticker_format: format,
+        sticker_count: count,
+        printed_by: user?.id ?? null,
+        reprint_of: isReprint
+          ? await getLatestLabelId(supabase, movement.id)
+          : null,
+        reprint_reason: isReprint ? reprintReason.trim() : null,
+      });
     setSaving(false);
 
     if (insertError) {
@@ -286,7 +320,11 @@ export default function NieuweStickerPage({
 
   if (!movement) {
     async function handleQuickRegister() {
-      if (!referenceCompanyId || !Number(quickQuantity) || Number(quickQuantity) <= 0) {
+      if (
+        !referenceCompanyId ||
+        !Number(quickQuantity) ||
+        Number(quickQuantity) <= 0
+      ) {
         setRegisterError("Vul een geldige geproduceerde hoeveelheid in.");
         return;
       }
@@ -304,10 +342,12 @@ export default function NieuweStickerPage({
           p_company_id: referenceCompanyId,
           p_quantity: Number(quickQuantity),
           p_produced_by: quickProducedBy.trim(),
-        }
+        },
       );
       if (rpcError || !newMovementId) {
-        setRegisterError("Registreren mislukt: " + (rpcError?.message ?? "onbekende fout"));
+        setRegisterError(
+          "Registreren mislukt: " + (rpcError?.message ?? "onbekende fout"),
+        );
         setRegistering(false);
         return;
       }
@@ -338,13 +378,15 @@ export default function NieuweStickerPage({
               </p>
               {!referenceCompanyId ? (
                 <p className="text-sm text-copper">
-                  Selecteer eerst een bedrijf via de bedrijfsselector rechtsboven.
+                  Selecteer eerst een bedrijf via de bedrijfsselector
+                  rechtsboven.
                 </p>
               ) : (
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
                     <label className="mb-1 block text-sm font-medium text-foreground">
-                      Geproduceerde hoeveelheid{unitName ? ` (${unitName})` : ""}
+                      Geproduceerde hoeveelheid
+                      {unitName ? ` (${unitName})` : ""}
                     </label>
                     <input
                       type="number"
@@ -373,48 +415,54 @@ export default function NieuweStickerPage({
                   </Button>
                 </div>
               )}
-              {registerError && <p className="text-sm text-danger">{registerError}</p>}
+              {registerError && (
+                <p className="text-sm text-danger">{registerError}</p>
+              )}
             </CardContent>
           </Card>
 
           <p className="text-sm text-muted">
-            Of kies een eerdere productie om (opnieuw) een sticker voor af te drukken.
+            Of kies een eerdere productie om (opnieuw) een sticker voor af te
+            drukken.
           </p>
           <Card>
             <CardContent className="p-0">
               {recentMovements.length === 0 ? (
                 <p className="p-5 text-sm text-muted">
-                  Nog geen eerdere producties geregistreerd voor dit halfproduct.
+                  Nog geen eerdere producties geregistreerd voor dit
+                  halfproduct.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
-<table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                      <th className="px-5 py-3 font-medium">Datum</th>
-                      <th className="px-5 py-3 font-medium">Hoeveelheid</th>
-                      <th className="px-5 py-3 font-medium">Batchnummer</th>
-                      <th className="px-5 py-3 font-medium"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentMovements.map((m) => (
-                      <tr key={m.id} className="border-t border-border">
-                        <td className="px-5 py-3">
-                          {new Date(m.created_at).toLocaleString("nl-NL")}
-                        </td>
-                        <td className="px-5 py-3 tabular">{m.quantity_change}</td>
-                        <td className="px-5 py-3">{m.batch_number ?? "—"}</td>
-                        <td className="px-5 py-3">
-                          <Button size="sm" onClick={() => setMovement(m)}>
-                            Sticker afdrukken
-                          </Button>
-                        </td>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                        <th className="px-5 py-3 font-medium">Datum</th>
+                        <th className="px-5 py-3 font-medium">Hoeveelheid</th>
+                        <th className="px-5 py-3 font-medium">Batchnummer</th>
+                        <th className="px-5 py-3 font-medium"></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-</div>
+                    </thead>
+                    <tbody>
+                      {recentMovements.map((m) => (
+                        <tr key={m.id} className="border-t border-border">
+                          <td className="px-5 py-3">
+                            {new Date(m.created_at).toLocaleString("nl-NL")}
+                          </td>
+                          <td className="px-5 py-3 tabular">
+                            {m.quantity_change}
+                          </td>
+                          <td className="px-5 py-3">{m.batch_number ?? "—"}</td>
+                          <td className="px-5 py-3">
+                            <Button size="sm" onClick={() => setMovement(m)}>
+                              Sticker afdrukken
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -444,7 +492,11 @@ export default function NieuweStickerPage({
           {isReprint && (
             <div className="flex items-center gap-2 rounded-md border border-copper/40 bg-copper/10 px-4 py-3 text-sm text-copper">
               <TriangleAlert className="h-4 w-4 shrink-0" />
-              Dit is een herdruk (er {existingLabelCount === 1 ? "is al 1 sticker" : `zijn al ${existingLabelCount} stickers`} afgedrukt voor deze batch). Geef een reden op.
+              Dit is een herdruk (er{" "}
+              {existingLabelCount === 1
+                ? "is al 1 sticker"
+                : `zijn al ${existingLabelCount} stickers`}{" "}
+              afgedrukt voor deze batch). Geef een reden op.
             </div>
           )}
 
@@ -599,7 +651,10 @@ export default function NieuweStickerPage({
               <Printer className="h-4 w-4" />
               {saving ? "Bezig…" : `Afdrukken (${count}×)`}
             </Button>
-            <Button variant="secondary" onClick={() => router.push(`/halfproducten/${recipeId}/bewerken`)}>
+            <Button
+              variant="secondary"
+              onClick={() => router.push(`/halfproducten/${recipeId}/bewerken`)}
+            >
               Terug naar halfproduct
             </Button>
           </div>
@@ -611,58 +666,142 @@ export default function NieuweStickerPage({
         </div>
 
         {/* Printvoorbeeld */}
-        <div ref={printRef} className="print:block">
-          {Array.from({ length: count }).map((_, i) => (
-            <div
-              key={i}
-              className="label-sticker mb-4 border border-border bg-white p-3 shadow-sm print:mb-0 print:border-black print:shadow-none print:break-after-page"
-              style={{
-                width: `${formatInfo.widthMm}mm`,
-                minHeight: `${formatInfo.heightMm}mm`,
-              }}
-            >
-              <p className="text-base font-bold leading-tight">{recipe?.name}</p>
-              <p className="mt-1 text-xs">
-                <span className="font-medium">Geproduceerd door:</span> {producedByLabel}
-              </p>
-              <p className="text-xs">
-                <span className="font-medium">Productiedatum:</span>{" "}
-                {productionAt ? new Date(productionAt).toLocaleString("nl-NL") : "—"}
-              </p>
-              <p className="text-sm font-semibold">
-                <span className="font-medium">Te gebruiken tot en met:</span>{" "}
-                {effectiveExpiry ? new Date(effectiveExpiry).toLocaleDateString("nl-NL") : "—"}
-              </p>
-              {recipe?.storage_method && (
+        <div ref={printRef} className="label-print-root print:block">
+          {Array.from({ length: count }).map((_, i) =>
+            compact ? (
+              <div
+                key={i}
+                className="label-sticker mb-4 flex overflow-hidden border border-border bg-white shadow-sm print:mb-0 print:border-0 print:shadow-none print:break-after-page"
+                style={{
+                  width: `${formatInfo.widthMm}mm`,
+                  height: `${formatInfo.heightMm}mm`,
+                  padding: "1.5mm",
+                  gap: "1.5mm",
+                  fontSize: "6.5pt",
+                  lineHeight: 1.2,
+                }}
+              >
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <p
+                    className="truncate font-bold"
+                    style={{ fontSize: "8.5pt", lineHeight: 1.1 }}
+                  >
+                    {recipe?.name}
+                  </p>
+                  <p className="font-semibold" style={{ fontSize: "7.5pt" }}>
+                    THT:{" "}
+                    {effectiveExpiry
+                      ? new Date(effectiveExpiry).toLocaleDateString("nl-NL")
+                      : "—"}
+                  </p>
+                  <p className="truncate">
+                    Prod.:{" "}
+                    {productionAt
+                      ? new Date(productionAt).toLocaleString("nl-NL", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—"}{" "}
+                    · {producedByLabel}
+                  </p>
+                  <p className="truncate">
+                    {movement.quantity_change} {unitName ?? ""} · Batch{" "}
+                    {batchNumber}
+                    {numberSticker && count > 1
+                      ? ` · bak ${i + 1}/${count}`
+                      : ""}
+                  </p>
+                  {recipe?.storage_method && (
+                    <p className="truncate">Bewaren: {recipe.storage_method}</p>
+                  )}
+                  {allergens && allergens.bevat.length > 0 && (
+                    <p className="line-clamp-2">
+                      <span className="font-semibold">Allergenen:</span>{" "}
+                      {allergens.bevat.join(", ")}
+                    </p>
+                  )}
+                  {extraText && <p className="truncate italic">{extraText}</p>}
+                </div>
+                {qrDataUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={qrDataUrl}
+                    alt="QR-code"
+                    className="shrink-0 self-center"
+                    style={{ width: "20mm", height: "20mm" }}
+                  />
+                )}
+              </div>
+            ) : (
+              <div
+                key={i}
+                className="label-sticker mb-4 border border-border bg-white p-3 shadow-sm print:mb-0 print:border-black print:shadow-none print:break-after-page"
+                style={{
+                  width: `${formatInfo.widthMm}mm`,
+                  minHeight: `${formatInfo.heightMm}mm`,
+                }}
+              >
+                <p className="text-base font-bold leading-tight">
+                  {recipe?.name}
+                </p>
+                <p className="mt-1 text-xs">
+                  <span className="font-medium">Geproduceerd door:</span>{" "}
+                  {producedByLabel}
+                </p>
                 <p className="text-xs">
-                  <span className="font-medium">Bewaren:</span> {recipe.storage_method}
+                  <span className="font-medium">Productiedatum:</span>{" "}
+                  {productionAt
+                    ? new Date(productionAt).toLocaleString("nl-NL")
+                    : "—"}
                 </p>
-              )}
-              {allergens && allergens.bevat.length > 0 && (
+                <p className="text-sm font-semibold">
+                  <span className="font-medium">Te gebruiken tot en met:</span>{" "}
+                  {effectiveExpiry
+                    ? new Date(effectiveExpiry).toLocaleDateString("nl-NL")
+                    : "—"}
+                </p>
+                {recipe?.storage_method && (
+                  <p className="text-xs">
+                    <span className="font-medium">Bewaren:</span>{" "}
+                    {recipe.storage_method}
+                  </p>
+                )}
+                {allergens && allergens.bevat.length > 0 && (
+                  <p className="text-xs">
+                    <span className="font-medium">Allergenen:</span> Bevat{" "}
+                    {allergens.bevat.join(", ")}
+                  </p>
+                )}
                 <p className="text-xs">
-                  <span className="font-medium">Allergenen:</span> Bevat{" "}
-                  {allergens.bevat.join(", ")}
+                  <span className="font-medium">Hoeveelheid:</span>{" "}
+                  {movement.quantity_change} {unitName ?? ""}
                 </p>
-              )}
-              <p className="text-xs">
-                <span className="font-medium">Hoeveelheid:</span>{" "}
-                {movement.quantity_change} {unitName ?? ""}
-              </p>
-              <p className="text-xs">
-                <span className="font-medium">Batchnummer:</span> {batchNumber}
-              </p>
-              {extraText && <p className="mt-1 text-xs italic">{extraText}</p>}
-              {numberSticker && count > 1 && (
-                <p className="text-xs text-muted">
-                  bak {i + 1} van {count}
+                <p className="text-xs">
+                  <span className="font-medium">Batchnummer:</span>{" "}
+                  {batchNumber}
                 </p>
-              )}
-              {qrDataUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={qrDataUrl} alt="QR-code" className="mt-1 h-16 w-16" />
-              )}
-            </div>
-          ))}
+                {extraText && (
+                  <p className="mt-1 text-xs italic">{extraText}</p>
+                )}
+                {numberSticker && count > 1 && (
+                  <p className="text-xs text-muted">
+                    bak {i + 1} van {count}
+                  </p>
+                )}
+                {qrDataUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={qrDataUrl}
+                    alt="QR-code"
+                    className="mt-1 h-16 w-16"
+                  />
+                )}
+              </div>
+            ),
+          )}
         </div>
       </main>
 
@@ -678,12 +817,21 @@ export default function NieuweStickerPage({
           font-size: 0.875rem;
         }
         @media print {
+          @page {
+            size: ${formatInfo.widthMm}mm ${formatInfo.heightMm}mm;
+            margin: 0;
+          }
           body * {
             visibility: hidden;
           }
           .label-sticker,
           .label-sticker * {
             visibility: visible;
+          }
+          .label-print-root {
+            position: absolute;
+            left: 0;
+            top: 0;
           }
         }
       `}</style>
@@ -700,7 +848,7 @@ function toLocalDatetimeInput(date: Date): string {
 async function getLatestLabelId(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  movementId: string
+  movementId: string,
 ): Promise<string | null> {
   const { data } = await supabase
     .from("production_labels")
