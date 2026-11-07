@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   FolderPlus,
+  Link2,
   Pencil,
   Plus,
   Search,
@@ -361,6 +362,13 @@ export default function MenukaartWorkspacePage({
             <FolderPlus className="h-3.5 w-3.5" />
             Receptmap toevoegen aan kaart
           </Button>
+          <Link
+            href={`/menukaarten/${menuCardId}/dubbelen`}
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground hover:border-teal hover:text-teal"
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            Dubbele gerechten koppelen
+          </Link>
         </div>
 
         <div className="space-y-4">

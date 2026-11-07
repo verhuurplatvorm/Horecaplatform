@@ -2,27 +2,36 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, TriangleAlert } from "lucide-react";
+import { Upload, TriangleAlert, Link2, CircleCheck } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { MENU_CATEGORIES } from "@/lib/menu-import/claude-menu-ocr";
-
-interface RecipeCandidate {
-  recipe_id: string;
-  recipe_name: string;
-  similarity_score: number;
-}
+import {
+  candidatesForCompany,
+  pickSuggestion,
+  type DishCandidate,
+  type MatchConfidence,
+} from "@/lib/menu-import/dish-matching";
 
 interface ReviewDish {
   name: string;
   description: string | null;
   price: number | null;
   category: string;
-  candidates: RecipeCandidate[];
+  candidates: DishCandidate[];
   include: boolean;
   linkedRecipeId: string | null;
+  /** Hoe zeker het automatische voorstel is (null = geen voorstel). */
+  confidence: MatchConfidence;
+  /** Gebruiker heeft de koppeling zelf gekozen; niet meer automatisch wijzigen. */
+  linkTouched: boolean;
+}
+
+function applySuggestion(dish: ReviewDish, companyId: string | null): ReviewDish {
+  const { recipeId, confidence } = pickSuggestion(dish.candidates, companyId);
+  return { ...dish, linkedRecipeId: recipeId, confidence };
 }
 
 export default function MenukaartPdfImporterenPage() {
@@ -58,11 +67,20 @@ export default function MenukaartPdfImporterenPage() {
     }
 
     setDishes(
-      body.dishes.map((d: Omit<ReviewDish, "include" | "linkedRecipeId">) => ({
-        ...d,
-        include: true,
-        linkedRecipeId: null,
-      }))
+      body.dishes.map(
+        (d: Omit<ReviewDish, "include" | "linkedRecipeId" | "confidence" | "linkTouched">) =>
+          applySuggestion(
+            {
+              ...d,
+              candidates: d.candidates ?? [],
+              include: true,
+              linkedRecipeId: null,
+              confidence: null,
+              linkTouched: false,
+            },
+            companyId || null
+          )
+      )
     );
     setStoragePath(body.storagePath);
     if (!menuCardName) {
@@ -74,6 +92,28 @@ export default function MenukaartPdfImporterenPage() {
   function updateDish(index: number, patch: Partial<ReviewDish>) {
     setDishes((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   }
+
+  /** Bij ander bedrijf: voorstellen opnieuw bepalen (alleen niet-handmatig gekozen regels). */
+  function changeCompany(value: string) {
+    setCompanyId(value);
+    setDishes((prev) => prev.map((d) => (d.linkTouched ? d : applySuggestion(d, value || null))));
+  }
+
+  function acceptAllSuggestions() {
+    setDishes((prev) => prev.map((d) => applySuggestion({ ...d, linkTouched: false }, companyId || null)));
+  }
+
+  function linkNothing() {
+    setDishes((prev) =>
+      prev.map((d) => ({ ...d, linkedRecipeId: null, confidence: null, linkTouched: true }))
+    );
+  }
+
+  const linkStats = {
+    sure: dishes.filter((d) => d.include && d.linkedRecipeId && d.confidence === "zeker").length,
+    check: dishes.filter((d) => d.include && d.linkedRecipeId && d.confidence !== "zeker").length,
+    created: dishes.filter((d) => d.include && !d.linkedRecipeId).length,
+  };
 
   async function handleImport() {
     const included = dishes.filter((d) => d.include);
@@ -131,7 +171,7 @@ export default function MenukaartPdfImporterenPage() {
                 <label className="mb-1 block text-sm font-medium text-foreground">Bedrijf</label>
                 <select
                   value={companyId}
-                  onChange={(e) => setCompanyId(e.target.value)}
+                  onChange={(e) => changeCompany(e.target.value)}
                   className="input"
                 >
                   <option value="">Groepsbreed</option>
@@ -147,9 +187,34 @@ export default function MenukaartPdfImporterenPage() {
 
           <p className="text-sm text-muted">
             {dishes.length} gerecht(en) herkend. Controleer naam, omschrijving, prijs en categorie
-            vóór definitieve import — regels met een gelijkend bestaand gerecht kun je koppelen
-            i.p.v. dubbel aanmaken.
+            vóór definitieve import. Gerechten die al bestaan (bv. van de vorige kaart) worden
+            automatisch gekoppeld i.p.v. dubbel aangemaakt.
           </p>
+
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span className="flex items-center gap-1 text-success">
+                  <CircleCheck className="h-4 w-4" />
+                  {linkStats.sure} bestaand (zeker)
+                </span>
+                <span className="flex items-center gap-1 text-copper">
+                  <TriangleAlert className="h-4 w-4" />
+                  {linkStats.check} bestaand (controleren)
+                </span>
+                <span className="text-muted">{linkStats.created} nieuw aanmaken</span>
+              </p>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={acceptAllSuggestions}>
+                  <Link2 className="h-3.5 w-3.5" />
+                  Voorstellen opnieuw toepassen
+                </Button>
+                <Button variant="secondary" onClick={linkNothing}>
+                  Niets koppelen
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardContent className="p-0">
@@ -162,7 +227,7 @@ export default function MenukaartPdfImporterenPage() {
                     <th className="px-4 py-3 font-medium">Omschrijving</th>
                     <th className="px-4 py-3 font-medium">Prijs</th>
                     <th className="px-4 py-3 font-medium">Categorie</th>
-                    <th className="px-4 py-3 font-medium">Dubbel?</th>
+                    <th className="px-4 py-3 font-medium">Bestaand gerecht</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -214,30 +279,21 @@ export default function MenukaartPdfImporterenPage() {
                         </select>
                       </td>
                       <td className="px-4 py-3">
-                        {dish.candidates.length > 0 ? (
-                          <div className="space-y-1">
-                            <p className="flex items-center gap-1 text-xs text-copper">
-                              <TriangleAlert className="h-3.5 w-3.5" />
-                              Lijkt op:
-                            </p>
-                            <select
-                              value={dish.linkedRecipeId ?? ""}
-                              onChange={(e) =>
-                                updateDish(i, { linkedRecipeId: e.target.value || null })
-                              }
-                              className="input-sm"
-                            >
-                              <option value="">Nieuw aanmaken</option>
-                              {dish.candidates.map((c) => (
-                                <option key={c.recipe_id} value={c.recipe_id}>
-                                  Koppel aan &quot;{c.recipe_name}&quot;
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted">nieuw</span>
-                        )}
+                        <LinkCell
+                          dish={dish}
+                          companyId={companyId || null}
+                          onChange={(recipeId) =>
+                            updateDish(i, {
+                              linkedRecipeId: recipeId,
+                              confidence: recipeId
+                                ? dish.candidates.find((c) => c.recipe_id === recipeId)?.is_exact
+                                  ? "zeker"
+                                  : "waarschijnlijk"
+                                : null,
+                              linkTouched: true,
+                            })
+                          }
+                        />
                       </td>
                     </tr>
                   ))}
@@ -323,5 +379,56 @@ export default function MenukaartPdfImporterenPage() {
         </Card>
       </main>
     </>
+  );
+}
+
+function LinkCell({
+  dish,
+  companyId,
+  onChange,
+}: {
+  dish: ReviewDish;
+  companyId: string | null;
+  onChange: (recipeId: string | null) => void;
+}) {
+  const usable = candidatesForCompany(dish.candidates, companyId);
+  if (usable.length === 0) {
+    return <span className="text-xs text-muted">nieuw</span>;
+  }
+
+  const linked = usable.find((c) => c.recipe_id === dish.linkedRecipeId);
+  return (
+    <div className="min-w-56 space-y-1">
+      {linked && dish.confidence === "zeker" ? (
+        <p className="flex items-center gap-1 text-xs text-success">
+          <CircleCheck className="h-3.5 w-3.5" />
+          Bestaat al — wordt gekoppeld
+        </p>
+      ) : linked ? (
+        <p className="flex items-center gap-1 text-xs text-copper">
+          <TriangleAlert className="h-3.5 w-3.5" />
+          Waarschijnlijk hetzelfde — controleer
+        </p>
+      ) : (
+        <p className="flex items-center gap-1 text-xs text-muted">
+          <TriangleAlert className="h-3.5 w-3.5" />
+          Lijkt op een bestaand gerecht
+        </p>
+      )}
+      <select
+        value={dish.linkedRecipeId ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="block h-8 w-full rounded border border-border bg-surface px-2 text-[0.8125rem]"
+      >
+        <option value="">Nieuw aanmaken</option>
+        {usable.map((c) => (
+          <option key={c.recipe_id} value={c.recipe_id}>
+            Koppel aan &quot;{c.recipe_name}&quot;
+            {c.sales_price !== null ? ` (€ ${c.sales_price.toFixed(2)})` : ""}
+            {c.is_exact ? "" : ` · ${Math.round(c.similarity_score * 100)}%`}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractMenuFromPdf } from "@/lib/menu-import/claude-menu-ocr";
+import { groupCandidates, type MatchRow } from "@/lib/menu-import/dish-matching";
 
 // Een menukaart in magazinevorm uitlezen kan ruim een minuut duren.
 export const maxDuration = 300;
@@ -60,15 +61,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const dishesWithMatches = await Promise.all(
-    dishes.map(async (dish) => {
-      const { data: candidates } = await supabase.rpc("match_recipe_by_name", {
-        p_group_id: profile.group_id,
-        p_name: dish.name,
-      });
-      return { ...dish, candidates: candidates ?? [] };
-    })
-  );
+  // Eén aanvraag voor alle regels: zoekt bestaande gerechten met een
+  // (genormaliseerd) gelijke of sterk gelijkende naam.
+  const { data: matchRows } = await supabase.rpc("match_menu_dishes", {
+    p_group_id: profile.group_id,
+    p_names: dishes.map((d) => d.name),
+  });
+  const candidatesPerDish = groupCandidates((matchRows as MatchRow[] | null) ?? [], dishes.length);
+  const dishesWithMatches = dishes.map((dish, i) => ({ ...dish, candidates: candidatesPerDish[i] }));
 
   return NextResponse.json({ dishes: dishesWithMatches, storagePath });
 }

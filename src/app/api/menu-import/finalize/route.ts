@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
+import { displayNameFor } from "@/lib/menu-import/dish-matching";
 
 interface FinalizeDish {
   name: string;
@@ -80,6 +81,20 @@ export async function POST(request: Request) {
     if (folder) folderIdByCategory.set(usedCategories[i], folder.id);
   }
 
+  // Namen van gekoppelde bestaande gerechten, om af te wijkende kaartnamen
+  // als weergavenaam te bewaren. Het bestaande gerecht zelf (incl.
+  // verkoopprijs) wordt niet gewijzigd.
+  const linkedIds = [...new Set(dishes.map((d) => d.linkedRecipeId).filter(Boolean))] as string[];
+  const linkedNames = new Map<string, string>();
+  if (linkedIds.length > 0) {
+    const { data: linkedRecipes } = await supabase
+      .from("recipes")
+      .select("id, name")
+      .eq("group_id", groupId)
+      .in("id", linkedIds);
+    for (const r of linkedRecipes ?? []) linkedNames.set(r.id, r.name);
+  }
+
   let created = 0;
   let linked = 0;
   let failed = 0;
@@ -92,7 +107,9 @@ export async function POST(request: Request) {
       continue;
     }
 
-    let recipeId = dish.linkedRecipeId ?? null;
+    let recipeId =
+      dish.linkedRecipeId && linkedNames.has(dish.linkedRecipeId) ? dish.linkedRecipeId : null;
+    let displayName: string | null = null;
 
     if (!recipeId) {
       const { data: newRecipe, error: recipeError } = await supabase
@@ -117,12 +134,14 @@ export async function POST(request: Request) {
       recipeId = newRecipe.id;
       created++;
     } else {
+      displayName = displayNameFor(dish.name, linkedNames.get(recipeId) ?? dish.name);
       linked++;
     }
 
     const { error: itemError } = await supabase.from("menu_items").insert({
       folder_id: folderId,
       recipe_id: recipeId,
+      display_name: displayName,
       short_description: dish.description,
       price: dish.price,
       sort_order: i,

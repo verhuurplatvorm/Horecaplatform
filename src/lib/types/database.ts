@@ -1136,6 +1136,19 @@ export type Database = {
         Args: { p_group_id: string; p_name: string };
         Returns: { recipe_id: string; recipe_name: string; similarity_score: number }[];
       };
+      match_menu_dishes: {
+        Args: { p_group_id: string; p_names: string[]; p_created_before?: string | null };
+        Returns: {
+          name_index: number;
+          recipe_id: string;
+          recipe_name: string;
+          company_id: string | null;
+          status: string | null;
+          sales_price: number | null;
+          similarity_score: number;
+          is_exact: boolean;
+        }[];
+      };
       match_product_by_name: {
         Args: { p_group_id: string; p_name: string };
         Returns: { product_id: string; product_name: string; similarity_score: number }[];
