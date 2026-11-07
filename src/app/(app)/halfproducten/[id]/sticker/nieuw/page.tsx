@@ -681,7 +681,10 @@ export default function NieuweStickerPage({
                   lineHeight: 1.2,
                 }}
               >
-                <div className="min-w-0 flex-1 overflow-hidden">
+                <div
+                  className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden"
+                  style={{ gap: "0.8mm" }}
+                >
                   <p
                     className="line-clamp-2 font-extrabold"
                     style={{ fontSize: "12pt", lineHeight: 1.05 }}
