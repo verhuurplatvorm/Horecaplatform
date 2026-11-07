@@ -5,7 +5,7 @@ export default function NieuweReceptuurPage() {
   return (
     <>
       <Topbar title="Nieuw gerecht" />
-      <main className="max-w-4xl p-6">
+      <main className="p-6">
         <RecipeForm lockedKind="gerecht" />
       </main>
     </>

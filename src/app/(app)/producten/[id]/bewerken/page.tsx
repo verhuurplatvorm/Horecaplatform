@@ -83,7 +83,7 @@ export default async function BewerkProductPage({
   return (
     <>
       <Topbar title="Ingrediënt" />
-      <main className="max-w-4xl p-6">
+      <main className="p-6">
         <ProductDetailTabs
           product={product as Product}
           packagings={(packagings as ProductPackaging[]) ?? []}

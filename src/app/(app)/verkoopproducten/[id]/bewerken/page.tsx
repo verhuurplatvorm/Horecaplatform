@@ -33,7 +33,7 @@ export default async function BewerkVerkoopproductPage({
   return (
     <>
       <Topbar title={`Bewerken: ${salesProduct.name}`} />
-      <main className="max-w-3xl p-6">
+      <main className="p-6">
         <SalesProductForm
           initialSalesProduct={salesProduct as SalesProduct}
           initialComponents={(components as SalesProductComponent[]) ?? []}

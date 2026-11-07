@@ -10,7 +10,7 @@ export default async function NieuwProductPage({
   return (
     <>
       <Topbar title="Nieuw ingrediënt" />
-      <main className="max-w-3xl p-6">
+      <main className="p-6">
         <ProductForm prefillName={naam} />
       </main>
     </>

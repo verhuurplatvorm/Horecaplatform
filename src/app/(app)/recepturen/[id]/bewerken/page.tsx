@@ -30,7 +30,7 @@ export default async function BewerkReceptuurPage({
   return (
     <>
       <Topbar title={`Bewerken: ${recipe.name}`} />
-      <main className="max-w-4xl space-y-4 p-6">
+      <main className="space-y-4 p-6">
         <RecipeForm
           initialRecipe={recipe as Recipe}
           initialIngredients={(ingredients as RecipeIngredient[]) ?? []}

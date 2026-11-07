@@ -22,7 +22,7 @@ export default async function BewerkLeverancierPage({
   return (
     <>
       <Topbar title={`Bewerken: ${supplier.name}`} />
-      <main className="max-w-3xl p-6">
+      <main className="p-6">
         <SupplierForm initialSupplier={supplier as Supplier} />
       </main>
     </>

@@ -5,7 +5,7 @@ export default function NieuweLeverancierPage() {
   return (
     <>
       <Topbar title="Nieuwe leverancier" />
-      <main className="max-w-3xl p-6">
+      <main className="p-6">
         <SupplierForm />
       </main>
     </>

@@ -53,7 +53,7 @@ export default async function BewerkHalfproductPage({
   return (
     <>
       <Topbar title="Halfproduct" />
-      <main className="max-w-6xl space-y-4 p-6">
+      <main className="space-y-4 p-6">
         <HalfproductHeader
           recipeId={id}
           name={recipe.name}

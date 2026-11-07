@@ -5,7 +5,7 @@ export default function NieuwVerkoopproductPage() {
   return (
     <>
       <Topbar title="Nieuw verkoopproduct" />
-      <main className="max-w-3xl p-6">
+      <main className="p-6">
         <SalesProductForm />
       </main>
     </>
