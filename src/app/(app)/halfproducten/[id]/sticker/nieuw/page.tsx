@@ -677,18 +677,21 @@ export default function NieuweStickerPage({
                   height: `${formatInfo.heightMm}mm`,
                   padding: "1.5mm",
                   gap: "1.5mm",
-                  fontSize: "6.5pt",
+                  fontSize: "6pt",
                   lineHeight: 1.2,
                 }}
               >
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <p
-                    className="truncate font-bold"
-                    style={{ fontSize: "8.5pt", lineHeight: 1.1 }}
+                    className="line-clamp-2 font-extrabold"
+                    style={{ fontSize: "12pt", lineHeight: 1.05 }}
                   >
                     {recipe?.name}
                   </p>
-                  <p className="font-semibold" style={{ fontSize: "7.5pt" }}>
+                  <p
+                    className="font-extrabold"
+                    style={{ fontSize: "11pt", lineHeight: 1.15 }}
+                  >
                     THT:{" "}
                     {effectiveExpiry
                       ? new Date(effectiveExpiry).toLocaleDateString("nl-NL")
@@ -731,7 +734,7 @@ export default function NieuweStickerPage({
                     src={qrDataUrl}
                     alt="QR-code"
                     className="shrink-0 self-center"
-                    style={{ width: "20mm", height: "20mm" }}
+                    style={{ width: "16mm", height: "16mm" }}
                   />
                 )}
               </div>
