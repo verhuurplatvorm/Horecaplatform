@@ -46,8 +46,7 @@ export function RecipeMenuPlacements({
         // @ts-expect-error -- geneste relaties
         menuCardId: row.menu_folders?.menu_card_id ?? "",
         // @ts-expect-error -- geneste relaties
-        menuCardName:
-          row.menu_folders?.menu_cards?.name ?? "onbekende menukaart",
+        menuCardName: row.menu_folders?.menu_cards?.name ?? "onbekende menukaart",
         // @ts-expect-error -- geneste relaties
         menuCardStatus: row.menu_folders?.menu_cards?.status ?? "concept",
       }));
