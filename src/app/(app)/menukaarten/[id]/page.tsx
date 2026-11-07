@@ -30,7 +30,12 @@ import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { MenuCard, MenuFolder, MenuItem, Recipe } from "@/lib/types/database";
+import type {
+  MenuCard,
+  MenuFolder,
+  MenuItem,
+  Recipe,
+} from "@/lib/types/database";
 
 const FOODCOST_NORM = 33;
 
@@ -70,33 +75,53 @@ export default function MenukaartWorkspacePage({
       const supabase = createClient();
       const [{ data: cardData }, { data: folderData }] = await Promise.all([
         supabase.from("menu_cards").select("*").eq("id", menuCardId).single(),
-        supabase.from("menu_folders").select("*").eq("menu_card_id", menuCardId).order("sort_order"),
+        supabase
+          .from("menu_folders")
+          .select("*")
+          .eq("menu_card_id", menuCardId)
+          .order("sort_order"),
       ]);
       if (cancelled) return;
 
       const folderIds = (folderData ?? []).map((f) => f.id);
       const { data: itemData } =
         folderIds.length > 0
-          ? await supabase.from("menu_items").select("*").in("folder_id", folderIds).order("sort_order")
+          ? await supabase
+              .from("menu_items")
+              .select("*")
+              .in("folder_id", folderIds)
+              .order("sort_order")
           : { data: [] };
       if (cancelled) return;
 
       setCard(cardData as MenuCard);
       setFolders((folderData as MenuFolder[]) ?? []);
-      setSelectedFolderId((prev) => prev ?? (folderData && folderData.length > 0 ? folderData[0].id : null));
+      setSelectedFolderId(
+        (prev) =>
+          prev ??
+          (folderData && folderData.length > 0 ? folderData[0].id : null),
+      );
       if (folderData && folderData.length > 0) {
-        setExpanded((prev) => (prev.size > 0 ? prev : new Set([folderData[0].id])));
+        setExpanded((prev) =>
+          prev.size > 0 ? prev : new Set([folderData[0].id]),
+        );
       }
 
       const rawItems = (itemData as MenuItem[]) ?? [];
       const recipeIds = [...new Set(rawItems.map((i) => i.recipe_id))];
       let recipeMap = new Map<string, Recipe>();
       if (recipeIds.length > 0) {
-        const { data: recipes } = await supabase.from("recipes").select("*").in("id", recipeIds);
-        recipeMap = new Map(((recipes as Recipe[]) ?? []).map((r) => [r.id, r]));
+        const { data: recipes } = await supabase
+          .from("recipes")
+          .select("*")
+          .in("id", recipeIds);
+        recipeMap = new Map(
+          ((recipes as Recipe[]) ?? []).map((r) => [r.id, r]),
+        );
       }
 
-      const compId = (cardData as MenuCard | null)?.company_id ?? referenceCompanyId;
+      const compId =
+        (cardData as MenuCard | null)?.company_id ?? referenceCompanyId;
       const withCost = await Promise.all(
         rawItems.map(async (i) => {
           let cost: number | null = null;
@@ -108,7 +133,7 @@ export default function MenukaartWorkspacePage({
             cost = data ?? null;
           }
           return { ...i, recipe: recipeMap.get(i.recipe_id), cost };
-        })
+        }),
       );
 
       if (!cancelled) {
@@ -172,7 +197,10 @@ export default function MenukaartWorkspacePage({
     const name = window.prompt("Nieuwe naam:", folder.name);
     if (!name?.trim() || name === folder.name) return;
     const supabase = createClient();
-    await supabase.from("menu_folders").update({ name: name.trim() }).eq("id", folder.id);
+    await supabase
+      .from("menu_folders")
+      .update({ name: name.trim() })
+      .eq("id", folder.id);
     reload();
   }
 
@@ -184,7 +212,7 @@ export default function MenukaartWorkspacePage({
         `Map "${folder.name}" verwijderen?` +
           (childCount || itemCount
             ? ` Dit verwijdert ook ${childCount} submap(pen) en ${itemCount} gerecht-koppeling(en) (de gerechten zelf blijven bestaan).`
-            : "")
+            : ""),
       )
     ) {
       return;
@@ -196,36 +224,51 @@ export default function MenukaartWorkspacePage({
   }
 
   async function handleMoveFolder(folder: MenuFolder, direction: -1 | 1) {
-    const siblings = [...(childrenByParent.get(folder.parent_folder_id) ?? [])].sort(
-      (a, b) => a.sort_order - b.sort_order
-    );
+    const siblings = [
+      ...(childrenByParent.get(folder.parent_folder_id) ?? []),
+    ].sort((a, b) => a.sort_order - b.sort_order);
     const idx = siblings.findIndex((s) => s.id === folder.id);
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= siblings.length) return;
     const supabase = createClient();
     await Promise.all([
-      supabase.from("menu_folders").update({ sort_order: siblings[swapIdx].sort_order }).eq("id", folder.id),
-      supabase.from("menu_folders").update({ sort_order: folder.sort_order }).eq("id", siblings[swapIdx].id),
+      supabase
+        .from("menu_folders")
+        .update({ sort_order: siblings[swapIdx].sort_order })
+        .eq("id", folder.id),
+      supabase
+        .from("menu_folders")
+        .update({ sort_order: folder.sort_order })
+        .eq("id", siblings[swapIdx].id),
     ]);
     reload();
   }
 
   async function handleMoveItem(item: ItemWithRecipe, direction: -1 | 1) {
     const siblings = [...(itemsByFolder.get(item.folder_id) ?? [])].sort(
-      (a, b) => a.sort_order - b.sort_order
+      (a, b) => a.sort_order - b.sort_order,
     );
     const idx = siblings.findIndex((s) => s.id === item.id);
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= siblings.length) return;
     const supabase = createClient();
     await Promise.all([
-      supabase.from("menu_items").update({ sort_order: siblings[swapIdx].sort_order }).eq("id", item.id),
-      supabase.from("menu_items").update({ sort_order: item.sort_order }).eq("id", siblings[swapIdx].id),
+      supabase
+        .from("menu_items")
+        .update({ sort_order: siblings[swapIdx].sort_order })
+        .eq("id", item.id),
+      supabase
+        .from("menu_items")
+        .update({ sort_order: item.sort_order })
+        .eq("id", siblings[swapIdx].id),
     ]);
     reload();
   }
 
-  async function handleMoveItemToFolder(itemId: string, targetFolderId: string) {
+  async function handleMoveItemToFolder(
+    itemId: string,
+    targetFolderId: string,
+  ) {
     const item = items.find((i) => i.id === itemId);
     if (!item || item.folder_id === targetFolderId) return;
     const targetSiblings = itemsByFolder.get(targetFolderId) ?? [];
@@ -242,12 +285,20 @@ export default function MenukaartWorkspacePage({
 
   async function handleToggleVisible(item: ItemWithRecipe) {
     const supabase = createClient();
-    await supabase.from("menu_items").update({ is_visible: !item.is_visible }).eq("id", item.id);
+    await supabase
+      .from("menu_items")
+      .update({ is_visible: !item.is_visible })
+      .eq("id", item.id);
     reload();
   }
 
   async function handleRemoveItem(item: ItemWithRecipe) {
-    if (!window.confirm(`"${item.recipe?.name ?? "dit gerecht"}" van deze map verwijderen?`)) return;
+    if (
+      !window.confirm(
+        `"${item.recipe?.name ?? "dit gerecht"}" van deze map verwijderen?`,
+      )
+    )
+      return;
     const supabase = createClient();
     await supabase.from("menu_items").delete().eq("id", item.id);
     reload();
@@ -255,7 +306,10 @@ export default function MenukaartWorkspacePage({
 
   async function handleDuplicate() {
     if (!card) return;
-    const newName = window.prompt("Naam voor de gedupliceerde menukaart:", `${card.name} (kopie)`);
+    const newName = window.prompt(
+      "Naam voor de gedupliceerde menukaart:",
+      `${card.name} (kopie)`,
+    );
     if (!newName?.trim()) return;
     setDuplicating(true);
     const supabase = createClient();
@@ -281,15 +335,19 @@ export default function MenukaartWorkspacePage({
   const selectedItems = useMemo(
     () =>
       selectedFolderId
-        ? [...(itemsByFolder.get(selectedFolderId) ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+        ? [...(itemsByFolder.get(selectedFolderId) ?? [])].sort(
+            (a, b) => a.sort_order - b.sort_order,
+          )
         : [],
-    [selectedFolderId, itemsByFolder]
+    [selectedFolderId, itemsByFolder],
   );
   const selectedFolder = folders.find((f) => f.id === selectedFolderId);
 
   const folderStats = useMemo(() => {
     if (selectedItems.length === 0) return null;
-    const withPrice = selectedItems.filter((i) => (i.price ?? i.recipe?.sales_price) && i.cost !== null);
+    const withPrice = selectedItems.filter(
+      (i) => (i.price ?? i.recipe?.sales_price) && i.cost !== null,
+    );
     if (withPrice.length === 0) return null;
     const foodcosts = withPrice.map((i) => {
       const price = i.price ?? i.recipe!.sales_price!;
@@ -319,19 +377,33 @@ export default function MenukaartWorkspacePage({
       <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[280px_1fr] md:p-6">
         <div className="space-y-3">
           <div className="flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => setSettingsOpen(true)}>
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setSettingsOpen(true)}
+            >
               <Settings className="h-3.5 w-3.5" />
               Instellingen
             </Button>
-            <Button variant="secondary" onClick={handleDuplicate} disabled={duplicating} title="Dupliceren">
+            <Button
+              variant="secondary"
+              onClick={handleDuplicate}
+              disabled={duplicating}
+              title="Dupliceren"
+            >
               <Copy className="h-3.5 w-3.5" />
             </Button>
           </div>
           <Card>
             <CardContent className="p-2">
               <div className="mb-2 flex items-center justify-between px-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted">Mappen</p>
-                <button onClick={() => handleAddFolder(null)} title="Hoofdmap toevoegen">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                  Mappen
+                </p>
+                <button
+                  onClick={() => handleAddFolder(null)}
+                  title="Hoofdmap toevoegen"
+                >
                   <FolderPlus className="h-4 w-4 text-muted hover:text-teal" />
                 </button>
               </div>
@@ -373,18 +445,23 @@ export default function MenukaartWorkspacePage({
 
         <div className="space-y-4">
           {!selectedFolder ? (
-            <p className="text-sm text-muted">Selecteer of maak een map om gerechten toe te voegen.</p>
+            <p className="text-sm text-muted">
+              Selecteer of maak een map om gerechten toe te voegen.
+            </p>
           ) : (
             <>
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-foreground">{selectedFolder.name}</h2>
+                  <h2 className="text-lg font-semibold text-foreground">
+                    {selectedFolder.name}
+                  </h2>
                   {folderStats && (
                     <p className="text-sm text-muted">
                       {folderStats.count} gerecht(en)
                       {canViewFinancial && (
                         <>
-                          {" "}· gem. foodcost {folderStats.avgFoodcost.toFixed(1)}%
+                          {" "}
+                          · gem. foodcost {folderStats.avgFoodcost.toFixed(1)}%
                           {folderStats.attentionCount > 0 && (
                             <span className="ml-2 text-copper">
                               · {folderStats.attentionCount} boven norm
@@ -404,149 +481,209 @@ export default function MenukaartWorkspacePage({
               <Card>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
-<table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                        <th className="px-5 py-3 font-medium">Naam op kaart</th>
-                        <th className="px-5 py-3 font-medium">Verkoopprijs</th>
-                        {canViewFinancial && (
-                          <>
-                            <th className="px-5 py-3 font-medium">Kostprijs</th>
-                            <th className="px-5 py-3 font-medium">Foodcost</th>
-                          </>
-                        )}
-                        <th className="px-5 py-3 font-medium">Labels</th>
-                        <th className="px-5 py-3 font-medium"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedItems.map((item, idx) => {
-                        const price = item.price ?? item.recipe?.sales_price ?? null;
-                        const vat = item.recipe?.vat_rate ?? 9;
-                        const priceExcl = price ? price / (1 + vat / 100) : null;
-                        const foodcost =
-                          priceExcl && item.cost !== null ? (item.cost / priceExcl) * 100 : null;
-                        return (
-                          <tr
-                            key={item.id}
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData("text/menu-item-id", item.id);
-                              e.dataTransfer.effectAllowed = "move";
-                            }}
-                            className="cursor-grab border-t border-border active:cursor-grabbing"
-                          >
-                            <td className="px-5 py-3">
-                              <div className="flex items-center gap-1">
-                                <div className="flex flex-col">
-                                  <button
-                                    onClick={() => handleMoveItem(item, -1)}
-                                    disabled={idx === 0}
-                                    className="text-muted hover:text-teal disabled:opacity-20"
-                                  >
-                                    <ArrowUp className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleMoveItem(item, 1)}
-                                    disabled={idx === selectedItems.length - 1}
-                                    className="text-muted hover:text-teal disabled:opacity-20"
-                                  >
-                                    <ArrowDown className="h-3 w-3" />
-                                  </button>
-                                </div>
-                                <div>
-                                  <p className={cn("font-medium", !item.is_visible && "text-muted line-through")}>
-                                    {item.display_name ?? item.recipe?.name ?? "onbekend gerecht"}
-                                  </p>
-                                  {!item.recipe && (
-                                    <p className="flex items-center gap-1 text-xs text-danger">
-                                      <TriangleAlert className="h-3 w-3" /> gerecht niet gevonden
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 tabular">
-                              {price !== null ? (
-                                <>
-                                  € {price.toFixed(2)}
-                                  {item.price !== null && item.recipe?.sales_price && (
-                                    <p className="text-xs text-copper">
-                                      afwijkend van € {item.recipe.sales_price.toFixed(2)}
-                                    </p>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="flex items-center gap-1 text-danger">
-                                  <TriangleAlert className="h-3.5 w-3.5" /> geen prijs
-                                </span>
-                              )}
-                            </td>
-                            {canViewFinancial && (
-                              <>
-                                <td className="px-5 py-3 tabular text-muted">
-                                  {item.cost !== null ? `€ ${item.cost.toFixed(2)}` : "—"}
-                                </td>
-                                <td className="px-5 py-3">
-                                  {foodcost !== null ? (
-                                    <span
-                                      className={
-                                        foodcost > FOODCOST_NORM ? "text-copper" : "text-success"
-                                      }
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                          <th className="px-5 py-3 font-medium">
+                            Naam op kaart
+                          </th>
+                          <th className="px-5 py-3 font-medium">
+                            Verkoopprijs
+                          </th>
+                          {canViewFinancial && (
+                            <>
+                              <th className="px-5 py-3 font-medium">
+                                Kostprijs
+                              </th>
+                              <th className="px-5 py-3 font-medium">
+                                Foodcost
+                              </th>
+                            </>
+                          )}
+                          <th className="px-5 py-3 font-medium">Labels</th>
+                          <th className="px-5 py-3 font-medium"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedItems.map((item, idx) => {
+                          const price =
+                            item.price ?? item.recipe?.sales_price ?? null;
+                          const vat = item.recipe?.vat_rate ?? 9;
+                          const priceExcl = price
+                            ? price / (1 + vat / 100)
+                            : null;
+                          const foodcost =
+                            priceExcl && item.cost !== null
+                              ? (item.cost / priceExcl) * 100
+                              : null;
+                          return (
+                            <tr
+                              key={item.id}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  "text/menu-item-id",
+                                  item.id,
+                                );
+                                e.dataTransfer.effectAllowed = "move";
+                              }}
+                              className="cursor-grab border-t border-border active:cursor-grabbing"
+                            >
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-1">
+                                  <div className="flex flex-col">
+                                    <button
+                                      onClick={() => handleMoveItem(item, -1)}
+                                      disabled={idx === 0}
+                                      className="text-muted hover:text-teal disabled:opacity-20"
                                     >
-                                      {foodcost.toFixed(1)}%
-                                    </span>
-                                  ) : (
-                                    "—"
+                                      <ArrowUp className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleMoveItem(item, 1)}
+                                      disabled={
+                                        idx === selectedItems.length - 1
+                                      }
+                                      className="text-muted hover:text-teal disabled:opacity-20"
+                                    >
+                                      <ArrowDown className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                  <div>
+                                    <p
+                                      className={cn(
+                                        "font-medium",
+                                        !item.is_visible &&
+                                          "text-muted line-through",
+                                      )}
+                                    >
+                                      {item.display_name ??
+                                        item.recipe?.name ??
+                                        "onbekend gerecht"}
+                                    </p>
+                                    {!item.recipe && (
+                                      <p className="flex items-center gap-1 text-xs text-danger">
+                                        <TriangleAlert className="h-3 w-3" />{" "}
+                                        gerecht niet gevonden
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 tabular">
+                                {price !== null ? (
+                                  <>
+                                    € {price.toFixed(2)}
+                                    {item.price !== null &&
+                                      item.recipe?.sales_price != null &&
+                                      Math.abs(
+                                        Number(item.price) -
+                                          Number(item.recipe.sales_price),
+                                      ) >= 0.005 && (
+                                        <p className="text-xs text-copper">
+                                          afwijkend van verkoopprijs gerecht €{" "}
+                                          {Number(
+                                            item.recipe.sales_price,
+                                          ).toFixed(2)}
+                                        </p>
+                                      )}
+                                  </>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-danger">
+                                    <TriangleAlert className="h-3.5 w-3.5" />{" "}
+                                    geen prijs
+                                  </span>
+                                )}
+                              </td>
+                              {canViewFinancial && (
+                                <>
+                                  <td className="px-5 py-3 tabular text-muted">
+                                    {item.cost !== null
+                                      ? `€ ${item.cost.toFixed(2)}`
+                                      : "—"}
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    {foodcost !== null ? (
+                                      <span
+                                        className={
+                                          foodcost > FOODCOST_NORM
+                                            ? "text-copper"
+                                            : "text-success"
+                                        }
+                                      >
+                                        {foodcost.toFixed(1)}%
+                                      </span>
+                                    ) : (
+                                      "—"
+                                    )}
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-5 py-3">
+                                <div className="flex gap-1">
+                                  {item.is_new && (
+                                    <Badge label="Nieuw" tone="teal" />
                                   )}
-                                </td>
-                              </>
-                            )}
-                            <td className="px-5 py-3">
-                              <div className="flex gap-1">
-                                {item.is_new && <Badge label="Nieuw" tone="teal" />}
-                                {item.is_popular && <Badge label="Populair" tone="copper" />}
-                                {item.is_chefs_special && <Badge label="Chef's" tone="teal" />}
-                                {item.is_vegetarian && <Badge label="Veg" tone="success" />}
-                                {item.is_vegan && <Badge label="Vegan" tone="success" />}
-                              </div>
-                            </td>
-                            <td className="px-5 py-3">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => handleToggleVisible(item)}
-                                  title={item.is_visible ? "Verbergen" : "Zichtbaar maken"}
-                                  className="text-muted hover:text-teal"
-                                >
-                                  {item.is_visible ? (
-                                    <Eye className="h-4 w-4" />
-                                  ) : (
-                                    <EyeOff className="h-4 w-4" />
+                                  {item.is_popular && (
+                                    <Badge label="Populair" tone="copper" />
                                   )}
-                                </button>
-                                <ItemEditButton item={item} onSaved={reload} />
-                                <button
-                                  onClick={() => handleRemoveItem(item)}
-                                  title="Van menukaart verwijderen"
-                                  className="text-muted hover:text-danger"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
+                                  {item.is_chefs_special && (
+                                    <Badge label="Chef's" tone="teal" />
+                                  )}
+                                  {item.is_vegetarian && (
+                                    <Badge label="Veg" tone="success" />
+                                  )}
+                                  {item.is_vegan && (
+                                    <Badge label="Vegan" tone="success" />
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleToggleVisible(item)}
+                                    title={
+                                      item.is_visible
+                                        ? "Verbergen"
+                                        : "Zichtbaar maken"
+                                    }
+                                    className="text-muted hover:text-teal"
+                                  >
+                                    {item.is_visible ? (
+                                      <Eye className="h-4 w-4" />
+                                    ) : (
+                                      <EyeOff className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <ItemEditButton
+                                    item={item}
+                                    onSaved={reload}
+                                  />
+                                  <button
+                                    onClick={() => handleRemoveItem(item)}
+                                    title="Van menukaart verwijderen"
+                                    className="text-muted hover:text-danger"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {selectedItems.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="px-5 py-6 text-center text-muted"
+                            >
+                              Nog geen gerechten in deze map.
                             </td>
                           </tr>
-                        );
-                      })}
-                      {selectedItems.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="px-5 py-6 text-center text-muted">
-                            Nog geen gerechten in deze map.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-</div>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </CardContent>
               </Card>
             </>
@@ -579,7 +716,10 @@ export default function MenukaartWorkspacePage({
         />
       )}
       {settingsOpen && (
-        <Modal title="Menukaart instellingen" onClose={() => setSettingsOpen(false)}>
+        <Modal
+          title="Menukaart instellingen"
+          onClose={() => setSettingsOpen(false)}
+        >
           <MenuCardSettingsForm
             menuCardId={menuCardId}
             onSaved={() => {
@@ -617,7 +757,9 @@ function AddFromRecipeFolderModal({
   onClose: () => void;
   onAdded: () => void;
 }) {
-  const [recipeFolders, setRecipeFolders] = useState<{ name: string; count: number }[]>([]);
+  const [recipeFolders, setRecipeFolders] = useState<
+    { name: string; count: number }[]
+  >([]);
   const [chosenRecipeFolder, setChosenRecipeFolder] = useState("");
   const [targetFolderId, setTargetFolderId] = useState<string>("__nieuw__");
   const [newFolderName, setNewFolderName] = useState("");
@@ -640,7 +782,7 @@ function AddFromRecipeFolderModal({
         setRecipeFolders(
           Array.from(counts.entries())
             .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => a.name.localeCompare(b.name, "nl"))
+            .sort((a, b) => a.name.localeCompare(b.name, "nl")),
         );
       });
   }, []);
@@ -665,7 +807,8 @@ function AddFromRecipeFolderModal({
     // 1. Doelmap bepalen (bestaand of nieuw)
     let folderId = targetFolderId;
     if (targetFolderId === "__nieuw__") {
-      const name = newFolderName.trim() || suggestedCardFolderName(chosenRecipeFolder);
+      const name =
+        newFolderName.trim() || suggestedCardFolderName(chosenRecipeFolder);
       const maxOrder = Math.max(0, ...cardFolders.map((f) => f.sort_order + 1));
       const { data: newFolder, error: folderError } = await supabase
         .from("menu_folders")
@@ -673,7 +816,10 @@ function AddFromRecipeFolderModal({
         .select("id")
         .single();
       if (folderError || !newFolder) {
-        setError("Kan kaartmap niet aanmaken: " + (folderError?.message ?? "onbekende fout"));
+        setError(
+          "Kan kaartmap niet aanmaken: " +
+            (folderError?.message ?? "onbekende fout"),
+        );
         setSaving(false);
         return;
       }
@@ -713,7 +859,7 @@ function AddFromRecipeFolderModal({
           folder_id: folderId,
           recipe_id: r.id,
           sort_order: startOrder + i,
-        }))
+        })),
       );
       if (insertError) {
         setError("Toevoegen mislukt: " + insertError.message);
@@ -727,7 +873,7 @@ function AddFromRecipeFolderModal({
       `${toAdd.length} gerecht(en) toegevoegd` +
         (recipes.length - toAdd.length > 0
           ? `, ${recipes.length - toAdd.length} overgeslagen (stond al op deze kaart).`
-          : ".")
+          : "."),
     );
     onAdded();
   }
@@ -736,7 +882,9 @@ function AddFromRecipeFolderModal({
     <Modal title="Receptmap toevoegen aan kaart" onClose={onClose}>
       <div className="space-y-3">
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Receptmap</label>
+          <label className="mb-1 block text-sm font-medium text-foreground">
+            Receptmap
+          </label>
           <select
             value={chosenRecipeFolder}
             onChange={(e) => handleChooseRecipeFolder(e.target.value)}
@@ -751,13 +899,16 @@ function AddFromRecipeFolderModal({
           </select>
           {recipeFolders.length === 0 && (
             <p className="mt-1 text-xs text-muted">
-              Nog geen receptmappen — geef recepten een map via het receptenoverzicht of de import.
+              Nog geen receptmappen — geef recepten een map via het
+              receptenoverzicht of de import.
             </p>
           )}
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Naar kaartmap</label>
+          <label className="mb-1 block text-sm font-medium text-foreground">
+            Naar kaartmap
+          </label>
           <select
             value={targetFolderId}
             onChange={(e) => setTargetFolderId(e.target.value)}
@@ -801,13 +952,25 @@ function AddFromRecipeFolderModal({
   );
 }
 
-function Badge({ label, tone }: { label: string; tone: "teal" | "copper" | "success" }) {
+function Badge({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "teal" | "copper" | "success";
+}) {
   const styles = {
     teal: "bg-teal/10 text-teal",
     copper: "bg-copper/10 text-copper",
     success: "bg-success/10 text-success",
   };
-  return <span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", styles[tone])}>{label}</span>;
+  return (
+    <span
+      className={cn("rounded-full px-1.5 py-0.5 text-[10px]", styles[tone])}
+    >
+      {label}
+    </span>
+  );
 }
 
 function FolderList({
@@ -839,7 +1002,9 @@ function FolderList({
   onMoveItemToFolder: (itemId: string, targetFolderId: string) => void;
   depth?: number;
 }) {
-  const children = [...(childrenByParent.get(parentId) ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+  const children = [...(childrenByParent.get(parentId) ?? [])].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
   if (children.length === 0) return null;
 
   return (
@@ -931,7 +1096,7 @@ function FolderRow({
       className={cn(
         "group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm hover:bg-background",
         selected && "bg-teal/10 text-teal",
-        dragOver && "bg-teal/20 outline outline-2 outline-teal"
+        dragOver && "bg-teal/20 outline outline-2 outline-teal",
       )}
       style={{ paddingLeft: `${depth * 14 + 8}px` }}
       onDragOver={(e) => {
@@ -941,7 +1106,8 @@ function FolderRow({
         }
       }}
       onDragEnter={(e) => {
-        if (e.dataTransfer.types.includes("text/menu-item-id")) setDragOver(true);
+        if (e.dataTransfer.types.includes("text/menu-item-id"))
+          setDragOver(true);
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
@@ -962,12 +1128,21 @@ function FolderRow({
           <span className="inline-block w-3.5" />
         )}
       </button>
-      <button onClick={() => onSelect(folder.id)} className="flex-1 truncate text-left">
+      <button
+        onClick={() => onSelect(folder.id)}
+        className="flex-1 truncate text-left"
+      >
         {folder.name}
-        {count > 0 && <span className="ml-1 text-xs text-muted">({count})</span>}
+        {count > 0 && (
+          <span className="ml-1 text-xs text-muted">({count})</span>
+        )}
       </button>
       <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
-        <button onClick={() => onMove(folder, -1)} disabled={idx === 0} className="disabled:opacity-20">
+        <button
+          onClick={() => onMove(folder, -1)}
+          disabled={idx === 0}
+          className="disabled:opacity-20"
+        >
           <ArrowUp className="h-3 w-3 text-muted hover:text-teal" />
         </button>
         <button
@@ -977,7 +1152,10 @@ function FolderRow({
         >
           <ArrowDown className="h-3 w-3 text-muted hover:text-teal" />
         </button>
-        <button onClick={() => onAddSubfolder(folder.id)} title="Submap toevoegen">
+        <button
+          onClick={() => onAddSubfolder(folder.id)}
+          title="Submap toevoegen"
+        >
           <FolderPlus className="h-3.5 w-3.5 text-muted hover:text-teal" />
         </button>
         <button onClick={() => onRename(folder)} title="Hernoemen">
@@ -1019,7 +1197,11 @@ function AddRecipeModal({
       .not("category", "is", null)
       .then(({ data }) => {
         const unique = Array.from(
-          new Set((data ?? []).map((r) => r.category?.trim()).filter((c): c is string => !!c))
+          new Set(
+            (data ?? [])
+              .map((r) => r.category?.trim())
+              .filter((c): c is string => !!c),
+          ),
         ).sort((a, b) => a.localeCompare(b, "nl"));
         setRecipeFolders(unique);
       });
@@ -1029,7 +1211,12 @@ function AddRecipeModal({
     let cancelled = false;
     const supabase = createClient();
     const timeout = setTimeout(async () => {
-      let q = supabase.from("recipes").select("*").eq("recipe_kind", "gerecht").order("name").limit(30);
+      let q = supabase
+        .from("recipes")
+        .select("*")
+        .eq("recipe_kind", "gerecht")
+        .order("name")
+        .limit(30);
       if (recipeFolderFilter) q = q.eq("category", recipeFolderFilter);
       if (query.trim()) q = q.ilike("name", `%${query.trim()}%`);
       const { data } = await q;
@@ -1104,7 +1291,7 @@ function AddRecipeModal({
                 <label
                   className={cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                    already ? "opacity-40" : "hover:bg-background"
+                    already ? "opacity-40" : "hover:bg-background",
                   )}
                 >
                   <input
@@ -1114,13 +1301,17 @@ function AddRecipeModal({
                     onChange={() => toggle(r.id)}
                   />
                   {r.name}
-                  {already && <span className="text-xs text-muted">(al toegevoegd)</span>}
+                  {already && (
+                    <span className="text-xs text-muted">(al toegevoegd)</span>
+                  )}
                 </label>
               </li>
             );
           })}
           {results.length === 0 && (
-            <p className="px-2 py-3 text-sm text-muted">Geen gerechten gevonden.</p>
+            <p className="px-2 py-3 text-sm text-muted">
+              Geen gerechten gevonden.
+            </p>
           )}
         </ul>
         <div className="flex gap-2">
@@ -1136,14 +1327,30 @@ function AddRecipeModal({
   );
 }
 
-function ItemEditButton({ item, onSaved }: { item: ItemWithRecipe; onSaved: () => void }) {
+function ItemEditButton({
+  item,
+  onSaved,
+}: {
+  item: ItemWithRecipe;
+  onSaved: () => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button onClick={() => setOpen(true)} title="Menukaartgegevens bewerken" className="text-muted hover:text-teal">
+      <button
+        onClick={() => setOpen(true)}
+        title="Menukaartgegevens bewerken"
+        className="text-muted hover:text-teal"
+      >
         <Pencil className="h-4 w-4" />
       </button>
-      {open && <ItemEditModal item={item} onClose={() => setOpen(false)} onSaved={onSaved} />}
+      {open && (
+        <ItemEditModal
+          item={item}
+          onClose={() => setOpen(false)}
+          onSaved={onSaved}
+        />
+      )}
     </>
   );
 }
@@ -1158,7 +1365,9 @@ function ItemEditModal({
   onSaved: () => void;
 }) {
   const [displayName, setDisplayName] = useState(item.display_name ?? "");
-  const [shortDescription, setShortDescription] = useState(item.short_description ?? "");
+  const [shortDescription, setShortDescription] = useState(
+    item.short_description ?? "",
+  );
   const [price, setPrice] = useState(item.price?.toString() ?? "");
   const [availableFrom, setAvailableFrom] = useState(item.available_from ?? "");
   const [availableTo, setAvailableTo] = useState(item.available_to ?? "");
@@ -1168,7 +1377,9 @@ function ItemEditModal({
   const [isVegetarian, setIsVegetarian] = useState(item.is_vegetarian);
   const [isVegan, setIsVegan] = useState(item.is_vegan);
   const [isGlutenFree, setIsGlutenFree] = useState(item.is_gluten_free);
-  const [supplementPrice, setSupplementPrice] = useState(item.supplement_price?.toString() ?? "");
+  const [supplementPrice, setSupplementPrice] = useState(
+    item.supplement_price?.toString() ?? "",
+  );
   const [pairedDrink, setPairedDrink] = useState(item.paired_drink ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -1198,7 +1409,10 @@ function ItemEditModal({
   }
 
   return (
-    <Modal title={`Menukaartgegevens — ${item.recipe?.name ?? ""}`} onClose={onClose}>
+    <Modal
+      title={`Menukaartgegevens — ${item.recipe?.name ?? ""}`}
+      onClose={onClose}
+    >
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -1227,7 +1441,9 @@ function ItemEditModal({
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-foreground">Korte omschrijving</label>
+          <label className="mb-1 block text-xs font-medium text-foreground">
+            Korte omschrijving
+          </label>
           <input
             value={shortDescription}
             onChange={(e) => setShortDescription(e.target.value)}
@@ -1236,7 +1452,9 @@ function ItemEditModal({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-foreground">Vanaf datum</label>
+            <label className="mb-1 block text-xs font-medium text-foreground">
+              Vanaf datum
+            </label>
             <input
               type="date"
               value={availableFrom}
@@ -1245,7 +1463,9 @@ function ItemEditModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-foreground">Tot datum</label>
+            <label className="mb-1 block text-xs font-medium text-foreground">
+              Tot datum
+            </label>
             <input
               type="date"
               value={availableTo}
@@ -1256,7 +1476,9 @@ function ItemEditModal({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-foreground">Supplement (€)</label>
+            <label className="mb-1 block text-xs font-medium text-foreground">
+              Supplement (€)
+            </label>
             <input
               type="number"
               step="0.01"
@@ -1266,7 +1488,9 @@ function ItemEditModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-foreground">Aanbevolen drank</label>
+            <label className="mb-1 block text-xs font-medium text-foreground">
+              Aanbevolen drank
+            </label>
             <input
               value={pairedDrink}
               onChange={(e) => setPairedDrink(e.target.value)}
@@ -1276,10 +1500,19 @@ function ItemEditModal({
         </div>
         <div className="flex flex-wrap gap-3 text-sm">
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={isNew} onChange={(e) => setIsNew(e.target.checked)} /> Nieuw
+            <input
+              type="checkbox"
+              checked={isNew}
+              onChange={(e) => setIsNew(e.target.checked)}
+            />{" "}
+            Nieuw
           </label>
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={isPopular} onChange={(e) => setIsPopular(e.target.checked)} />{" "}
+            <input
+              type="checkbox"
+              checked={isPopular}
+              onChange={(e) => setIsPopular(e.target.checked)}
+            />{" "}
             Populair
           </label>
           <label className="flex items-center gap-1.5">
@@ -1299,7 +1532,12 @@ function ItemEditModal({
             Vegetarisch
           </label>
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={isVegan} onChange={(e) => setIsVegan(e.target.checked)} /> Vegan
+            <input
+              type="checkbox"
+              checked={isVegan}
+              onChange={(e) => setIsVegan(e.target.checked)}
+            />{" "}
+            Vegan
           </label>
           <label className="flex items-center gap-1.5">
             <input

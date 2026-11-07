@@ -46,7 +46,8 @@ export function RecipeMenuPlacements({
         // @ts-expect-error -- geneste relaties
         menuCardId: row.menu_folders?.menu_card_id ?? "",
         // @ts-expect-error -- geneste relaties
-        menuCardName: row.menu_folders?.menu_cards?.name ?? "onbekende menukaart",
+        menuCardName:
+          row.menu_folders?.menu_cards?.name ?? "onbekende menukaart",
         // @ts-expect-error -- geneste relaties
         menuCardStatus: row.menu_folders?.menu_cards?.status ?? "concept",
       }));
@@ -75,7 +76,7 @@ export function RecipeMenuPlacements({
   async function handleRemove(row: PlacementRow) {
     if (
       !window.confirm(
-        `Van menukaart "${row.menuCardName}" verwijderen? Het gerecht zelf blijft gewoon bestaan.`
+        `Van menukaart "${row.menuCardName}" verwijderen? Het gerecht zelf blijft gewoon bestaan.`,
       )
     )
       return;
@@ -95,86 +96,97 @@ export function RecipeMenuPlacements({
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-<table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-muted">
-              <th className="px-5 py-3 font-medium">Menukaart</th>
-              <th className="px-5 py-3 font-medium">Map</th>
-              <th className="px-5 py-3 font-medium">Naam op kaart</th>
-              <th className="px-5 py-3 font-medium">Prijs</th>
-              <th className="px-5 py-3 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {placements.map((row) => (
-              <tr key={row.id} className="border-t border-border">
-                <td className="px-5 py-3 font-medium">
-                  <Link href={`/menukaarten/${row.menuCardId}`} className="hover:text-teal hover:underline">
-                    {row.menuCardName}
-                  </Link>
-                  {row.menuCardStatus === "concept" && (
-                    <span className="ml-2 rounded-full bg-muted/10 px-1.5 py-0.5 text-xs text-muted">
-                      concept
-                    </span>
-                  )}
-                </td>
-                <td className="px-5 py-3 text-muted">{row.folderName}</td>
-                <td className="px-5 py-3">{row.display_name ?? "—"}</td>
-                <td className="px-5 py-3 tabular">
-                  {row.price !== null ? (
-                    <>
-                      € {row.price.toFixed(2)}
-                      {recipeSalesPrice !== null && row.price !== recipeSalesPrice && (
-                        <p className="text-xs text-copper">
-                          afwijkend van € {recipeSalesPrice.toFixed(2)}
-                        </p>
-                      )}
-                    </>
-                  ) : recipeSalesPrice !== null ? (
-                    `€ ${recipeSalesPrice.toFixed(2)} (centraal)`
-                  ) : (
-                    <span className="flex items-center gap-1 text-danger">
-                      <TriangleAlert className="h-3.5 w-3.5" /> geen prijs
-                    </span>
-                  )}
-                </td>
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleVisible(row)}
-                      title={row.is_visible ? "Verbergen" : "Zichtbaar maken"}
-                      className="text-muted hover:text-teal"
-                    >
-                      {row.is_visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                    </button>
-                    <button
-                      onClick={() => setEditing(row)}
-                      title="Menukaartgegevens bewerken"
-                      className="text-muted hover:text-teal"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleRemove(row)}
-                      title="Van menukaart verwijderen"
-                      className="text-muted hover:text-danger"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                <th className="px-5 py-3 font-medium">Menukaart</th>
+                <th className="px-5 py-3 font-medium">Map</th>
+                <th className="px-5 py-3 font-medium">Naam op kaart</th>
+                <th className="px-5 py-3 font-medium">Prijs</th>
+                <th className="px-5 py-3 font-medium"></th>
               </tr>
-            ))}
-            {placements.length === 0 && !loading && (
-              <tr>
-                <td colSpan={5} className="px-5 py-6 text-center text-muted">
-                  Dit gerecht staat nog op geen enkele menukaart.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-</div>
+            </thead>
+            <tbody>
+              {placements.map((row) => (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="px-5 py-3 font-medium">
+                    <Link
+                      href={`/menukaarten/${row.menuCardId}`}
+                      className="hover:text-teal hover:underline"
+                    >
+                      {row.menuCardName}
+                    </Link>
+                    {row.menuCardStatus === "concept" && (
+                      <span className="ml-2 rounded-full bg-muted/10 px-1.5 py-0.5 text-xs text-muted">
+                        concept
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-muted">{row.folderName}</td>
+                  <td className="px-5 py-3">{row.display_name ?? "—"}</td>
+                  <td className="px-5 py-3 tabular">
+                    {row.price !== null ? (
+                      <>
+                        € {row.price.toFixed(2)}
+                        {recipeSalesPrice !== null &&
+                          Math.abs(
+                            Number(row.price) - Number(recipeSalesPrice),
+                          ) >= 0.005 && (
+                            <p className="text-xs text-copper">
+                              afwijkend van verkoopprijs gerecht €{" "}
+                              {Number(recipeSalesPrice).toFixed(2)}
+                            </p>
+                          )}
+                      </>
+                    ) : recipeSalesPrice !== null ? (
+                      `€ ${recipeSalesPrice.toFixed(2)} (centraal)`
+                    ) : (
+                      <span className="flex items-center gap-1 text-danger">
+                        <TriangleAlert className="h-3.5 w-3.5" /> geen prijs
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleVisible(row)}
+                        title={row.is_visible ? "Verbergen" : "Zichtbaar maken"}
+                        className="text-muted hover:text-teal"
+                      >
+                        {row.is_visible ? (
+                          <Eye className="h-4 w-4" />
+                        ) : (
+                          <EyeOff className="h-4 w-4" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setEditing(row)}
+                        title="Menukaartgegevens bewerken"
+                        className="text-muted hover:text-teal"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleRemove(row)}
+                        title="Van menukaart verwijderen"
+                        className="text-muted hover:text-danger"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {placements.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-6 text-center text-muted">
+                    Dit gerecht staat nog op geen enkele menukaart.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
 
       {editing && (
@@ -212,11 +224,15 @@ function PlacementEditModal({
   onSaved: () => void;
 }) {
   const [displayName, setDisplayName] = useState(placement.display_name ?? "");
-  const [shortDescription, setShortDescription] = useState(placement.short_description ?? "");
+  const [shortDescription, setShortDescription] = useState(
+    placement.short_description ?? "",
+  );
   const [price, setPrice] = useState(placement.price?.toString() ?? "");
   const [isNew, setIsNew] = useState(placement.is_new);
   const [isPopular, setIsPopular] = useState(placement.is_popular);
-  const [isChefsSpecial, setIsChefsSpecial] = useState(placement.is_chefs_special);
+  const [isChefsSpecial, setIsChefsSpecial] = useState(
+    placement.is_chefs_special,
+  );
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -238,11 +254,16 @@ function PlacementEditModal({
   }
 
   return (
-    <Modal title={`Menukaartgegevens — ${placement.menuCardName}`} onClose={onClose}>
+    <Modal
+      title={`Menukaartgegevens — ${placement.menuCardName}`}
+      onClose={onClose}
+    >
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-foreground">Naam op kaart</label>
+            <label className="mb-1 block text-xs font-medium text-foreground">
+              Naam op kaart
+            </label>
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -263,7 +284,9 @@ function PlacementEditModal({
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-foreground">Korte omschrijving</label>
+          <label className="mb-1 block text-xs font-medium text-foreground">
+            Korte omschrijving
+          </label>
           <input
             value={shortDescription}
             onChange={(e) => setShortDescription(e.target.value)}
@@ -272,10 +295,19 @@ function PlacementEditModal({
         </div>
         <div className="flex flex-wrap gap-3 text-sm">
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={isNew} onChange={(e) => setIsNew(e.target.checked)} /> Nieuw
+            <input
+              type="checkbox"
+              checked={isNew}
+              onChange={(e) => setIsNew(e.target.checked)}
+            />{" "}
+            Nieuw
           </label>
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={isPopular} onChange={(e) => setIsPopular(e.target.checked)} />{" "}
+            <input
+              type="checkbox"
+              checked={isPopular}
+              onChange={(e) => setIsPopular(e.target.checked)}
+            />{" "}
             Populair
           </label>
           <label className="flex items-center gap-1.5">
@@ -376,7 +408,9 @@ function AddToMenuCardModal({
     <Modal title="Toevoegen aan menukaart" onClose={onClose}>
       <div className="space-y-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-foreground">Menukaart</label>
+          <label className="mb-1 block text-xs font-medium text-foreground">
+            Menukaart
+          </label>
           <select
             value={menuCardId}
             onChange={(e) => {
@@ -388,7 +422,11 @@ function AddToMenuCardModal({
           >
             <option value="">Kies menukaart…</option>
             {menuCards.map((c) => (
-              <option key={c.id} value={c.id} disabled={existingMenuCardIds.includes(c.id)}>
+              <option
+                key={c.id}
+                value={c.id}
+                disabled={existingMenuCardIds.includes(c.id)}
+              >
                 {c.name}
                 {existingMenuCardIds.includes(c.id) ? " (al toegevoegd)" : ""}
               </option>
@@ -397,8 +435,14 @@ function AddToMenuCardModal({
         </div>
         {menuCardId && (
           <div>
-            <label className="mb-1 block text-xs font-medium text-foreground">Map</label>
-            <select value={folderId} onChange={(e) => setFolderId(e.target.value)} className="input">
+            <label className="mb-1 block text-xs font-medium text-foreground">
+              Map
+            </label>
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className="input"
+            >
               <option value="">Kies map…</option>
               {folders.map((f) => (
                 <option key={f.id} value={f.id}>
