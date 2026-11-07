@@ -61,7 +61,7 @@ export function currentShelfLifeRule(
   return shelfLifeDays != null ? "eigen" : "";
 }
 
-/** THT-datum (yyyy-mm-dd) uit productiedatum + regel; leeg als niet te berekenen. */
+/** "Te gebruiken tot"-datum (yyyy-mm-dd, exclusief) uit productiedatum + regel; leeg als niet te berekenen. */
 export function computeExpiryDate(
   productionAt: string,
   ruleKey: ShelfLifeRuleKey | "",
@@ -76,7 +76,9 @@ export function computeExpiryDate(
   } else {
     const days = rule?.days ?? shelfLifeDays;
     if (days == null) return "";
-    base.setDate(base.getDate() + days);
+    // "Te gebruiken tot" (niet "tot en met"): de dag ná de laatste
+    // gebruiksdag. Bereid op 7-11 met +2 dagen → te gebruiken tot 10-11.
+    base.setDate(base.getDate() + days + 1);
   }
   const y = base.getFullYear();
   const m = String(base.getMonth() + 1).padStart(2, "0");

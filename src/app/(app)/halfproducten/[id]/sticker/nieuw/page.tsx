@@ -619,7 +619,7 @@ export default function NieuweStickerPage({
                 </div>
                 <p className="mt-1 text-xs text-muted">
                   Wordt onthouden voor dit halfproduct. Gekoeld bewaren op max.
-                  7 °C; de productiedatum telt als dag 0.
+                  7 °C; de "te gebruiken tot" is de dag ná de laatste gebruiksdag.
                 </p>
                 {ruleError && (
                   <p className="mt-1 text-xs text-danger">{ruleError}</p>
@@ -640,7 +640,7 @@ export default function NieuweStickerPage({
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-foreground">
-                    Te gebruiken tot en met
+                    Te gebruiken tot
                   </label>
                   <input
                     type="date"
@@ -787,7 +787,7 @@ export default function NieuweStickerPage({
                     className="font-extrabold"
                     style={{ fontSize: "11pt", lineHeight: 1.15 }}
                   >
-                    THT:{" "}
+                    TGT:{" "}
                     {effectiveExpiry
                       ? new Date(effectiveExpiry).toLocaleDateString("nl-NL")
                       : "—"}
@@ -856,7 +856,7 @@ export default function NieuweStickerPage({
                     : "—"}
                 </p>
                 <p className="text-sm font-semibold">
-                  <span className="font-medium">Te gebruiken tot en met:</span>{" "}
+                  <span className="font-medium">Te gebruiken tot:</span>{" "}
                   {effectiveExpiry
                     ? new Date(effectiveExpiry).toLocaleDateString("nl-NL")
                     : "—"}
