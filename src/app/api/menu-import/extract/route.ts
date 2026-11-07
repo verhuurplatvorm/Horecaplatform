@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractMenuFromPdf } from "@/lib/menu-import/claude-menu-ocr";
 
+// Een menukaart in magazinevorm uitlezen kan ruim een minuut duren.
+export const maxDuration = 300;
+
 export async function POST(request: Request) {
   const supabase = await createClient();
 
