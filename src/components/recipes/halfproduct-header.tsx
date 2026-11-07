@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { PageActionsSlot } from "@/components/layout/page-actions";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Copy, Download, Save } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download } from "lucide-react";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
@@ -195,14 +196,7 @@ export function HalfproductHeader({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="submit"
-            form="recipe-form"
-            className="flex items-center gap-1.5 rounded-md bg-teal px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-          >
-            <Save className="h-3.5 w-3.5" />
-            Opslaan
-          </button>
+          <PageActionsSlot name="header" />
           <button
             type="button"
             onClick={duplicate}

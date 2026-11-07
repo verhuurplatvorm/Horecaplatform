@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import type { Company, Role, UserProfile } from "@/lib/types/database";
@@ -202,7 +203,20 @@ export default function BewerkGebruikerPage({
     <>
       <Topbar title={`Bewerken: ${profile.full_name}`} />
       <main className="max-w-3xl space-y-4 p-6">
-        <form onSubmit={handleSaveProfile}>
+        <form id="user-form" onSubmit={handleSaveProfile}>
+          <PageActions>
+            {error && (
+              <span className="max-w-xs truncate text-sm text-danger" title={error}>
+                {error}
+              </span>
+            )}
+            <Button type="button" variant="secondary" onClick={() => router.push("/gebruikers")}>
+              Annuleren
+            </Button>
+            <Button type="submit" form="user-form" disabled={saving}>
+              {saving ? "Opslaan…" : "Wijzigingen opslaan"}
+            </Button>
+          </PageActions>
           <Card>
             <CardHeader>
               <CardTitle>Gebruikersgegevens</CardTitle>
@@ -248,12 +262,6 @@ export default function BewerkGebruikerPage({
           {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
           <div className="mt-4 flex gap-2">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Opslaan…" : "Wijzigingen opslaan"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => router.push("/gebruikers")}>
-              Annuleren
-            </Button>
             <Button
               type="button"
               variant="danger"

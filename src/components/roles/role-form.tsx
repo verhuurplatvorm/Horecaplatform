@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -156,6 +157,7 @@ export function RoleForm({ initialRole, initialPermissions = [] }: RoleFormProps
 
   return (
     <form
+      id="role-form"
       onSubmit={handleSubmit}
       onKeyDown={(e) => {
         const target = e.target as HTMLElement;
@@ -164,6 +166,19 @@ export function RoleForm({ initialRole, initialPermissions = [] }: RoleFormProps
         }
       }}
       className="space-y-4">
+      <PageActions>
+        {error && (
+          <span className="max-w-xs truncate text-sm text-danger" title={error}>
+            {error}
+          </span>
+        )}
+        <Button type="button" variant="secondary" onClick={() => router.push("/gebruikers/rollen")}>
+          Annuleren
+        </Button>
+        <Button type="submit" form="role-form" disabled={saving}>
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Rol aanmaken"}
+        </Button>
+      </PageActions>
       <Card>
         <CardHeader>
           <CardTitle>Rolgegevens</CardTitle>
@@ -250,12 +265,6 @@ export function RoleForm({ initialRole, initialPermissions = [] }: RoleFormProps
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Rol aanmaken"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => router.push("/gebruikers/rollen")}>
-          Annuleren
-        </Button>
         {isEdit && !initialRole?.is_system && (
           <Button type="button" variant="danger" disabled={deleting} onClick={handleDelete} className="ml-auto">
             {deleting ? "Verwijderen…" : "Verwijderen"}

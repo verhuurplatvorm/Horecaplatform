@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -269,6 +270,7 @@ export function SalesProductForm({
 
   return (
     <form
+      id="sales-product-form"
       onSubmit={handleSubmit}
       onKeyDown={(e) => {
         const target = e.target as HTMLElement;
@@ -277,6 +279,23 @@ export function SalesProductForm({
         }
       }}
       className="space-y-4">
+      <PageActions>
+        {(error || deleteError) && (
+          <span className="max-w-xs truncate text-sm text-danger" title={error ?? deleteError ?? ""}>
+            {error ?? deleteError}
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => router.push("/verkoopproducten")}
+        >
+          Annuleren
+        </Button>
+        <Button type="submit" form="sales-product-form" disabled={saving}>
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Verkoopproduct aanmaken"}
+        </Button>
+      </PageActions>
       <Card>
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>
@@ -437,16 +456,6 @@ export function SalesProductForm({
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Verkoopproduct aanmaken"}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => router.push("/verkoopproducten")}
-        >
-          Annuleren
-        </Button>
         {isEdit && (
           <Button
             type="button"

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -144,6 +145,7 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
 
   return (
     <form
+      id="supplier-form"
       onSubmit={handleSubmit}
       onKeyDown={(e) => {
         const target = e.target as HTMLElement;
@@ -152,6 +154,19 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
         }
       }}
       className="space-y-4">
+      <PageActions>
+        {(error || deleteError) && (
+          <span className="max-w-xs truncate text-sm text-danger" title={error ?? deleteError ?? ""}>
+            {error ?? deleteError}
+          </span>
+        )}
+        <Button type="button" variant="secondary" onClick={() => router.push("/leveranciers")}>
+          Annuleren
+        </Button>
+        <Button type="submit" form="supplier-form" disabled={saving}>
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Leverancier aanmaken"}
+        </Button>
+      </PageActions>
       <Card>
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>
@@ -294,12 +309,6 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Leverancier aanmaken"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => router.push("/leveranciers")}>
-          Annuleren
-        </Button>
         {isEdit && (
           <Button
             type="button"

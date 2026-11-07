@@ -16,6 +16,7 @@ import type {
   Supplier,
   Unit,
 } from "@/lib/types/database";
+import { PageActions } from "@/components/layout/page-actions";
 
 const ALLERGENS = [
   "gluten",
@@ -535,6 +536,7 @@ export function ProductForm({
 
   return (
     <form
+      id="product-form"
       onSubmit={handleSubmit}
       onKeyDown={(e) => {
         const target = e.target as HTMLElement;
@@ -543,6 +545,19 @@ export function ProductForm({
         }
       }}
       className="space-y-4">
+      <PageActions inline={mode === "dialog"}>
+        {(error || deleteError) && (
+          <span className="max-w-xs truncate text-sm text-danger" title={error ?? deleteError ?? ""}>
+            {error ?? deleteError}
+          </span>
+        )}
+        <Button type="button" variant="secondary" onClick={() => (onCancel ? onCancel() : goBack())}>
+          Annuleren
+        </Button>
+        <Button type="submit" form="product-form" disabled={saving}>
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Ingrediënt aanmaken"}
+        </Button>
+      </PageActions>
       {visibleDuplicates.length > 0 && (
         <div className="flex items-start gap-2 rounded-md border border-copper/40 bg-copper/10 px-4 py-3 text-sm text-copper">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1160,16 +1175,6 @@ export function ProductForm({
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Ingrediënt aanmaken"}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => (onCancel ? onCancel() : goBack())}
-        >
-          Annuleren
-        </Button>
         {isEdit && (
           <Button
             type="button"

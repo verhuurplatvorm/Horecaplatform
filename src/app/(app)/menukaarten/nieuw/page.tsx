@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -74,7 +75,20 @@ export default function NieuweMenukaartPage() {
     <>
       <Topbar title="Nieuwe menukaart" />
       <main className="max-w-2xl p-6">
-        <form onSubmit={handleSubmit}>
+        <form id="menu-card-form" onSubmit={handleSubmit}>
+          <PageActions>
+            {error && (
+              <span className="max-w-xs truncate text-sm text-danger" title={error}>
+                {error}
+              </span>
+            )}
+            <Button type="button" variant="secondary" onClick={() => router.push("/menukaarten")}>
+              Annuleren
+            </Button>
+            <Button type="submit" form="menu-card-form" disabled={saving}>
+              {saving ? "Aanmaken…" : "Menukaart aanmaken"}
+            </Button>
+          </PageActions>
           <Card>
             <CardHeader>
               <CardTitle>Menukaartgegevens</CardTitle>
@@ -164,14 +178,6 @@ export default function NieuweMenukaartPage() {
 
           {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
-          <div className="mt-4 flex gap-2">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Aanmaken…" : "Menukaart aanmaken"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => router.push("/menukaarten")}>
-              Annuleren
-            </Button>
-          </div>
         </form>
 
         <style jsx>{`

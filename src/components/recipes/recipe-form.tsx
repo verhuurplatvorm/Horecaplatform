@@ -18,6 +18,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -2845,21 +2846,34 @@ export function RecipeForm({
     </>
   );
 
-  const buttonsBlock = (
-    <div className="flex gap-2">
-      <Button type="submit" disabled={saving} onClick={(e) => handleSubmit(e, "concept")}>
+  // Opslaan/publiceren staan rechtsboven (in de vaste kop of de Topbar).
+  const topActions = (
+    <PageActions>
+      {(error || deleteError) && (
+        <span className="max-w-xs truncate text-sm text-danger" title={error ?? deleteError ?? ""}>
+          {error ?? deleteError}
+        </span>
+      )}
+      <Button type="button" variant="secondary" onClick={goBack}>
+        Annuleren
+      </Button>
+      <Button
+        type="submit"
+        form="recipe-form"
+        variant="secondary"
+        disabled={saving}
+        onClick={(e) => handleSubmit(e, "concept")}
+      >
         {saving ? "Opslaan…" : "Opslaan als concept"}
       </Button>
       <Button type="button" disabled={saving} onClick={(e) => handleSubmit(e, "goedgekeurd")}>
         Opslaan & publiceren
       </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={goBack}
-      >
-        Annuleren
-      </Button>
+    </PageActions>
+  );
+
+  const buttonsBlock = (
+    <div className="flex gap-2">
       {isEdit && (
         <Button
           type="button"
@@ -2890,6 +2904,7 @@ export function RecipeForm({
       }}
       className="space-y-4"
     >
+      {topActions}
       {(() => {
         const tabs: { key: typeof formTab; label: string }[] = [
           { key: "algemeen", label: "Algemeen" },

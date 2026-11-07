@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -189,6 +190,7 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
 
   return (
     <form
+      id="company-form"
       onSubmit={handleSubmit}
       onKeyDown={(e) => {
         const target = e.target as HTMLElement;
@@ -197,6 +199,19 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
         }
       }}
       className="space-y-4">
+      <PageActions>
+        {(error || deleteError) && (
+          <span className="max-w-xs truncate text-sm text-danger" title={error ?? deleteError ?? ""}>
+            {error ?? deleteError}
+          </span>
+        )}
+        <Button type="button" variant="secondary" onClick={() => router.push("/bedrijven")}>
+          Annuleren
+        </Button>
+        <Button type="submit" form="company-form" disabled={saving}>
+          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Bedrijf aanmaken"}
+        </Button>
+      </PageActions>
       <Card>
         <CardHeader>
           <CardTitle>Basisgegevens</CardTitle>
@@ -309,12 +324,6 @@ export function CompanyForm({ initialCompany }: CompanyFormProps) {
       {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? "Opslaan…" : isEdit ? "Wijzigingen opslaan" : "Bedrijf aanmaken"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => router.push("/bedrijven")}>
-          Annuleren
-        </Button>
         {isEdit && isEmptyCompany && (
           <Button
             type="button"
