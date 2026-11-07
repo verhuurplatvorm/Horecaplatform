@@ -184,6 +184,8 @@ export type RecipeFolder = {
   is_main: boolean;
   sort_order: number;
   created_at: string;
+  /** Gearchiveerd: verborgen in het overzicht (0106). */
+  is_archived?: boolean;
 }
 
 export type PackagingCorrection = {

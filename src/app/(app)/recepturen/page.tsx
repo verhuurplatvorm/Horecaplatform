@@ -4,6 +4,8 @@ import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   ChevronRight,
   FolderPlus,
@@ -63,13 +65,14 @@ export default function RecepturenPage() {
   const [folderRows, setFolderRows] = useState<RecipeFolder[]>([]);
   const [foldersLoaded, setFoldersLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [showArchived, setShowArchived] = useState(false);
   const registeredRef = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
     supabase
       .from("recipe_folders")
-      .select("id, group_id, name, parent_id, is_main, sort_order, created_at")
+      .select("id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived")
       .order("sort_order")
       .order("name")
       .then(({ data }) => {
@@ -95,7 +98,7 @@ export default function RecepturenPage() {
       const { data } = await supabase
         .from("recipe_folders")
         .insert(missing.map((name, i) => ({ group_id: groupId, name, sort_order: folderRows.length + i })))
-        .select("id, group_id, name, parent_id, is_main, sort_order, created_at");
+        .select("id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived");
       if (data) setFolderRows((prev) => [...prev, ...(data as RecipeFolder[])]);
     })();
   }, [foldersLoaded, loading, recipes, folderRows]);
@@ -317,8 +320,17 @@ export default function RecepturenPage() {
     }
   }
 
-  const mainFolders = folderRows.filter((f) => f.is_main);
-  const mapFolders = folderRows.filter((f) => !f.is_main);
+  // Gearchiveerd = de map zelf, of een map onder een gearchiveerde hoofdmap.
+  const isFolderArchived = (f: RecipeFolder): boolean =>
+    Boolean(f.is_archived) ||
+    (!!f.parent_id && Boolean(folderRows.find((m) => m.id === f.parent_id)?.is_archived));
+  const archivedFolderCount = folderRows.filter((f) => f.is_archived).length;
+  const archivedCategoryNames = new Set(
+    folderRows.filter((f) => !f.is_main && isFolderArchived(f)).map((f) => f.name.trim())
+  );
+  const visibleFolderRows = showArchived ? folderRows : folderRows.filter((f) => !isFolderArchived(f));
+  const mainFolders = visibleFolderRows.filter((f) => f.is_main);
+  const mapFolders = visibleFolderRows.filter((f) => !f.is_main);
   const childrenOf = (mainId: string) => mapFolders.filter((f) => f.parent_id === mainId);
   const looseFolders = mapFolders.filter(
     (f) => !f.parent_id || !mainFolders.some((m) => m.id === f.parent_id)
@@ -343,7 +355,7 @@ export default function RecepturenPage() {
     const { data, error: insertError } = await supabase
       .from("recipe_folders")
       .insert({ group_id: groupId, name, is_main: isMain, parent_id: parentId, sort_order: folderRows.length })
-      .select("id, group_id, name, parent_id, is_main, sort_order, created_at")
+      .select("id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived")
       .single();
     if (insertError || !data) {
       window.alert("Map aanmaken mislukt: " + (insertError?.message ?? "onbekende fout"));
@@ -431,6 +443,27 @@ export default function RecepturenPage() {
       setFolderRows((prev) => prev.filter((f) => f.id !== folder.id));
     }
     setActiveFolder("__alle__");
+  }
+
+  async function handleArchiveFolder(folder: RecipeFolder, archive: boolean) {
+    if (
+      archive &&
+      !window.confirm(
+        `Map "${folder.name}" archiveren?\n\nDe map${folder.is_main ? " en alle mappen eronder" : ""} en de gerechten erin verdwijnen uit het overzicht. Er wordt niets verwijderd; terughalen kan via "Toon gearchiveerd".`
+      )
+    )
+      return;
+    const supabase = createClient();
+    const { error: archError } = await supabase
+      .from("recipe_folders")
+      .update({ is_archived: archive })
+      .eq("id", folder.id);
+    if (archError) {
+      window.alert("Archiveren mislukt: " + archError.message);
+      return;
+    }
+    setFolderRows((prev) => prev.map((f) => (f.id === folder.id ? { ...f, is_archived: archive } : f)));
+    if (archive && !showArchived) setActiveFolder("__alle__");
   }
 
   async function moveFolderToMain(folderId: string, mainId: string | null) {
@@ -525,13 +558,17 @@ export default function RecepturenPage() {
   }
 
   const q = query.trim().toLowerCase();
+  // Gerechten in gearchiveerde mappen tellen niet mee, tenzij je ze toont.
+  const baseRecipes = showArchived
+    ? recipes
+    : recipes.filter((r) => !archivedCategoryNames.has(r.category?.trim() ?? ""));
   const searchedRecipes = q
-    ? recipes.filter((r) =>
+    ? baseRecipes.filter((r) =>
         [r.name, r.category, r.status]
           .filter(Boolean)
           .some((field) => field!.toLowerCase().includes(q))
       )
-    : recipes;
+    : baseRecipes;
 
   // Mappen: elk gerecht staat in één map (category). Mappen kunnen onder
   // een hoofdmap hangen; "Zonder map" zijn gerechten zonder categorie.
@@ -599,6 +636,8 @@ export default function RecepturenPage() {
                       }}
                       onRename={() => handleRenameFolder(main)}
                       onDelete={() => handleDeleteFolder(main)}
+                      archived={Boolean(main.is_archived)}
+                      onArchive={() => handleArchiveFolder(main, !main.is_archived)}
                       onDropFolder={(fid) => moveFolderToMain(fid, main.id)}
                     />
                     {isOpen &&
@@ -612,6 +651,10 @@ export default function RecepturenPage() {
                           onSelect={() => setActiveFolder(k.id)}
                           onRename={() => handleRenameFolder(k)}
                           onDelete={() => handleDeleteFolder(k)}
+                          archived={isFolderArchived(k)}
+                          onArchive={
+                            main.is_archived ? undefined : () => handleArchiveFolder(k, !k.is_archived)
+                          }
                           dragFolderId={k.id}
                           onDropRecipe={(rid) => moveRecipeToCategory(rid, k.name)}
                         />
@@ -645,6 +688,8 @@ export default function RecepturenPage() {
                   onSelect={() => setActiveFolder(f.id)}
                   onRename={() => handleRenameFolder(f)}
                   onDelete={() => handleDeleteFolder(f)}
+                  archived={Boolean(f.is_archived)}
+                  onArchive={() => handleArchiveFolder(f, !f.is_archived)}
                   dragFolderId={f.id}
                   onDropRecipe={(rid) => moveRecipeToCategory(rid, f.name)}
                 />
@@ -656,6 +701,16 @@ export default function RecepturenPage() {
                   onSelect={() => setActiveFolder("__zonder__")}
                   onDropRecipe={(rid) => moveRecipeToCategory(rid, null)}
                 />
+              )}
+              {archivedFolderCount > 0 && (
+                <label className="mt-2 flex items-center gap-2 px-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                  />
+                  Toon gearchiveerd ({archivedFolderCount})
+                </label>
               )}
               <p className="px-2 pt-3 text-xs text-muted">
                 Sleep een map op een hoofdmap om hem erin te zetten. Sleep een gerecht (greep links in de rij) op een map om te verplaatsen.
@@ -953,6 +1008,8 @@ function TreeRow({
   onDelete,
   onDropRecipe,
   onDropFolder,
+  archived,
+  onArchive,
 }: {
   label: string;
   count?: number;
@@ -966,6 +1023,8 @@ function TreeRow({
   onDelete?: () => void;
   onDropRecipe?: (recipeId: string) => void;
   onDropFolder?: (folderId: string) => void;
+  archived?: boolean;
+  onArchive?: () => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const accepts = (types: readonly string[]) =>
@@ -984,7 +1043,8 @@ function TreeRow({
         indent && "ml-5",
         bold && "font-medium",
         selected && "bg-teal/10 text-teal",
-        dragOver && "bg-teal/25 outline outline-2 outline-teal"
+        dragOver && "bg-teal/25 outline outline-2 outline-teal",
+        archived && "opacity-60"
       )}
       onDragOver={(e) => {
         if (accepts(e.dataTransfer.types)) {
@@ -1017,9 +1077,19 @@ function TreeRow({
       <button onClick={onSelect} className="flex-1 truncate text-left">
         {label}
         {count !== undefined && <span className="ml-1 text-xs text-muted">({count})</span>}
+        {archived && <span className="ml-1 text-xs italic text-muted">gearchiveerd</span>}
       </button>
-      {(onRename || onDelete) && (
+      {(onRename || onDelete || onArchive) && (
         <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
+          {onArchive && (
+            <button onClick={onArchive} title={archived ? "Terugzetten uit archief" : "Archiveren"}>
+              {archived ? (
+                <ArchiveRestore className="h-3 w-3 text-muted hover:text-teal" />
+              ) : (
+                <Archive className="h-3 w-3 text-muted hover:text-teal" />
+              )}
+            </button>
+          )}
           {onRename && (
             <button onClick={onRename} title="Hernoemen">
               <Pencil className="h-3 w-3 text-muted hover:text-teal" />

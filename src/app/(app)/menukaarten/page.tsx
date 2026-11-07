@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus, FileUp, ClipboardList } from "lucide-react";
+import { Plus, FileUp, ClipboardList, Archive, ArchiveRestore } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +36,29 @@ export default function MenukaartenPage() {
   // "Actuele menukaarten" = menukaarten met status Actief (geen apart veld).
   const [view, setView] = useState<"actueel" | "alle">("actueel");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  /** Archiveren = status Gearchiveerd (verdwijnt uit de lijst); terugzetten = Verlopen. */
+  async function toggleArchive(card: MenuCard) {
+    const archiving = card.status !== "gearchiveerd";
+    if (
+      archiving &&
+      !window.confirm(
+        `"${card.name}" archiveren?\n\nDe kaart verdwijnt uit de lijst en telt niet meer mee als actuele kaart. Er wordt niets verwijderd; terughalen kan via "Toon gearchiveerd".`
+      )
+    )
+      return;
+    const next = archiving ? "gearchiveerd" : "verlopen";
+    setBusyId(card.id);
+    const supabase = createClient();
+    const { error } = await supabase.from("menu_cards").update({ status: next }).eq("id", card.id);
+    setBusyId(null);
+    if (error) {
+      window.alert("Bijwerken mislukt: " + error.message);
+      return;
+    }
+    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, status: next } : c)));
+  }
 
   /** Aanvinken = status Actief; uitvinken = status Verlopen. */
   async function toggleCurrent(card: MenuCard) {
@@ -77,8 +100,13 @@ export default function MenukaartenPage() {
   const companyNameById = new Map(companies.map((c) => [c.id, c.name]));
   const currentCount = cards.filter((c) => c.status === "actief").length;
   const filtered = cards.filter((c) =>
-    view === "actueel" ? c.status === "actief" : statusFilter === "alle" || c.status === statusFilter
+    view === "actueel"
+      ? c.status === "actief"
+      : statusFilter === "alle"
+        ? showArchived || c.status !== "gearchiveerd"
+        : c.status === statusFilter
   );
+  const archivedCount = cards.filter((c) => c.status === "gearchiveerd").length;
 
   return (
     <>
@@ -127,6 +155,16 @@ export default function MenukaartenPage() {
               hem actueel te maken.
             </p>
           )}
+          {view === "alle" && archivedCount > 0 && (
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+              />
+              Toon gearchiveerd ({archivedCount})
+            </label>
+          )}
           <Link href="/menukaarten/pdf-importeren">
             <Button variant="secondary">
               <FileUp className="h-4 w-4" />
@@ -153,6 +191,7 @@ export default function MenukaartenPage() {
                   <th className="px-5 py-3 font-medium">Periode</th>
                   <th className="px-5 py-3 font-medium">Versie</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="w-10 px-3 py-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -191,11 +230,24 @@ export default function MenukaartenPage() {
                         {STATUS_LABELS[c.status]}
                       </span>
                     </td>
+                    <td className="px-3 py-3">
+                      <button
+                        disabled={busyId === c.id}
+                        onClick={() => toggleArchive(c)}
+                        title={c.status === "gearchiveerd" ? "Terugzetten uit archief" : "Archiveren"}
+                      >
+                        {c.status === "gearchiveerd" ? (
+                          <ArchiveRestore className="h-4 w-4 text-muted hover:text-teal" />
+                        ) : (
+                          <Archive className="h-4 w-4 text-muted hover:text-teal" />
+                        )}
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-6 text-center text-muted">
                       {view === "actueel" && cards.length > 0
                         ? "Geen actuele menukaarten. Vink er een aan in \"Alle menukaarten\"."
                         : "Nog geen menukaarten aangemaakt."}
