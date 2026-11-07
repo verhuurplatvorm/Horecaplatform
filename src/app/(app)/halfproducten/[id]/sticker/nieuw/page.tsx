@@ -10,6 +10,12 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { useCompanyScope } from "@/components/company-context";
 import type { Recipe, StockMovement, UserProfile } from "@/lib/types/database";
+import {
+  SHELF_LIFE_RULES,
+  computeExpiryDate,
+  currentShelfLifeRule,
+  type ShelfLifeRuleKey,
+} from "@/lib/haccp/shelf-life";
 
 const FORMATS: {
   value: string;
@@ -202,13 +208,46 @@ export default function NieuweStickerPage({
   // Houdbaarheidsdatum automatisch berekenen zodra productiedatum of
   // het halfproduct (met zijn houdbaarheid) bekend is — tenzij de
   // gebruiker 'm al handmatig heeft aangepast.
-  const computedExpiry = (() => {
-    if (!productionAt || !recipe?.shelf_life_days) return "";
-    const base = new Date(productionAt);
-    base.setDate(base.getDate() + recipe.shelf_life_days);
-    return base.toISOString().slice(0, 10);
-  })();
+  const shelfLifeRule = currentShelfLifeRule(
+    recipe?.shelf_life_rule,
+    recipe?.shelf_life_days,
+  );
+  const computedExpiry = computeExpiryDate(
+    productionAt,
+    shelfLifeRule,
+    recipe?.shelf_life_days,
+  );
   const effectiveExpiry = expiryManuallySet ? expiryAt : computedExpiry;
+  const [ruleSaving, setRuleSaving] = useState(false);
+  const [ruleError, setRuleError] = useState<string | null>(null);
+
+  /** Houdbaarheidsregel kiezen en per halfproduct onthouden. */
+  async function changeShelfLifeRule(
+    key: ShelfLifeRuleKey | "",
+    customDays?: number | null,
+  ) {
+    if (!recipe) return;
+    const rule = SHELF_LIFE_RULES.find((r) => r.key === key);
+    const days =
+      key === "eigen"
+        ? (customDays ?? recipe.shelf_life_days ?? null)
+        : rule?.days !== undefined
+          ? rule.days
+          : rule?.months
+            ? rule.months * 30
+            : recipe.shelf_life_days;
+    const patch = { shelf_life_rule: key || null, shelf_life_days: days };
+    setRecipe({ ...recipe, ...patch });
+    setExpiryManuallySet(key === "handmatig" ? expiryManuallySet : false);
+    setRuleSaving(true);
+    setRuleError(null);
+    const { error } = await createClient()
+      .from("recipes")
+      .update(patch)
+      .eq("id", recipe.id);
+    setRuleSaving(false);
+    if (error) setRuleError("Keuze niet opgeslagen: " + error.message);
+  }
 
   // QR-code genereren zodra er een movement is (verwijst naar de
   // batchdetailpagina — alleen zichtbaar voor ingelogde gebruikers).
@@ -532,6 +571,59 @@ export default function NieuweStickerPage({
                   placeholder="Overige namen, komma-gescheiden"
                   className="input mt-2"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Houdbaarheid (Hygiënecode)
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={shelfLifeRule}
+                    onChange={(e) =>
+                      changeShelfLifeRule(
+                        e.target.value as ShelfLifeRuleKey | "",
+                      )
+                    }
+                    className="input max-w-xl"
+                  >
+                    <option value="">— kies houdbaarheid —</option>
+                    {SHELF_LIFE_RULES.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                  {shelfLifeRule === "eigen" && (
+                    <label className="flex items-center gap-1 text-sm">
+                      <input
+                        type="number"
+                        min={0}
+                        value={recipe?.shelf_life_days ?? ""}
+                        onChange={(e) =>
+                          changeShelfLifeRule(
+                            "eigen",
+                            e.target.value === ""
+                              ? null
+                              : Math.max(0, Number(e.target.value)),
+                          )
+                        }
+                        className="input w-20"
+                      />
+                      dagen na bereiding
+                    </label>
+                  )}
+                  {ruleSaving && (
+                    <span className="text-xs text-muted">Opslaan…</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Wordt onthouden voor dit halfproduct. Gekoeld bewaren op max.
+                  7 °C; de productiedatum telt als dag 0.
+                </p>
+                {ruleError && (
+                  <p className="mt-1 text-xs text-danger">{ruleError}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
