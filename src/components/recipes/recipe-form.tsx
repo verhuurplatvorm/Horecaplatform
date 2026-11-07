@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageActions } from "@/components/layout/page-actions";
+import { RecipeSuggestPanel } from "@/components/recipes/recipe-suggest-panel";
+import type { RecipeSuggestion } from "@/app/api/recipes/suggest/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
@@ -1331,6 +1333,28 @@ export function RecipeForm({
     if (newRows.length === 1 && results[0] !== "gekoppeld") setSearchUid(newRows[0].uid);
   }
 
+  /** Receptvoorstel van Claude in het formulier zetten (alleen lege velden aanvullen). */
+  async function applySuggestion(sug: RecipeSuggestion) {
+    const hasRows = rows.some((r) => !isEmptyRow(r));
+    if (hasRows && !window.confirm("Er staan al ingrediënten in dit recept. Voorstel erbij zetten?")) {
+      return;
+    }
+    if (!preparation.trim() && sug.preparation) setPreparation(sug.preparation);
+    if (recipeKind === "halfproduct") {
+      if (!storageMethod.trim() && sug.storage) setStorageMethod(sug.storage);
+      if (!(Number(yieldQuantity) > 0) && sug.yield_quantity && sug.yield_unit) {
+        const unit = unitByKey.get(sug.yield_unit === "stuks" ? "stuk" : sug.yield_unit);
+        if (unit) {
+          unitAutoDone.current = true;
+          setBaseUnitId(unit.id);
+          setYieldQuantity(String(sug.yield_quantity));
+          setYieldManual(true);
+        }
+      }
+    }
+    await addText(sug.ingredients.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join("\n"));
+  }
+
   function rowsToText() {
     return rows
       .filter((r) => !isEmptyRow(r))
@@ -1688,6 +1712,12 @@ export function RecipeForm({
           <Field label="Naam" required span2>
             <input required value={name} onChange={(e) => setName(e.target.value)} className="input" />
           </Field>
+          <RecipeSuggestPanel
+            name={name}
+            kind={recipeKind === "halfproduct" ? "halfproduct" : "gerecht"}
+            currentId={initialRecipe?.id}
+            onApply={applySuggestion}
+          />
           <details className="rounded-md border border-border px-3 py-2 sm:col-span-2 lg:col-span-4">
             <summary className="cursor-pointer text-sm font-medium text-foreground">
               Categorie, status en bereik
