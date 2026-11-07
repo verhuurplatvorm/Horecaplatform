@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, TriangleAlert, Link2, CircleCheck } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { MENU_CATEGORIES } from "@/lib/menu-import/claude-menu-ocr";
+import { createClient } from "@/lib/supabase/client";
 import {
   candidatesForCompany,
   pickSuggestion,
@@ -29,6 +30,21 @@ interface ReviewDish {
   linkTouched: boolean;
 }
 
+interface MainFolder {
+  id: string;
+  name: string;
+}
+
+/** Hoofdmap raden: eerste woord van de hoofdmap komt voor in de kaartnaam (bv. "Winters"). */
+function guessMainFolder(cardName: string, mainFolders: MainFolder[]): string {
+  const lower = cardName.toLowerCase();
+  const hit = mainFolders.find((m) => {
+    const first = m.name.toLowerCase().split(/\s+/)[0];
+    return first.length >= 4 && lower.includes(first);
+  });
+  return hit?.id ?? "";
+}
+
 function applySuggestion(dish: ReviewDish, companyId: string | null): ReviewDish {
   const { recipeId, confidence } = pickSuggestion(dish.candidates, companyId);
   return { ...dish, linkedRecipeId: recipeId, confidence };
@@ -47,6 +63,34 @@ export default function MenukaartPdfImporterenPage() {
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mainFolders, setMainFolders] = useState<MainFolder[]>([]);
+  const [recipeFolderName, setRecipeFolderName] = useState("");
+  const [recipeFolderTouched, setRecipeFolderTouched] = useState(false);
+  const [parentFolderId, setParentFolderId] = useState("");
+  const [parentTouched, setParentTouched] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .from("recipe_folders")
+      .select("id, name")
+      .eq("is_main", true)
+      .eq("is_archived", false)
+      .order("sort_order")
+      .then(({ data }) => {
+        if (!cancelled) setMainFolders((data as MainFolder[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Map in Gerechten volgt de kaartnaam tot de gebruiker hem zelf aanpast. */
+  function changeMenuCardName(value: string) {
+    setMenuCardName(value);
+    if (!recipeFolderTouched) setRecipeFolderName(value);
+    if (!parentTouched) setParentFolderId(guessMainFolder(value, mainFolders));
+  }
 
   async function handleExtract(e: React.FormEvent) {
     e.preventDefault();
@@ -84,7 +128,7 @@ export default function MenukaartPdfImporterenPage() {
     );
     setStoragePath(body.storagePath);
     if (!menuCardName) {
-      setMenuCardName(file.name.replace(/\.pdf$/i, ""));
+      changeMenuCardName(file.name.replace(/\.pdf$/i, ""));
     }
     setStep("review");
   }
@@ -131,6 +175,8 @@ export default function MenukaartPdfImporterenPage() {
         menuCardName,
         companyId: companyId || null,
         storagePath,
+        recipeFolderName: recipeFolderName.trim() || null,
+        parentFolderId: parentFolderId || null,
         dishes: included.map((d) => ({
           name: d.name,
           description: d.description,
@@ -163,7 +209,7 @@ export default function MenukaartPdfImporterenPage() {
                 </label>
                 <input
                   value={menuCardName}
-                  onChange={(e) => setMenuCardName(e.target.value)}
+                  onChange={(e) => changeMenuCardName(e.target.value)}
                   className="input"
                 />
               </div>
@@ -182,6 +228,42 @@ export default function MenukaartPdfImporterenPage() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Map in Gerechten (voor nieuwe gerechten)
+                </label>
+                <input
+                  value={recipeFolderName}
+                  onChange={(e) => {
+                    setRecipeFolderName(e.target.value);
+                    setRecipeFolderTouched(true);
+                  }}
+                  placeholder="Leeg = geen map, per categorie"
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Onder hoofdmap</label>
+                <select
+                  value={parentFolderId}
+                  onChange={(e) => {
+                    setParentFolderId(e.target.value);
+                    setParentTouched(true);
+                  }}
+                  className="input"
+                >
+                  <option value="">Geen hoofdmap</option>
+                  {mainFolders.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-muted sm:col-span-2">
+                Nieuwe gerechten komen in deze map. Gerechten die al bestaan worden alleen gekoppeld
+                en blijven in hun eigen map staan (een gerecht staat in één map).
+              </p>
             </CardContent>
           </Card>
 

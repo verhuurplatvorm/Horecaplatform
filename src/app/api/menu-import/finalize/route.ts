@@ -32,11 +32,15 @@ export async function POST(request: Request) {
     companyId,
     storagePath,
     dishes,
+    recipeFolderName,
+    parentFolderId,
   }: {
     menuCardName: string;
     companyId: string | null;
     storagePath: string | null;
     dishes: FinalizeDish[];
+    recipeFolderName?: string | null;
+    parentFolderId?: string | null;
   } = body;
 
   if (!menuCardName?.trim()) {
@@ -44,6 +48,18 @@ export async function POST(request: Request) {
   }
   if (!Array.isArray(dishes) || dishes.length === 0) {
     return NextResponse.json({ error: "Geen gerechten om te importeren." }, { status: 400 });
+  }
+
+  // Map in Gerechten voor de nieuw aan te maken gerechten. Een gerecht hoort
+  // bij een map via recipes.category (mapnaam, uniek per groep).
+  let recipeCategoryOverride: string | null = null;
+  const wantedFolder = recipeFolderName?.trim();
+  if (wantedFolder) {
+    const folder = await ensureRecipeFolder(supabase, groupId, wantedFolder, parentFolderId ?? null);
+    if ("error" in folder) {
+      return NextResponse.json({ error: folder.error }, { status: 400 });
+    }
+    recipeCategoryOverride = folder.name;
   }
 
   const { data: menuCard, error: menuCardError } = await supabase
@@ -119,7 +135,7 @@ export async function POST(request: Request) {
           company_id: companyId || null,
           name: dish.name,
           recipe_kind: "gerecht" as const,
-          category: dish.category,
+          category: recipeCategoryOverride ?? dish.category,
           status: "concept" as const,
           sales_price: dish.price,
           created_by: user.id,
@@ -150,4 +166,41 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ menuCardId: menuCard.id, created, linked, failed });
+}
+
+/**
+ * Zoekt de gerechtenmap op naam (hoofdletterongevoelig) of maakt hem aan.
+ * Een hoofdmap kan geen gerechten bevatten, dus die naam weigeren we.
+ */
+async function ensureRecipeFolder(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  groupId: string,
+  name: string,
+  parentFolderId: string | null
+): Promise<{ name: string } | { error: string }> {
+  const { data: folders } = await supabase
+    .from("recipe_folders")
+    .select("id, name, is_main, sort_order")
+    .eq("group_id", groupId);
+  const all = folders ?? [];
+  const existing = all.find((f) => f.name.trim().toLowerCase() === name.toLowerCase());
+  if (existing) {
+    if (existing.is_main) {
+      return {
+        error: `"${existing.name}" is een hoofdmap in Gerechten en kan geen gerechten bevatten. Kies een andere mapnaam.`,
+      };
+    }
+    return { name: existing.name };
+  }
+
+  const parent = parentFolderId ? all.find((f) => f.id === parentFolderId && f.is_main) : null;
+  const { error } = await supabase.from("recipe_folders").insert({
+    group_id: groupId,
+    name,
+    is_main: false,
+    parent_id: parent?.id ?? null,
+    sort_order: all.reduce((max, f) => Math.max(max, f.sort_order ?? 0), 0) + 1,
+  });
+  if (error) return { error: "Kan map in Gerechten niet aanmaken: " + error.message };
+  return { name };
 }
