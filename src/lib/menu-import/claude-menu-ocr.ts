@@ -17,6 +17,8 @@ export interface ExtractedDish {
   description: string | null;
   price: number | null;
   category: string;
+  /** Rubriek/kopje zoals op de kaart gedrukt (bv. "Burgers", "Winterse klassiekers"). */
+  section: string | null;
 }
 
 const EXTRACTION_PROMPT = `Je krijgt een PDF van een menukaart van een horecazaak. Lees alle gerechten/dranken die erop staan en geef ALLEEN geldige JSON terug, exact in dit schema, zonder uitleg, zonder markdown-codeblok:
@@ -27,6 +29,7 @@ const EXTRACTION_PROMPT = `Je krijgt een PDF van een menukaart van een horecazaa
       "name": string,
       "description": string of null,
       "price": number of null,
+      "section": string of null,
       "category": string
     }
   ]
@@ -36,6 +39,7 @@ Belangrijk:
 - "name" is de naam van het gerecht zoals op de kaart staat.
 - "description" is de bijbehorende omschrijving (ingrediënten/toelichting), of null als die er niet is.
 - "price" is de verkoopprijs als getal met een punt als decimaalteken (bv. 18.50), of null als er geen prijs bij staat.
+- "section" is het kopje/de rubriek waaronder het item op de kaart staat, letterlijk zoals gedrukt (bv. "Burgers", "Lunch", "Bites"), of null als er geen kopje is.
 - "category" moet exact één van deze waarden zijn: ${MENU_CATEGORIES.join(", ")}. Kies de best passende; gebruik "Overig" alleen als niets anders logisch past.
 - Neem elk gerecht/drank apart op, ook als er meerdere onder één kopje staan.
 - Sla kopjes/hoofdstuktitels zelf niet op als los "gerecht" — alleen de daadwerkelijke items.
@@ -161,6 +165,7 @@ export async function extractMenuFromPdf(
       description: d.description ?? null,
       price: typeof d.price === "number" ? d.price : null,
       category: MENU_CATEGORIES.includes(d.category) ? d.category : "Overig",
+      section: typeof d.section === "string" && d.section.trim() ? d.section.trim() : null,
     }));
 }
 

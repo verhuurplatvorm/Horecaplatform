@@ -17,6 +17,8 @@ export interface DishCandidate {
   company_id: string | null;
   status: string | null;
   sales_price: number | null;
+  /** Map in Gerechten van het gevonden gerecht. */
+  category: string | null;
   similarity_score: number;
   is_exact: boolean;
 }
@@ -38,6 +40,7 @@ export function groupCandidates(rows: MatchRow[] | null, count: number): DishCan
       company_id: r.company_id,
       status: r.status,
       sales_price: r.sales_price === null ? null : Number(r.sales_price),
+      category: r.category ?? null,
       similarity_score: Number(r.similarity_score),
       is_exact: r.is_exact,
     });
@@ -99,4 +102,54 @@ export function normalizeDishName(name: string): string {
  */
 export function displayNameFor(cardName: string, recipeName: string): string | null {
   return normalizeDishName(cardName) === normalizeDishName(recipeName) ? null : cardName.trim();
+}
+
+/**
+ * Soortmap in Gerechten raden voor een NIEUW gerecht. Gerechten staan per
+ * soort (Burgers, Pizza's, Lunch…); het seizoen hoort bij de menukaart.
+ * Volgorde: herkenbaar woord in de naam → map van het meest gelijkende
+ * bestaande gerecht → rubriek op de kaart → "Overig".
+ * Er wordt alleen een map voorgesteld die al bestaat.
+ */
+const KEYWORD_FOLDERS: { pattern: RegExp; folder: string }[] = [
+  { pattern: /burger/i, folder: "Burgers" },
+  { pattern: /pizza|calzone/i, folder: "Pizza's" },
+  { pattern: /salade|bowl/i, folder: "Salades" },
+  { pattern: /dessert|dame blanche|affogato|brownie|cheesecake|tiramisu/i, folder: "Desserts" },
+  { pattern: /frites|friet|fries/i, folder: "Friet & snacks" },
+  { pattern: /bitterbal|kroketje|nacho|wings|kaasstengel|kaastengel|frikandelletje|snacks/i, folder: "Bites & snacks" },
+  { pattern: /broodje|sandwich|tosti|uitsmijter|bagel|ciabatta|focaccia|wrap|op brood/i, folder: "Lunch" },
+];
+
+const SECTION_FOLDERS: Record<string, string> = {
+  borrel: "Bites & snacks",
+  vleesgerechten: "Hoofdgerechten",
+  visgerechten: "Hoofdgerechten",
+  "vegetarische gerechten": "Hoofdgerechten",
+  soepen: "Voorgerechten",
+  soep: "Voorgerechten",
+};
+
+export function guessRecipeFolder(
+  dish: { name: string; section?: string | null; category?: string | null },
+  candidates: DishCandidate[],
+  folderNames: string[]
+): string | null {
+  const byLower = new Map(folderNames.map((n) => [n.toLowerCase(), n]));
+  const existing = (name: string | null | undefined) =>
+    name ? byLower.get(name.trim().toLowerCase()) ?? null : null;
+
+  for (const k of KEYWORD_FOLDERS) {
+    if (k.pattern.test(dish.name) && existing(k.folder)) return existing(k.folder);
+  }
+  const similar = candidates.find((c) => c.similarity_score >= 0.5 && existing(c.category));
+  if (similar) return existing(similar.category);
+
+  for (const label of [dish.section, dish.category]) {
+    const direct = existing(label);
+    if (direct) return direct;
+    const mapped = label ? existing(SECTION_FOLDERS[label.trim().toLowerCase()]) : null;
+    if (mapped) return mapped;
+  }
+  return existing("Overig");
 }

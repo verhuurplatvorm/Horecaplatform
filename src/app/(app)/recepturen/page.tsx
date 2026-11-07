@@ -48,6 +48,17 @@ interface RecipeWithCost extends RecipeListItem {
   costPrice: number | null;
 }
 
+/** Een menukaart waarop een gerecht staat. */
+interface CardPlacement {
+  id: string;
+  name: string;
+  status: string;
+}
+
+const CARD_FILTER_ALL = "__alle__";
+const CARD_FILTER_ACTIVE = "__actief__";
+const CARD_FILTER_NONE = "__geen__";
+
 export default function RecepturenPage() {
   const { activeCompanyIds, scope, companies, loading: scopeLoading } =
     useCompanyScope();
@@ -67,6 +78,49 @@ export default function RecepturenPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const registeredRef = useRef(false);
+  // Op welke menukaart(en) staat elk gerecht? (via menu_items)
+  const [cardsByRecipe, setCardsByRecipe] = useState<Map<string, CardPlacement[]>>(new Map());
+  const [menuCards, setMenuCards] = useState<CardPlacement[]>([]);
+  const [cardFilter, setCardFilter] = useState<string>(CARD_FILTER_ALL);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const [{ data: cards }, { data: menuFolders }] = await Promise.all([
+        supabase.from("menu_cards").select("id, name, status").order("created_at", { ascending: false }),
+        supabase.from("menu_folders").select("id, menu_card_id"),
+      ]);
+      const items: { recipe_id: string; folder_id: string }[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page } = await supabase
+          .from("menu_items")
+          .select("recipe_id, folder_id")
+          .range(from, from + 999);
+        if (!page || page.length === 0) break;
+        items.push(...page);
+        if (page.length < 1000) break;
+      }
+      if (cancelled) return;
+      const cardById = new Map(
+        ((cards ?? []) as CardPlacement[]).map((c) => [c.id, { id: c.id, name: c.name, status: String(c.status) }])
+      );
+      const cardByFolder = new Map((menuFolders ?? []).map((f) => [f.id, f.menu_card_id]));
+      const byRecipe = new Map<string, CardPlacement[]>();
+      for (const it of items) {
+        const card = cardById.get(cardByFolder.get(it.folder_id) ?? "");
+        if (!card) continue;
+        const list = byRecipe.get(it.recipe_id) ?? [];
+        if (!list.some((c) => c.id === card.id)) list.push(card);
+        byRecipe.set(it.recipe_id, list);
+      }
+      setMenuCards([...cardById.values()]);
+      setCardsByRecipe(byRecipe);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -562,13 +616,21 @@ export default function RecepturenPage() {
   const baseRecipes = showArchived
     ? recipes
     : recipes.filter((r) => !archivedCategoryNames.has(r.category?.trim() ?? ""));
-  const searchedRecipes = q
-    ? baseRecipes.filter((r) =>
-        [r.name, r.category, r.status]
+  const cardMatches = (r: RecipeListItem) => {
+    if (cardFilter === CARD_FILTER_ALL) return true;
+    const cards = cardsByRecipe.get(r.id) ?? [];
+    if (cardFilter === CARD_FILTER_NONE) return cards.length === 0;
+    if (cardFilter === CARD_FILTER_ACTIVE) return cards.some((c) => c.status === "actief");
+    return cards.some((c) => c.id === cardFilter);
+  };
+  const searchedRecipes = baseRecipes.filter(
+    (r) =>
+      cardMatches(r) &&
+      (!q ||
+        [r.name, r.category, r.status, ...(cardsByRecipe.get(r.id) ?? []).map((c) => c.name)]
           .filter(Boolean)
-          .some((field) => field!.toLowerCase().includes(q))
-      )
-    : baseRecipes;
+          .some((field) => field!.toLowerCase().includes(q)))
+  );
 
   // Mappen: elk gerecht staat in één map (category). Mappen kunnen onder
   // een hoofdmap hangen; "Zonder map" zijn gerechten zonder categorie.
@@ -726,10 +788,26 @@ export default function RecepturenPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Zoek op naam, categorie of status…"
+              placeholder="Zoek op naam, map, kaart of status…"
               className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
             />
           </div>
+          <select
+            value={cardFilter}
+            onChange={(e) => setCardFilter(e.target.value)}
+            className="h-10 rounded-md border border-border bg-surface px-3 text-sm"
+            title="Filter op menukaart"
+          >
+            <option value={CARD_FILTER_ALL}>Alle gerechten</option>
+            <option value={CARD_FILTER_ACTIVE}>Op een actieve kaart</option>
+            <option value={CARD_FILTER_NONE}>Op geen enkele kaart</option>
+            {menuCards.map((c) => (
+              <option key={c.id} value={c.id}>
+                Op kaart: {c.name}
+                {c.status !== "actief" ? ` (${c.status})` : ""}
+              </option>
+            ))}
+          </select>
           <Button
             variant="secondary"
             disabled={rematchBusy}
@@ -846,7 +924,8 @@ export default function RecepturenPage() {
                   </th>
                   <th className="w-6 px-1 py-3"></th>
                   <th className="px-5 py-3 font-medium">Naam</th>
-                  <th className="px-5 py-3 font-medium">Categorie</th>
+                  <th className="px-5 py-3 font-medium">Map</th>
+                  <th className="px-5 py-3 font-medium">Op kaart</th>
                   <th className="px-5 py-3 font-medium">Bereik</th>
                   {canViewFinancial && (
                     <th className="px-5 py-3 font-medium">Kostprijs</th>
@@ -900,6 +979,28 @@ export default function RecepturenPage() {
                         </Link>
                       </td>
                       <td className="px-5 py-3 text-muted">{r.category ?? "—"}</td>
+                      <td className="px-5 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(cardsByRecipe.get(r.id) ?? []).map((c) => (
+                            <Link
+                              key={c.id}
+                              href={`/menukaarten/${c.id}`}
+                              title={`Menukaart (${c.status})`}
+                              className={cn(
+                                "whitespace-nowrap rounded-full border px-2 py-0.5 text-xs",
+                                c.status === "actief"
+                                  ? "border-teal/40 bg-teal/10 text-teal"
+                                  : "border-border text-muted"
+                              )}
+                            >
+                              {c.name}
+                            </Link>
+                          ))}
+                          {(cardsByRecipe.get(r.id) ?? []).length === 0 && (
+                            <span className="text-xs text-muted">—</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-5 py-3 text-muted">
                         {r.is_central ? "Centrale standaard" : "Lokale variant"}
                       </td>
@@ -947,7 +1048,7 @@ export default function RecepturenPage() {
                 })}
                 {filteredRecipes.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={canViewFinancial ? 10 : 8} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={canViewFinancial ? 11 : 9} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
                         : q

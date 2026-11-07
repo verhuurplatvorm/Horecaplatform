@@ -8,6 +8,10 @@ interface FinalizeDish {
   description: string | null;
   price: number | null;
   category: string;
+  /** Rubriek op de kaart (map op de menukaart). */
+  section?: string | null;
+  /** Soortmap in Gerechten voor een nieuw gerecht. */
+  recipeFolder?: string | null;
   linkedRecipeId?: string | null;
 }
 
@@ -32,15 +36,11 @@ export async function POST(request: Request) {
     companyId,
     storagePath,
     dishes,
-    recipeFolderName,
-    parentFolderId,
   }: {
     menuCardName: string;
     companyId: string | null;
     storagePath: string | null;
     dishes: FinalizeDish[];
-    recipeFolderName?: string | null;
-    parentFolderId?: string | null;
   } = body;
 
   if (!menuCardName?.trim()) {
@@ -50,17 +50,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Geen gerechten om te importeren." }, { status: 400 });
   }
 
-  // Map in Gerechten voor de nieuw aan te maken gerechten. Een gerecht hoort
-  // bij een map via recipes.category (mapnaam, uniek per groep).
-  let recipeCategoryOverride: string | null = null;
-  const wantedFolder = recipeFolderName?.trim();
-  if (wantedFolder) {
-    const folder = await ensureRecipeFolder(supabase, groupId, wantedFolder, parentFolderId ?? null);
-    if ("error" in folder) {
-      return NextResponse.json({ error: folder.error }, { status: 400 });
+  // Soortmappen in Gerechten voor nieuwe gerechten. Een gerecht hoort bij
+  // een map via recipes.category (mapnaam, uniek per groep). Alleen
+  // bestaande gewone mappen; ontbrekende worden als losse map aangemaakt.
+  const folderByLower = new Map<string, string>();
+  {
+    const wanted = [
+      ...new Set(
+        dishes
+          .filter((d) => !d.linkedRecipeId && d.recipeFolder?.trim())
+          .map((d) => d.recipeFolder!.trim())
+      ),
+    ];
+    for (const name of wanted) {
+      const folder = await ensureRecipeFolder(supabase, groupId, name);
+      if ("error" in folder) {
+        return NextResponse.json({ error: folder.error }, { status: 400 });
+      }
+      folderByLower.set(name.toLowerCase(), folder.name);
     }
-    recipeCategoryOverride = folder.name;
   }
+  const sectionOf = (d: FinalizeDish) => d.section?.trim() || d.category;
 
   const { data: menuCard, error: menuCardError } = await supabase
     .from("menu_cards")
@@ -82,7 +92,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const usedCategories = [...new Set(dishes.map((d) => d.category))];
+  // Rubrieken op de kaart in de volgorde waarin ze op de kaart staan.
+  const usedCategories = [...new Set(dishes.map(sectionOf))];
   const folderIdByCategory = new Map<string, string>();
   for (let i = 0; i < usedCategories.length; i++) {
     const { data: folder } = await supabase
@@ -117,7 +128,7 @@ export async function POST(request: Request) {
 
   for (let i = 0; i < dishes.length; i++) {
     const dish = dishes[i];
-    const folderId = folderIdByCategory.get(dish.category);
+    const folderId = folderIdByCategory.get(sectionOf(dish));
     if (!folderId) {
       failed++;
       continue;
@@ -135,7 +146,9 @@ export async function POST(request: Request) {
           company_id: companyId || null,
           name: dish.name,
           recipe_kind: "gerecht" as const,
-          category: recipeCategoryOverride ?? dish.category,
+          category: dish.recipeFolder?.trim()
+            ? folderByLower.get(dish.recipeFolder.trim().toLowerCase()) ?? null
+            : null,
           status: "concept" as const,
           sales_price: dish.price,
           created_by: user.id,
@@ -169,14 +182,13 @@ export async function POST(request: Request) {
 }
 
 /**
- * Zoekt de gerechtenmap op naam (hoofdletterongevoelig) of maakt hem aan.
- * Een hoofdmap kan geen gerechten bevatten, dus die naam weigeren we.
+ * Zoekt de gerechtenmap op naam (hoofdletterongevoelig) of maakt hem als
+ * losse map aan. Een hoofdmap kan geen gerechten bevatten.
  */
 async function ensureRecipeFolder(
   supabase: Awaited<ReturnType<typeof createClient>>,
   groupId: string,
-  name: string,
-  parentFolderId: string | null
+  name: string
 ): Promise<{ name: string } | { error: string }> {
   const { data: folders } = await supabase
     .from("recipe_folders")
@@ -187,18 +199,16 @@ async function ensureRecipeFolder(
   if (existing) {
     if (existing.is_main) {
       return {
-        error: `"${existing.name}" is een hoofdmap in Gerechten en kan geen gerechten bevatten. Kies een andere mapnaam.`,
+        error: `"${existing.name}" is een hoofdmap in Gerechten en kan geen gerechten bevatten. Kies een andere map.`,
       };
     }
     return { name: existing.name };
   }
-
-  const parent = parentFolderId ? all.find((f) => f.id === parentFolderId && f.is_main) : null;
   const { error } = await supabase.from("recipe_folders").insert({
     group_id: groupId,
     name,
     is_main: false,
-    parent_id: parent?.id ?? null,
+    parent_id: null,
     sort_order: all.reduce((max, f) => Math.max(max, f.sort_order ?? 0), 0) + 1,
   });
   if (error) return { error: "Kan map in Gerechten niet aanmaken: " + error.message };

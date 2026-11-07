@@ -117,7 +117,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const names = imported.map((i) => recipeById.get(i.recipe_id)!.name);
-  const { data: matchRows, error: matchError } = await supabase.rpc("match_menu_dishes", {
+  const { data: matchRows, error: matchError } = await supabase.rpc("match_menu_dishes_v2", {
     p_group_id: groupId,
     p_names: names,
     p_created_before: new Date(cardCreated - 60_000).toISOString(),

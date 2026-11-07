@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
   // Eén aanvraag voor alle regels: zoekt bestaande gerechten met een
   // (genormaliseerd) gelijke of sterk gelijkende naam.
-  const { data: matchRows } = await supabase.rpc("match_menu_dishes", {
+  const { data: matchRows } = await supabase.rpc("match_menu_dishes_v2", {
     p_group_id: profile.group_id,
     p_names: dishes.map((d) => d.name),
   });
