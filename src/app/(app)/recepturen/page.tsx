@@ -58,6 +58,7 @@ interface CardPlacement {
 const CARD_FILTER_ALL = "__alle__";
 const CARD_FILTER_ACTIVE = "__actief__";
 const CARD_FILTER_NONE = "__geen__";
+const FILTER_STORAGE_KEY = "gerechten-filters";
 
 export default function RecepturenPage() {
   const { activeCompanyIds, scope, companies, loading: scopeLoading } =
@@ -82,6 +83,36 @@ export default function RecepturenPage() {
   const [cardsByRecipe, setCardsByRecipe] = useState<Map<string, CardPlacement[]>>(new Map());
   const [menuCards, setMenuCards] = useState<CardPlacement[]>([]);
   const [cardFilter, setCardFilter] = useState<string>(CARD_FILTER_ALL);
+
+  // Filters (map, kaart, zoekterm) onthouden zodat je na het bewerken van
+  // een gerecht terugkomt op dezelfde selectie (bv. Winterskaart).
+  const filtersRestoredRef = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(FILTER_STORAGE_KEY) ?? "null");
+      if (saved && typeof saved === "object") {
+        /* eslint-disable react-hooks/set-state-in-effect */
+        if (typeof saved.folder === "string") setActiveFolder(saved.folder);
+        if (typeof saved.card === "string") setCardFilter(saved.card);
+        if (typeof saved.query === "string") setQuery(saved.query);
+        /* eslint-enable react-hooks/set-state-in-effect */
+      }
+    } catch {
+      // geen opslag beschikbaar
+    }
+    filtersRestoredRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!filtersRestoredRef.current) return;
+    try {
+      window.sessionStorage.setItem(
+        FILTER_STORAGE_KEY,
+        JSON.stringify({ folder: activeFolder, card: cardFilter, query })
+      );
+    } catch {
+      // negeren
+    }
+  }, [activeFolder, cardFilter, query]);
 
   useEffect(() => {
     let cancelled = false;
@@ -650,12 +681,14 @@ export default function RecepturenPage() {
           ? searchedRecipes.filter((r) =>
               childrenOf(activeF.id).some((c) => c.name === r.category?.trim())
             )
-          : searchedRecipes.filter((r) => r.category?.trim() === activeF?.name);
+          : activeF
+            ? searchedRecipes.filter((r) => r.category?.trim() === activeF.name)
+            : searchedRecipes;
 
   return (
     <>
       <Topbar title="Recepten (Gerechten)" />
-      <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[260px_1fr] md:p-6">
+      <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[240px_minmax(0,1fr)] md:p-6">
         <div>
           <Card>
             <CardContent className="p-2">
@@ -782,8 +815,8 @@ export default function RecepturenPage() {
         </div>
 
         <div className="min-w-0 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="relative max-w-sm flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <input
               value={query}
@@ -795,7 +828,7 @@ export default function RecepturenPage() {
           <select
             value={cardFilter}
             onChange={(e) => setCardFilter(e.target.value)}
-            className="h-10 rounded-md border border-border bg-surface px-3 text-sm"
+            className="h-10 w-56 rounded-md border border-border bg-surface px-3 text-sm"
             title="Filter op menukaart"
           >
             <option value={CARD_FILTER_ALL}>Alle gerechten</option>
@@ -832,7 +865,7 @@ export default function RecepturenPage() {
               }
             }}
           >
-            {rematchBusy ? "Bezig…" : "Opnieuw zoeken in ingrediënten"}
+            {rematchBusy ? "Bezig…" : "Ingrediënten opnieuw zoeken"}
           </Button>
           {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
           <Link href="/recepten/importeren">
@@ -905,8 +938,8 @@ export default function RecepturenPage() {
             <div className="overflow-x-auto">
 <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="w-8 px-5 py-3">
+                <tr className="whitespace-nowrap text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="w-8 px-3 py-2.5">
                     <input
                       type="checkbox"
                       checked={
@@ -923,19 +956,19 @@ export default function RecepturenPage() {
                     />
                   </th>
                   <th className="w-6 px-1 py-3"></th>
-                  <th className="px-5 py-3 font-medium">Naam</th>
-                  <th className="px-5 py-3 font-medium">Map</th>
-                  <th className="px-5 py-3 font-medium">Op kaart</th>
-                  <th className="px-5 py-3 font-medium">Bereik</th>
+                  <th className="min-w-48 px-3 py-2.5 font-medium">Naam</th>
+                  <th className="px-3 py-2.5 font-medium">Map</th>
+                  <th className="px-3 py-2.5 font-medium">Op kaart</th>
+                  <th className="px-3 py-2.5 font-medium">Bereik</th>
                   {canViewFinancial && (
-                    <th className="px-5 py-3 font-medium">Kostprijs</th>
+                    <th className="px-3 py-2.5 font-medium">Kostprijs</th>
                   )}
-                  <th className="px-5 py-3 font-medium">Verkoopprijs</th>
+                  <th className="px-3 py-2.5 font-medium">Verkoopprijs</th>
                   {canViewFinancial && (
-                    <th className="px-5 py-3 font-medium">Foodcost %</th>
+                    <th className="px-3 py-2.5 font-medium">Foodcost %</th>
                   )}
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium"></th>
+                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  <th className="px-3 py-2.5 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -950,7 +983,7 @@ export default function RecepturenPage() {
                       : null;
                   return (
                     <tr key={r.id} className="border-t border-border">
-                      <td className="px-5 py-3">
+                      <td className="px-3 py-2.5">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(r.id)}
@@ -970,7 +1003,7 @@ export default function RecepturenPage() {
                           <GripVertical className="h-4 w-4" />
                         </span>
                       </td>
-                      <td className="px-5 py-3 font-medium">
+                      <td className="px-3 py-2.5 font-medium">
                         <Link
                           href={withReturnTo(`/recepturen/${r.id}/bewerken`)}
                           className="hover:text-teal hover:underline"
@@ -978,8 +1011,8 @@ export default function RecepturenPage() {
                           {r.name}
                         </Link>
                       </td>
-                      <td className="px-5 py-3 text-muted">{r.category ?? "—"}</td>
-                      <td className="px-5 py-3">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">{r.category ?? "—"}</td>
+                      <td className="px-3 py-2.5">
                         <div className="flex flex-wrap gap-1">
                           {(cardsByRecipe.get(r.id) ?? []).map((c) => (
                             <Link
@@ -1001,11 +1034,11 @@ export default function RecepturenPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-muted">
-                        {r.is_central ? "Centrale standaard" : "Lokale variant"}
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                        {r.is_central ? "Centraal" : "Lokaal"}
                       </td>
                       {canViewFinancial && (
-                        <td className="px-5 py-3 tabular">
+                        <td className="whitespace-nowrap px-3 py-2.5 tabular">
                           {loading
                             ? "…"
                             : r.costPrice !== null
@@ -1013,11 +1046,11 @@ export default function RecepturenPage() {
                             : "—"}
                         </td>
                       )}
-                      <td className="px-5 py-3 tabular">
+                      <td className="whitespace-nowrap px-3 py-2.5 tabular">
                         {r.sales_price ? `€ ${r.sales_price.toFixed(2)}` : "—"}
                       </td>
                       {canViewFinancial && (
-                        <td className="px-5 py-3 tabular">
+                        <td className="whitespace-nowrap px-3 py-2.5 tabular">
                           {foodCostPct !== null ? (
                             <span
                               className={
@@ -1031,10 +1064,10 @@ export default function RecepturenPage() {
                           )}
                         </td>
                       )}
-                      <td className="px-5 py-3">
+                      <td className="px-3 py-2.5">
                         <StatusBadge status={r.status} />
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-3 py-2.5">
                         <button
                           onClick={() => handleDeleteRecipe(r)}
                           title="Recept verwijderen"
