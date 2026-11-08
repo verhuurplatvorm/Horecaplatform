@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { PageActions } from "@/components/layout/page-actions";
 import { RecipeSuggestPanel } from "@/components/recipes/recipe-suggest-panel";
+import { CopyIngredientsPicker } from "@/components/recipes/copy-ingredients-picker";
 import type { RecipeSuggestion } from "@/app/api/recipes/suggest/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
@@ -1333,6 +1334,64 @@ export function RecipeForm({
     if (newRows.length === 1 && results[0] !== "gekoppeld") setSearchUid(newRows[0].uid);
   }
 
+  const [copyOpen, setCopyOpen] = useState(false);
+
+  /** Alle ingrediëntregels van een ander gerecht/halfproduct toevoegen. */
+  async function copyIngredientsFrom(sourceId: string, sourceName: string) {
+    const supabase = createClient();
+    const { data: src, error: srcError } = await supabase
+      .from("recipe_ingredients")
+      .select(
+        "product_id, sub_recipe_id, unmatched_name, unmatched_article_number, quantity, unit_id, loss_percentage, is_optional, note, preparation, sort_order"
+      )
+      .eq("recipe_id", sourceId)
+      .order("sort_order");
+    if (srcError || !src || src.length === 0) {
+      window.alert(`"${sourceName}" heeft geen ingrediënten om te kopiëren.`);
+      return;
+    }
+    const productIds = [...new Set(src.map((r) => r.product_id).filter(Boolean))] as string[];
+    const hpIds = [...new Set(src.map((r) => r.sub_recipe_id).filter(Boolean))] as string[];
+    const [{ data: products }, { data: hps }] = await Promise.all([
+      productIds.length
+        ? supabase.from("products").select("id, name, base_unit_id").in("id", productIds)
+        : Promise.resolve({ data: [] as { id: string; name: string; base_unit_id: string | null }[] }),
+      hpIds.length
+        ? supabase.from("recipes").select("id, name, base_unit_id, yield_quantity").in("id", hpIds)
+        : Promise.resolve({
+            data: [] as { id: string; name: string; base_unit_id: string | null; yield_quantity: number | null }[],
+          }),
+    ]);
+    const pMap = new Map((products ?? []).map((p) => [p.id, p]));
+    const hMap = new Map((hps ?? []).map((h) => [h.id, h]));
+    const copied: IngredientRow[] = src
+      .filter((ri) => ri.sub_recipe_id !== initialRecipe?.id)
+      .map((ri) => {
+        const p = ri.product_id ? pMap.get(ri.product_id) : undefined;
+        const h = ri.sub_recipe_id ? hMap.get(ri.sub_recipe_id) : undefined;
+        return {
+          uid: newRowUid(),
+          type: ri.sub_recipe_id ? "halfproduct" : "ingrediënt",
+          refId: ri.product_id ?? ri.sub_recipe_id,
+          refName: p?.name ?? h?.name ?? null,
+          unmatchedName: ri.unmatched_name,
+          unmatchedArticleNumber: ri.unmatched_article_number,
+          baseUnitId: p?.base_unit_id ?? h?.base_unit_id ?? null,
+          yieldQuantity: h?.yield_quantity ?? null,
+          quantity: String(ri.quantity),
+          unitId: ri.unit_id,
+          lossPercentage: ri.loss_percentage?.toString() ?? "",
+          isOptional: ri.is_optional,
+          note: ri.note ?? "",
+          preparation: ri.preparation ?? "",
+        };
+      });
+    setRows((prev) => [...prev.filter((r) => !isEmptyRow(r)), ...copied]);
+    setCopyOpen(false);
+    for (const id of productIds) await loadProductPrice(id);
+    for (const id of hpIds) await loadHalfproductCost(id);
+  }
+
   /** Receptvoorstel van Claude in het formulier zetten (alleen lege velden aanvullen). */
   async function applySuggestion(sug: RecipeSuggestion) {
     const hasRows = rows.some((r) => !isEmptyRow(r));
@@ -2045,6 +2104,9 @@ export function RecipeForm({
                 {rematching ? "Bezig…" : "Opnieuw zoeken in Ingrediënten"}
               </Button>
             )}
+            <Button type="button" variant="secondary" size="sm" onClick={() => setCopyOpen((v) => !v)}>
+              Kopiëren van…
+            </Button>
             {filledRows.length > 0 && !textEditOpen && (
               <Button type="button" variant="secondary" size="sm" onClick={() => setTextEditOpen(true)}>
                 Als tekst bewerken
@@ -2332,6 +2394,15 @@ export function RecipeForm({
           )}
           {multiplyMessage && <p className="text-xs text-teal">{multiplyMessage}</p>}
 
+          {copyOpen && (
+            <div className="mb-3">
+              <CopyIngredientsPicker
+                currentId={initialRecipe?.id}
+                onPick={copyIngredientsFrom}
+                onClose={() => setCopyOpen(false)}
+              />
+            </div>
+          )}
           {textEditOpen ? (
             <IngredientTextInput
               mode="edit"

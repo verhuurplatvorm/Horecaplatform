@@ -16,6 +16,7 @@ import {
   Search,
   Trash2,
   Upload,
+  Columns3,
 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
@@ -59,10 +60,34 @@ const CARD_FILTER_ALL = "__alle__";
 const CARD_FILTER_ACTIVE = "__actief__";
 const CARD_FILTER_NONE = "__geen__";
 const FILTER_STORAGE_KEY = "gerechten-filters";
+const COLUMNS_STORAGE_KEY = "gerechten-kolommen";
+
+const COLUMN_DEFS = [
+  { key: "map", label: "Map" },
+  { key: "kaart", label: "Op kaart" },
+  { key: "bereik", label: "Bereik" },
+  { key: "kostprijs", label: "Kostprijs", financial: true },
+  { key: "verkoopprijs", label: "Verkoopprijs" },
+  { key: "foodcost", label: "Foodcost %", financial: true },
+  { key: "status", label: "Status" },
+] as const;
+type ColumnKey = (typeof COLUMN_DEFS)[number]["key"];
+const DEFAULT_COLUMNS: ColumnKey[] = [
+  "map",
+  "kaart",
+  "kostprijs",
+  "verkoopprijs",
+  "foodcost",
+  "status",
+];
 
 export default function RecepturenPage() {
-  const { activeCompanyIds, scope, companies, loading: scopeLoading } =
-    useCompanyScope();
+  const {
+    activeCompanyIds,
+    scope,
+    companies,
+    loading: scopeLoading,
+  } = useCompanyScope();
   const { can } = usePermissions();
   const canViewFinancial = can("recepturen").canViewFinancial;
   const [recipes, setRecipes] = useState<RecipeWithCost[]>([]);
@@ -80,16 +105,55 @@ export default function RecepturenPage() {
   const [showArchived, setShowArchived] = useState(false);
   const registeredRef = useRef(false);
   // Op welke menukaart(en) staat elk gerecht? (via menu_items)
-  const [cardsByRecipe, setCardsByRecipe] = useState<Map<string, CardPlacement[]>>(new Map());
+  const [cardsByRecipe, setCardsByRecipe] = useState<
+    Map<string, CardPlacement[]>
+  >(new Map());
   const [menuCards, setMenuCards] = useState<CardPlacement[]>([]);
   const [cardFilter, setCardFilter] = useState<string>(CARD_FILTER_ALL);
+
+  // Zichtbare kolommen (per browser onthouden).
+  const [columns, setColumns] = useState<ColumnKey[]>(DEFAULT_COLUMNS);
+  const columnsRestoredRef = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(COLUMNS_STORAGE_KEY) ?? "null",
+      );
+      if (Array.isArray(saved)) {
+        const valid = saved.filter((k): k is ColumnKey =>
+          COLUMN_DEFS.some((c) => c.key === k),
+        );
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setColumns(valid);
+      }
+    } catch {
+      // geen opslag beschikbaar
+    }
+    columnsRestoredRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!columnsRestoredRef.current) return;
+    try {
+      window.localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(columns));
+    } catch {
+      // negeren
+    }
+  }, [columns]);
+  const show = (key: ColumnKey) => columns.includes(key);
+  function toggleColumn(key: ColumnKey) {
+    setColumns((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }
 
   // Filters (map, kaart, zoekterm) onthouden zodat je na het bewerken van
   // een gerecht terugkomt op dezelfde selectie (bv. Winterskaart).
   const filtersRestoredRef = useRef(false);
   useEffect(() => {
     try {
-      const saved = JSON.parse(window.sessionStorage.getItem(FILTER_STORAGE_KEY) ?? "null");
+      const saved = JSON.parse(
+        window.sessionStorage.getItem(FILTER_STORAGE_KEY) ?? "null",
+      );
       if (saved && typeof saved === "object") {
         /* eslint-disable react-hooks/set-state-in-effect */
         if (typeof saved.folder === "string") setActiveFolder(saved.folder);
@@ -107,7 +171,7 @@ export default function RecepturenPage() {
     try {
       window.sessionStorage.setItem(
         FILTER_STORAGE_KEY,
-        JSON.stringify({ folder: activeFolder, card: cardFilter, query })
+        JSON.stringify({ folder: activeFolder, card: cardFilter, query }),
       );
     } catch {
       // negeren
@@ -119,7 +183,10 @@ export default function RecepturenPage() {
     (async () => {
       const supabase = createClient();
       const [{ data: cards }, { data: menuFolders }] = await Promise.all([
-        supabase.from("menu_cards").select("id, name, status").order("created_at", { ascending: false }),
+        supabase
+          .from("menu_cards")
+          .select("id, name, status")
+          .order("created_at", { ascending: false }),
         supabase.from("menu_folders").select("id, menu_card_id"),
       ]);
       const items: { recipe_id: string; folder_id: string }[] = [];
@@ -134,9 +201,14 @@ export default function RecepturenPage() {
       }
       if (cancelled) return;
       const cardById = new Map(
-        ((cards ?? []) as CardPlacement[]).map((c) => [c.id, { id: c.id, name: c.name, status: String(c.status) }])
+        ((cards ?? []) as CardPlacement[]).map((c) => [
+          c.id,
+          { id: c.id, name: c.name, status: String(c.status) },
+        ]),
       );
-      const cardByFolder = new Map((menuFolders ?? []).map((f) => [f.id, f.menu_card_id]));
+      const cardByFolder = new Map(
+        (menuFolders ?? []).map((f) => [f.id, f.menu_card_id]),
+      );
       const byRecipe = new Map<string, CardPlacement[]>();
       for (const it of items) {
         const card = cardById.get(cardByFolder.get(it.folder_id) ?? "");
@@ -157,7 +229,9 @@ export default function RecepturenPage() {
     const supabase = createClient();
     supabase
       .from("recipe_folders")
-      .select("id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived")
+      .select(
+        "id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived",
+      )
       .order("sort_order")
       .order("name")
       .then(({ data }) => {
@@ -173,7 +247,9 @@ export default function RecepturenPage() {
     registeredRef.current = true;
     const known = new Set(folderRows.map((f) => f.name.toLowerCase()));
     const missing = Array.from(
-      new Set(recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c))
+      new Set(
+        recipes.map((r) => r.category?.trim()).filter((c): c is string => !!c),
+      ),
     ).filter((c) => !known.has(c.toLowerCase()));
     if (missing.length === 0) return;
     (async () => {
@@ -182,8 +258,16 @@ export default function RecepturenPage() {
       if (!groupId) return;
       const { data } = await supabase
         .from("recipe_folders")
-        .insert(missing.map((name, i) => ({ group_id: groupId, name, sort_order: folderRows.length + i })))
-        .select("id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived");
+        .insert(
+          missing.map((name, i) => ({
+            group_id: groupId,
+            name,
+            sort_order: folderRows.length + i,
+          })),
+        )
+        .select(
+          "id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived",
+        );
       if (data) setFolderRows((prev) => [...prev, ...(data as RecipeFolder[])]);
     })();
   }, [foldersLoaded, loading, recipes, folderRows]);
@@ -194,7 +278,7 @@ export default function RecepturenPage() {
   // eerst zichtbare bedrijf als referentie.
   const referenceCompanyId = activeCompanyIds[0] ?? null;
   const referenceCompanyName = companies.find(
-    (c) => c.id === referenceCompanyId
+    (c) => c.id === referenceCompanyId,
   )?.name;
 
   useEffect(() => {
@@ -216,7 +300,7 @@ export default function RecepturenPage() {
         const { data: page, error: pageError } = await supabase
           .from("recipes")
           .select(
-            "id, name, category, status, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit"
+            "id, name, category, status, is_central, company_id, sales_price, vat_rate, portion_size, portion_unit",
           )
           .eq("recipe_kind", "gerecht")
           .order("name")
@@ -251,7 +335,7 @@ export default function RecepturenPage() {
             p_company_id: referenceCompanyId,
           });
           return { ...recipe, costPrice: cost ?? null };
-        })
+        }),
       );
 
       if (!cancelled) {
@@ -276,32 +360,38 @@ export default function RecepturenPage() {
   async function handleDeleteRecipe(recipe: RecipeWithCost) {
     const supabase = createClient();
 
-    const [{ count: onMenus }, { count: usedAsIngredient }, { count: salesLinks }] =
-      await Promise.all([
-        supabase
-          .from("menu_items")
-          .select("id", { count: "exact", head: true })
-          .eq("recipe_id", recipe.id),
-        supabase
-          .from("recipe_ingredients")
-          .select("id", { count: "exact", head: true })
-          .eq("sub_recipe_id", recipe.id),
-        supabase
-          .from("sales_product_components")
-          .select("id", { count: "exact", head: true })
-          .eq("recipe_id", recipe.id),
-      ]);
+    const [
+      { count: onMenus },
+      { count: usedAsIngredient },
+      { count: salesLinks },
+    ] = await Promise.all([
+      supabase
+        .from("menu_items")
+        .select("id", { count: "exact", head: true })
+        .eq("recipe_id", recipe.id),
+      supabase
+        .from("recipe_ingredients")
+        .select("id", { count: "exact", head: true })
+        .eq("sub_recipe_id", recipe.id),
+      supabase
+        .from("sales_product_components")
+        .select("id", { count: "exact", head: true })
+        .eq("recipe_id", recipe.id),
+    ]);
 
     const blockers: string[] = [];
     if (onMenus) blockers.push(`staat op ${onMenus} menukaartregel(s)`);
     if (usedAsIngredient)
-      blockers.push(`wordt als ingrediënt gebruikt in ${usedAsIngredient} ander(e) recept(en)`);
-    if (salesLinks) blockers.push(`heeft ${salesLinks} gekoppeld(e) verkoopproduct(en)`);
+      blockers.push(
+        `wordt als ingrediënt gebruikt in ${usedAsIngredient} ander(e) recept(en)`,
+      );
+    if (salesLinks)
+      blockers.push(`heeft ${salesLinks} gekoppeld(e) verkoopproduct(en)`);
 
     if (blockers.length > 0) {
       window.alert(
         `"${recipe.name}" kan niet verwijderd worden: het recept ${blockers.join(", ")}. ` +
-          `Haal het daar eerst weg en probeer het opnieuw.`
+          `Haal het daar eerst weg en probeer het opnieuw.`,
       );
       return;
     }
@@ -309,7 +399,7 @@ export default function RecepturenPage() {
     const ok = window.confirm(
       `"${recipe.name}" definitief verwijderen?\n\n` +
         `De ingrediëntregels en eventuele productiehistorie van dit recept ` +
-        `worden ook verwijderd. Dit kan niet ongedaan gemaakt worden.`
+        `worden ook verwijderd. Dit kan niet ongedaan gemaakt worden.`,
     );
     if (!ok) return;
 
@@ -339,8 +429,14 @@ export default function RecepturenPage() {
     const [{ data: onMenus }, { data: asIngredient }, { data: salesLinks }] =
       await Promise.all([
         supabase.from("menu_items").select("recipe_id").in("recipe_id", ids),
-        supabase.from("recipe_ingredients").select("sub_recipe_id").in("sub_recipe_id", ids),
-        supabase.from("sales_product_components").select("recipe_id").in("recipe_id", ids),
+        supabase
+          .from("recipe_ingredients")
+          .select("sub_recipe_id")
+          .in("sub_recipe_id", ids),
+        supabase
+          .from("sales_product_components")
+          .select("recipe_id")
+          .in("recipe_id", ids),
       ]);
 
     const blocked = new Map<string, string[]>();
@@ -349,9 +445,11 @@ export default function RecepturenPage() {
       const list = blocked.get(id)!;
       if (!list.includes(reason)) list.push(reason);
     };
-    for (const r of onMenus ?? []) if (r.recipe_id) note(r.recipe_id, "staat op een menukaart");
+    for (const r of onMenus ?? [])
+      if (r.recipe_id) note(r.recipe_id, "staat op een menukaart");
     for (const r of asIngredient ?? [])
-      if (r.sub_recipe_id) note(r.sub_recipe_id, "wordt in een ander recept gebruikt");
+      if (r.sub_recipe_id)
+        note(r.sub_recipe_id, "wordt in een ander recept gebruikt");
     for (const r of salesLinks ?? [])
       if (r.recipe_id) note(r.recipe_id, "heeft een verkoopproduct");
 
@@ -362,7 +460,7 @@ export default function RecepturenPage() {
       setBulkBusy(false);
       window.alert(
         "Geen van de geselecteerde recepten kan verwijderd worden — ze worden allemaal " +
-          "nog ergens gebruikt. Haal ze daar eerst weg."
+          "nog ergens gebruikt. Haal ze daar eerst weg.",
       );
       return;
     }
@@ -374,7 +472,10 @@ export default function RecepturenPage() {
     if (blocked.size > 0) {
       const preview = [...blocked.entries()]
         .slice(0, 8)
-        .map(([id, reasons]) => `• ${nameById.get(id) ?? id} — ${reasons.join(", ")}`)
+        .map(
+          ([id, reasons]) =>
+            `• ${nameById.get(id) ?? id} — ${reasons.join(", ")}`,
+        )
         .join("\n");
       message +=
         `\n\n${blocked.size} recept(en) worden OVERGESLAGEN omdat ze nog in gebruik zijn:\n` +
@@ -400,7 +501,7 @@ export default function RecepturenPage() {
     setSelectedIds(new Set());
     if (blocked.size > 0) {
       window.alert(
-        `${deletable.length} verwijderd. ${blocked.size} overgeslagen omdat ze nog in gebruik zijn.`
+        `${deletable.length} verwijderd. ${blocked.size} overgeslagen omdat ze nog in gebruik zijn.`,
       );
     }
   }
@@ -408,42 +509,66 @@ export default function RecepturenPage() {
   // Gearchiveerd = de map zelf, of een map onder een gearchiveerde hoofdmap.
   const isFolderArchived = (f: RecipeFolder): boolean =>
     Boolean(f.is_archived) ||
-    (!!f.parent_id && Boolean(folderRows.find((m) => m.id === f.parent_id)?.is_archived));
+    (!!f.parent_id &&
+      Boolean(folderRows.find((m) => m.id === f.parent_id)?.is_archived));
   const archivedFolderCount = folderRows.filter((f) => f.is_archived).length;
   const archivedCategoryNames = new Set(
-    folderRows.filter((f) => !f.is_main && isFolderArchived(f)).map((f) => f.name.trim())
+    folderRows
+      .filter((f) => !f.is_main && isFolderArchived(f))
+      .map((f) => f.name.trim()),
   );
-  const visibleFolderRows = showArchived ? folderRows : folderRows.filter((f) => !isFolderArchived(f));
+  const visibleFolderRows = showArchived
+    ? folderRows
+    : folderRows.filter((f) => !isFolderArchived(f));
   const mainFolders = visibleFolderRows.filter((f) => f.is_main);
   const mapFolders = visibleFolderRows.filter((f) => !f.is_main);
-  const childrenOf = (mainId: string) => mapFolders.filter((f) => f.parent_id === mainId);
+  const childrenOf = (mainId: string) =>
+    mapFolders.filter((f) => f.parent_id === mainId);
   const looseFolders = mapFolders.filter(
-    (f) => !f.parent_id || !mainFolders.some((m) => m.id === f.parent_id)
+    (f) => !f.parent_id || !mainFolders.some((m) => m.id === f.parent_id),
   );
 
   async function handleAddFolder(isMain: boolean) {
-    const name = window.prompt(
-      isMain
-        ? "Naam van de nieuwe hoofdmap (bv. Zomers, Kerst, 2 voor 1, Het Strand):"
-        : "Naam van de nieuwe map:"
-    )?.trim();
+    const name = window
+      .prompt(
+        isMain
+          ? "Naam van de nieuwe hoofdmap (bv. Zomers, Kerst, 2 voor 1, Het Strand):"
+          : "Naam van de nieuwe map:",
+      )
+      ?.trim();
     if (!name) return;
     if (folderRows.some((f) => f.name.toLowerCase() === name.toLowerCase())) {
       window.alert("Er bestaat al een map met die naam.");
       return;
     }
     const active = folderRows.find((f) => f.id === activeFolder);
-    const parentId = isMain ? null : active ? (active.is_main ? active.id : active.parent_id) : null;
+    const parentId = isMain
+      ? null
+      : active
+        ? active.is_main
+          ? active.id
+          : active.parent_id
+        : null;
     const supabase = createClient();
     const groupId = await getCurrentGroupId(supabase);
     if (!groupId) return;
     const { data, error: insertError } = await supabase
       .from("recipe_folders")
-      .insert({ group_id: groupId, name, is_main: isMain, parent_id: parentId, sort_order: folderRows.length })
-      .select("id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived")
+      .insert({
+        group_id: groupId,
+        name,
+        is_main: isMain,
+        parent_id: parentId,
+        sort_order: folderRows.length,
+      })
+      .select(
+        "id, group_id, name, parent_id, is_main, sort_order, created_at, is_archived",
+      )
       .single();
     if (insertError || !data) {
-      window.alert("Map aanmaken mislukt: " + (insertError?.message ?? "onbekende fout"));
+      window.alert(
+        "Map aanmaken mislukt: " + (insertError?.message ?? "onbekende fout"),
+      );
       return;
     }
     setFolderRows((prev) => [...prev, data as RecipeFolder]);
@@ -459,7 +584,12 @@ export default function RecepturenPage() {
   async function handleRenameFolder(folder: RecipeFolder) {
     const name = window.prompt("Nieuwe naam:", folder.name)?.trim();
     if (!name || name === folder.name) return;
-    if (folderRows.some((f) => f.id !== folder.id && f.name.toLowerCase() === name.toLowerCase())) {
+    if (
+      folderRows.some(
+        (f) =>
+          f.id !== folder.id && f.name.toLowerCase() === name.toLowerCase(),
+      )
+    ) {
       window.alert("Er bestaat al een map met die naam.");
       return;
     }
@@ -483,10 +613,14 @@ export default function RecepturenPage() {
         return;
       }
       setRecipes((prev) =>
-        prev.map((r) => (r.category?.trim() === folder.name ? { ...r, category: name } : r))
+        prev.map((r) =>
+          r.category?.trim() === folder.name ? { ...r, category: name } : r,
+        ),
       );
     }
-    setFolderRows((prev) => prev.map((f) => (f.id === folder.id ? { ...f, name } : f)));
+    setFolderRows((prev) =>
+      prev.map((f) => (f.id === folder.id ? { ...f, name } : f)),
+    );
   }
 
   /**
@@ -498,19 +632,36 @@ export default function RecepturenPage() {
     const supabase = createClient();
     if (folder.is_main) {
       const n = childrenOf(folder.id).length;
-      if (!window.confirm(`Hoofdmap "${folder.name}" verwijderen?\n\nDe ${n} map(pen) erin blijven bestaan als losse map.`))
+      if (
+        !window.confirm(
+          `Hoofdmap "${folder.name}" verwijderen?\n\nDe ${n} map(pen) erin blijven bestaan als losse map.`,
+        )
+      )
         return;
-      const { error: delError } = await supabase.from("recipe_folders").delete().eq("id", folder.id);
+      const { error: delError } = await supabase
+        .from("recipe_folders")
+        .delete()
+        .eq("id", folder.id);
       if (delError) {
         window.alert("Verwijderen mislukt: " + delError.message);
         return;
       }
       setFolderRows((prev) =>
-        prev.filter((f) => f.id !== folder.id).map((f) => (f.parent_id === folder.id ? { ...f, parent_id: null } : f))
+        prev
+          .filter((f) => f.id !== folder.id)
+          .map((f) =>
+            f.parent_id === folder.id ? { ...f, parent_id: null } : f,
+          ),
       );
     } else {
-      const count = recipes.filter((r) => r.category?.trim() === folder.name).length;
-      if (!window.confirm(`Map "${folder.name}" verwijderen?\n\nDe ${count} recept(en) in deze map worden NIET verwijderd — ze verhuizen naar "Zonder map".`))
+      const count = recipes.filter(
+        (r) => r.category?.trim() === folder.name,
+      ).length;
+      if (
+        !window.confirm(
+          `Map "${folder.name}" verwijderen?\n\nDe ${count} recept(en) in deze map worden NIET verwijderd — ze verhuizen naar "Zonder map".`,
+        )
+      )
         return;
       const { error: updateError } = await supabase
         .from("recipes")
@@ -523,7 +674,9 @@ export default function RecepturenPage() {
       }
       await supabase.from("recipe_folders").delete().eq("id", folder.id);
       setRecipes((prev) =>
-        prev.map((r) => (r.category?.trim() === folder.name ? { ...r, category: null } : r))
+        prev.map((r) =>
+          r.category?.trim() === folder.name ? { ...r, category: null } : r,
+        ),
       );
       setFolderRows((prev) => prev.filter((f) => f.id !== folder.id));
     }
@@ -534,7 +687,7 @@ export default function RecepturenPage() {
     if (
       archive &&
       !window.confirm(
-        `Map "${folder.name}" archiveren?\n\nDe map${folder.is_main ? " en alle mappen eronder" : ""} en de gerechten erin verdwijnen uit het overzicht. Er wordt niets verwijderd; terughalen kan via "Toon gearchiveerd".`
+        `Map "${folder.name}" archiveren?\n\nDe map${folder.is_main ? " en alle mappen eronder" : ""} en de gerechten erin verdwijnen uit het overzicht. Er wordt niets verwijderd; terughalen kan via "Toon gearchiveerd".`,
       )
     )
       return;
@@ -547,7 +700,11 @@ export default function RecepturenPage() {
       window.alert("Archiveren mislukt: " + archError.message);
       return;
     }
-    setFolderRows((prev) => prev.map((f) => (f.id === folder.id ? { ...f, is_archived: archive } : f)));
+    setFolderRows((prev) =>
+      prev.map((f) =>
+        f.id === folder.id ? { ...f, is_archived: archive } : f,
+      ),
+    );
     if (archive && !showArchived) setActiveFolder("__alle__");
   }
 
@@ -563,7 +720,9 @@ export default function RecepturenPage() {
       window.alert("Verplaatsen mislukt: " + moveError.message);
       return;
     }
-    setFolderRows((prev) => prev.map((f) => (f.id === folderId ? { ...f, parent_id: mainId } : f)));
+    setFolderRows((prev) =>
+      prev.map((f) => (f.id === folderId ? { ...f, parent_id: mainId } : f)),
+    );
     if (mainId)
       setCollapsed((prev) => {
         const next = new Set(prev);
@@ -572,7 +731,10 @@ export default function RecepturenPage() {
       });
   }
 
-  async function moveRecipeToCategory(recipeId: string, category: string | null) {
+  async function moveRecipeToCategory(
+    recipeId: string,
+    category: string | null,
+  ) {
     const row = recipes.find((r) => r.id === recipeId);
     if (!row || (row.category?.trim() || null) === category) return;
     const supabase = createClient();
@@ -584,7 +746,9 @@ export default function RecepturenPage() {
       window.alert("Verplaatsen mislukt: " + moveError.message);
       return;
     }
-    setRecipes((prev) => prev.map((r) => (r.id === recipeId ? { ...r, category } : r)));
+    setRecipes((prev) =>
+      prev.map((r) => (r.id === recipeId ? { ...r, category } : r)),
+    );
   }
 
   // Bulkacties: meerdere recepten tegelijk naar een map verplaatsen of
@@ -604,7 +768,9 @@ export default function RecepturenPage() {
       return;
     }
     setRecipes((prev) =>
-      prev.map((r) => (ids.includes(r.id) ? { ...r, category: targetCategory } : r))
+      prev.map((r) =>
+        ids.includes(r.id) ? { ...r, category: targetCategory } : r,
+      ),
     );
     setSelectedIds(new Set());
   }
@@ -612,7 +778,7 @@ export default function RecepturenPage() {
   async function bulkArchive() {
     if (selectedIds.size === 0) return;
     const ok = window.confirm(
-      `${selectedIds.size} recept(en) archiveren? Ze blijven bewaard, maar krijgen status "vervallen".`
+      `${selectedIds.size} recept(en) archiveren? Ze blijven bewaard, maar krijgen status "vervallen".`,
     );
     if (!ok) return;
     setBulkBusy(true);
@@ -628,7 +794,7 @@ export default function RecepturenPage() {
       return;
     }
     setRecipes((prev) =>
-      prev.map((r) => (ids.includes(r.id) ? { ...r, status: "vervallen" } : r))
+      prev.map((r) => (ids.includes(r.id) ? { ...r, status: "vervallen" } : r)),
     );
     setSelectedIds(new Set());
   }
@@ -646,31 +812,42 @@ export default function RecepturenPage() {
   // Gerechten in gearchiveerde mappen tellen niet mee, tenzij je ze toont.
   const baseRecipes = showArchived
     ? recipes
-    : recipes.filter((r) => !archivedCategoryNames.has(r.category?.trim() ?? ""));
+    : recipes.filter(
+        (r) => !archivedCategoryNames.has(r.category?.trim() ?? ""),
+      );
   const cardMatches = (r: RecipeListItem) => {
     if (cardFilter === CARD_FILTER_ALL) return true;
     const cards = cardsByRecipe.get(r.id) ?? [];
     if (cardFilter === CARD_FILTER_NONE) return cards.length === 0;
-    if (cardFilter === CARD_FILTER_ACTIVE) return cards.some((c) => c.status === "actief");
+    if (cardFilter === CARD_FILTER_ACTIVE)
+      return cards.some((c) => c.status === "actief");
     return cards.some((c) => c.id === cardFilter);
   };
   const searchedRecipes = baseRecipes.filter(
     (r) =>
       cardMatches(r) &&
       (!q ||
-        [r.name, r.category, r.status, ...(cardsByRecipe.get(r.id) ?? []).map((c) => c.name)]
+        [
+          r.name,
+          r.category,
+          r.status,
+          ...(cardsByRecipe.get(r.id) ?? []).map((c) => c.name),
+        ]
           .filter(Boolean)
-          .some((field) => field!.toLowerCase().includes(q)))
+          .some((field) => field!.toLowerCase().includes(q))),
   );
 
   // Mappen: elk gerecht staat in één map (category). Mappen kunnen onder
   // een hoofdmap hangen; "Zonder map" zijn gerechten zonder categorie.
-  const folders = Array.from(new Set(mapFolders.map((f) => f.name))).sort((a, b) =>
-    a.localeCompare(b, "nl")
+  const folders = Array.from(new Set(mapFolders.map((f) => f.name))).sort(
+    (a, b) => a.localeCompare(b, "nl"),
   );
   const countIn = (names: string[]) =>
-    searchedRecipes.filter((r) => names.includes(r.category?.trim() ?? "")).length;
-  const unfiledCount = searchedRecipes.filter((r) => !r.category?.trim()).length;
+    searchedRecipes.filter((r) => names.includes(r.category?.trim() ?? ""))
+      .length;
+  const unfiledCount = searchedRecipes.filter(
+    (r) => !r.category?.trim(),
+  ).length;
   const activeF = folderRows.find((f) => f.id === activeFolder);
   const filteredRecipes =
     activeFolder === "__alle__"
@@ -679,7 +856,7 @@ export default function RecepturenPage() {
         ? searchedRecipes.filter((r) => !r.category?.trim())
         : activeF?.is_main
           ? searchedRecipes.filter((r) =>
-              childrenOf(activeF.id).some((c) => c.name === r.category?.trim())
+              childrenOf(activeF.id).some((c) => c.name === r.category?.trim()),
             )
           : activeF
             ? searchedRecipes.filter((r) => r.category?.trim() === activeF.name)
@@ -693,12 +870,20 @@ export default function RecepturenPage() {
           <Card>
             <CardContent className="p-2">
               <div className="mb-2 flex items-center justify-between px-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted">Mappen</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                  Mappen
+                </p>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => handleAddFolder(true)} title="Nieuwe hoofdmap">
+                  <button
+                    onClick={() => handleAddFolder(true)}
+                    title="Nieuwe hoofdmap"
+                  >
                     <Folders className="h-4 w-4 text-muted hover:text-teal" />
                   </button>
-                  <button onClick={() => handleAddFolder(false)} title="Nieuwe map">
+                  <button
+                    onClick={() => handleAddFolder(false)}
+                    title="Nieuwe map"
+                  >
                     <FolderPlus className="h-4 w-4 text-muted hover:text-teal" />
                   </button>
                 </div>
@@ -732,7 +917,9 @@ export default function RecepturenPage() {
                       onRename={() => handleRenameFolder(main)}
                       onDelete={() => handleDeleteFolder(main)}
                       archived={Boolean(main.is_archived)}
-                      onArchive={() => handleArchiveFolder(main, !main.is_archived)}
+                      onArchive={() =>
+                        handleArchiveFolder(main, !main.is_archived)
+                      }
                       onDropFolder={(fid) => moveFolderToMain(fid, main.id)}
                     />
                     {isOpen &&
@@ -748,14 +935,20 @@ export default function RecepturenPage() {
                           onDelete={() => handleDeleteFolder(k)}
                           archived={isFolderArchived(k)}
                           onArchive={
-                            main.is_archived ? undefined : () => handleArchiveFolder(k, !k.is_archived)
+                            main.is_archived
+                              ? undefined
+                              : () => handleArchiveFolder(k, !k.is_archived)
                           }
                           dragFolderId={k.id}
-                          onDropRecipe={(rid) => moveRecipeToCategory(rid, k.name)}
+                          onDropRecipe={(rid) =>
+                            moveRecipeToCategory(rid, k.name)
+                          }
                         />
                       ))}
                     {isOpen && kids.length === 0 && (
-                      <p className="py-1 pl-8 text-xs text-muted">Sleep hier mappen naartoe</p>
+                      <p className="py-1 pl-8 text-xs text-muted">
+                        Sleep hier mappen naartoe
+                      </p>
                     )}
                   </div>
                 );
@@ -763,7 +956,8 @@ export default function RecepturenPage() {
               <p
                 className="mt-2 px-2 pt-2 text-xs font-medium uppercase tracking-wide text-muted"
                 onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes(FOLDER_DRAG)) e.preventDefault();
+                  if (e.dataTransfer.types.includes(FOLDER_DRAG))
+                    e.preventDefault();
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -808,302 +1002,375 @@ export default function RecepturenPage() {
                 </label>
               )}
               <p className="px-2 pt-3 text-xs text-muted">
-                Sleep een map op een hoofdmap om hem erin te zetten. Sleep een gerecht (greep links in de rij) op een map om te verplaatsen.
+                Sleep een map op een hoofdmap om hem erin te zetten. Sleep een
+                gerecht (greep links in de rij) op een map om te verplaatsen.
               </p>
             </CardContent>
           </Card>
         </div>
 
         <div className="min-w-0 space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-48 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Zoek op naam, map, kaart of status…"
-              className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
-            />
-          </div>
-          <select
-            value={cardFilter}
-            onChange={(e) => setCardFilter(e.target.value)}
-            className="h-10 w-56 rounded-md border border-border bg-surface px-3 text-sm"
-            title="Filter op menukaart"
-          >
-            <option value={CARD_FILTER_ALL}>Alle gerechten</option>
-            <option value={CARD_FILTER_ACTIVE}>Op een actieve kaart</option>
-            <option value={CARD_FILTER_NONE}>Op geen enkele kaart</option>
-            {menuCards.map((c) => (
-              <option key={c.id} value={c.id}>
-                Op kaart: {c.name}
-                {c.status !== "actief" ? ` (${c.status})` : ""}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="secondary"
-            disabled={rematchBusy}
-            onClick={async () => {
-              setRematchBusy(true);
-              setRematchMessage(null);
-              try {
-                const res = await fetch("/api/recipe-import/rematch-all", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ recipeKind: "gerecht" }),
-                });
-                const body = await res.json();
-                if (!res.ok) throw new Error(body.error ?? "Mislukt.");
-                setRematchMessage(
-                  `${body.linked} ingrediënt(en) gekoppeld in ${body.recipesUpdated} gerecht(en); ${body.stillOpen} nog zonder zekere match.`
-                );
-              } catch (err) {
-                setRematchMessage(err instanceof Error ? err.message : "Opnieuw zoeken mislukt.");
-              } finally {
-                setRematchBusy(false);
-              }
-            }}
-          >
-            {rematchBusy ? "Bezig…" : "Ingrediënten opnieuw zoeken"}
-          </Button>
-          {rematchMessage && <span className="text-xs text-muted">{rematchMessage}</span>}
-          <Link href="/recepten/importeren">
-            <Button variant="secondary">
-              <Upload className="h-4 w-4" />
-              Importeren (Excel)
-            </Button>
-          </Link>
-          <Link href="/recepturen/nieuw">
-            <Button>
-              <Plus className="h-4 w-4" />
-              Nieuw gerecht
-            </Button>
-          </Link>
-        </div>
-
-        {selectedIds.size > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-md border border-teal bg-teal/5 px-3 py-2 text-sm">
-            <span className="font-medium text-foreground">
-              {selectedIds.size} geselecteerd
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-48 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Zoek op naam, map, kaart of status…"
+                className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
+              />
+            </div>
             <select
-              disabled={bulkBusy}
-              defaultValue=""
-              onChange={(e) => {
-                if (e.target.value)
-                  bulkMoveToFolder(e.target.value === "__zonder__" ? null : e.target.value);
-                e.target.value = "";
-              }}
-              className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+              value={cardFilter}
+              onChange={(e) => setCardFilter(e.target.value)}
+              className="h-10 w-56 rounded-md border border-border bg-surface px-3 text-sm"
+              title="Filter op menukaart"
             >
-              <option value="" disabled>
-                Verplaats naar map…
-              </option>
-              <option value="__zonder__">Zonder map</option>
-              {folders.map((f) => (
-                <option key={f} value={f}>
-                  {f}
+              <option value={CARD_FILTER_ALL}>Alle gerechten</option>
+              <option value={CARD_FILTER_ACTIVE}>Op een actieve kaart</option>
+              <option value={CARD_FILTER_NONE}>Op geen enkele kaart</option>
+              {menuCards.map((c) => (
+                <option key={c.id} value={c.id}>
+                  Op kaart: {c.name}
+                  {c.status !== "actief" ? ` (${c.status})` : ""}
                 </option>
               ))}
             </select>
-            <button
-              disabled={bulkBusy}
-              onClick={bulkArchive}
-              className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-background"
-            >
-              Archiveren
-            </button>
-            <button
-              disabled={bulkBusy}
-              onClick={bulkDelete}
-              title="Definitief verwijderen — recepten die nog ergens gebruikt worden, worden overgeslagen"
-              className="flex items-center gap-1 rounded-md border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
-            >
-              <Trash2 className="h-3 w-3" />
-              Verwijderen
-            </button>
-            <button
-              disabled={bulkBusy}
-              onClick={() => setSelectedIds(new Set())}
-              className="ml-auto text-xs text-muted hover:text-foreground"
-            >
-              Selectie opheffen
-            </button>
-          </div>
-        )}
-
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-<table className="w-full text-sm">
-              <thead>
-                <tr className="whitespace-nowrap text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="w-8 px-3 py-2.5">
+            <details className="relative">
+              <summary className="flex h-10 cursor-pointer list-none items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-sm hover:border-teal">
+                <Columns3 className="h-4 w-4" />
+                Kolommen
+              </summary>
+              <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-surface p-2 shadow-lg">
+                {COLUMN_DEFS.filter(
+                  (c) => !("financial" in c && c.financial) || canViewFinancial,
+                ).map((c) => (
+                  <label
+                    key={c.key}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-teal/5"
+                  >
                     <input
                       type="checkbox"
-                      checked={
-                        filteredRecipes.length > 0 &&
-                        filteredRecipes.every((r) => selectedIds.has(r.id))
-                      }
-                      onChange={(e) =>
-                        setSelectedIds(
-                          e.target.checked
-                            ? new Set(filteredRecipes.map((r) => r.id))
-                            : new Set()
-                        )
-                      }
+                      checked={show(c.key)}
+                      onChange={() => toggleColumn(c.key)}
                     />
-                  </th>
-                  <th className="w-6 px-1 py-3"></th>
-                  <th className="min-w-48 px-3 py-2.5 font-medium">Naam</th>
-                  <th className="px-3 py-2.5 font-medium">Map</th>
-                  <th className="px-3 py-2.5 font-medium">Op kaart</th>
-                  <th className="px-3 py-2.5 font-medium">Bereik</th>
-                  {canViewFinancial && (
-                    <th className="px-3 py-2.5 font-medium">Kostprijs</th>
-                  )}
-                  <th className="px-3 py-2.5 font-medium">Verkoopprijs</th>
-                  {canViewFinancial && (
-                    <th className="px-3 py-2.5 font-medium">Foodcost %</th>
-                  )}
-                  <th className="px-3 py-2.5 font-medium">Status</th>
-                  <th className="px-3 py-2.5 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecipes.map((r) => {
-                  const priceExclVat =
-                    r.sales_price && r.vat_rate !== null
-                      ? r.sales_price / (1 + r.vat_rate / 100)
-                      : r.sales_price;
-                  const foodCostPct =
-                    r.costPrice !== null && priceExclVat
-                      ? (r.costPrice / priceExclVat) * 100
-                      : null;
-                  return (
-                    <tr key={r.id} className="border-t border-border">
-                      <td className="px-3 py-2.5">
+                    {c.label}
+                  </label>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setColumns(DEFAULT_COLUMNS)}
+                  className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-muted hover:text-teal"
+                >
+                  Standaard herstellen
+                </button>
+              </div>
+            </details>
+            <Button
+              variant="secondary"
+              disabled={rematchBusy}
+              onClick={async () => {
+                setRematchBusy(true);
+                setRematchMessage(null);
+                try {
+                  const res = await fetch("/api/recipe-import/rematch-all", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ recipeKind: "gerecht" }),
+                  });
+                  const body = await res.json();
+                  if (!res.ok) throw new Error(body.error ?? "Mislukt.");
+                  setRematchMessage(
+                    `${body.linked} ingrediënt(en) gekoppeld in ${body.recipesUpdated} gerecht(en); ${body.stillOpen} nog zonder zekere match.`,
+                  );
+                } catch (err) {
+                  setRematchMessage(
+                    err instanceof Error
+                      ? err.message
+                      : "Opnieuw zoeken mislukt.",
+                  );
+                } finally {
+                  setRematchBusy(false);
+                }
+              }}
+            >
+              {rematchBusy ? "Bezig…" : "Ingrediënten opnieuw zoeken"}
+            </Button>
+            {rematchMessage && (
+              <span className="text-xs text-muted">{rematchMessage}</span>
+            )}
+            <Link href="/recepten/importeren">
+              <Button variant="secondary">
+                <Upload className="h-4 w-4" />
+                Importeren (Excel)
+              </Button>
+            </Link>
+            <Link href="/recepturen/nieuw">
+              <Button>
+                <Plus className="h-4 w-4" />
+                Nieuw gerecht
+              </Button>
+            </Link>
+          </div>
+
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-teal bg-teal/5 px-3 py-2 text-sm">
+              <span className="font-medium text-foreground">
+                {selectedIds.size} geselecteerd
+              </span>
+              <select
+                disabled={bulkBusy}
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value)
+                    bulkMoveToFolder(
+                      e.target.value === "__zonder__" ? null : e.target.value,
+                    );
+                  e.target.value = "";
+                }}
+                className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+              >
+                <option value="" disabled>
+                  Verplaats naar map…
+                </option>
+                <option value="__zonder__">Zonder map</option>
+                {folders.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={bulkBusy}
+                onClick={bulkArchive}
+                className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-background"
+              >
+                Archiveren
+              </button>
+              <button
+                disabled={bulkBusy}
+                onClick={bulkDelete}
+                title="Definitief verwijderen — recepten die nog ergens gebruikt worden, worden overgeslagen"
+                className="flex items-center gap-1 rounded-md border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
+              >
+                <Trash2 className="h-3 w-3" />
+                Verwijderen
+              </button>
+              <button
+                disabled={bulkBusy}
+                onClick={() => setSelectedIds(new Set())}
+                className="ml-auto text-xs text-muted hover:text-foreground"
+              >
+                Selectie opheffen
+              </button>
+            </div>
+          )}
+
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="whitespace-nowrap text-left text-xs uppercase tracking-wide text-muted">
+                      <th className="w-8 px-3 py-2.5">
                         <input
                           type="checkbox"
-                          checked={selectedIds.has(r.id)}
-                          onChange={() => toggleSelect(r.id)}
+                          checked={
+                            filteredRecipes.length > 0 &&
+                            filteredRecipes.every((r) => selectedIds.has(r.id))
+                          }
+                          onChange={(e) =>
+                            setSelectedIds(
+                              e.target.checked
+                                ? new Set(filteredRecipes.map((r) => r.id))
+                                : new Set(),
+                            )
+                          }
                         />
-                      </td>
-                      <td className="px-1 py-3">
-                        <span
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData(RECIPE_DRAG, r.id);
-                            e.dataTransfer.effectAllowed = "move";
-                          }}
-                          title="Sleep naar een map links om te verplaatsen"
-                          className="flex cursor-grab items-center justify-center text-muted hover:text-teal active:cursor-grabbing"
-                        >
-                          <GripVertical className="h-4 w-4" />
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 font-medium">
-                        <Link
-                          href={withReturnTo(`/recepturen/${r.id}/bewerken`)}
-                          className="hover:text-teal hover:underline"
-                        >
-                          {r.name}
-                        </Link>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">{r.category ?? "—"}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex flex-wrap gap-1">
-                          {(cardsByRecipe.get(r.id) ?? []).map((c) => (
-                            <Link
-                              key={c.id}
-                              href={`/menukaarten/${c.id}`}
-                              title={`Menukaart (${c.status})`}
-                              className={cn(
-                                "whitespace-nowrap rounded-full border px-2 py-0.5 text-xs",
-                                c.status === "actief"
-                                  ? "border-teal/40 bg-teal/10 text-teal"
-                                  : "border-border text-muted"
-                              )}
-                            >
-                              {c.name}
-                            </Link>
-                          ))}
-                          {(cardsByRecipe.get(r.id) ?? []).length === 0 && (
-                            <span className="text-xs text-muted">—</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                        {r.is_central ? "Centraal" : "Lokaal"}
-                      </td>
-                      {canViewFinancial && (
-                        <td className="whitespace-nowrap px-3 py-2.5 tabular">
-                          {loading
-                            ? "…"
-                            : r.costPrice !== null
-                            ? `€ ${r.costPrice.toFixed(2)}`
-                            : "—"}
-                        </td>
+                      </th>
+                      <th className="w-6 px-1 py-3"></th>
+                      <th className="min-w-48 px-3 py-2.5 font-medium">Naam</th>
+                      {show("map") && (
+                        <th className="px-3 py-2.5 font-medium">Map</th>
                       )}
-                      <td className="whitespace-nowrap px-3 py-2.5 tabular">
-                        {r.sales_price ? `€ ${r.sales_price.toFixed(2)}` : "—"}
-                      </td>
-                      {canViewFinancial && (
-                        <td className="whitespace-nowrap px-3 py-2.5 tabular">
-                          {foodCostPct !== null ? (
-                            <span
-                              className={
-                                foodCostPct > 33 ? "text-danger" : "text-success"
-                              }
-                            >
-                              {foodCostPct.toFixed(1)}%
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
+                      {show("kaart") && (
+                        <th className="px-3 py-2.5 font-medium">Op kaart</th>
                       )}
-                      <td className="px-3 py-2.5">
-                        <StatusBadge status={r.status} />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <button
-                          onClick={() => handleDeleteRecipe(r)}
-                          title="Recept verwijderen"
-                          className="text-muted hover:text-danger"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
+                      {show("bereik") && (
+                        <th className="px-3 py-2.5 font-medium">Bereik</th>
+                      )}
+                      {canViewFinancial && show("kostprijs") && (
+                        <th className="px-3 py-2.5 font-medium">Kostprijs</th>
+                      )}
+                      {show("verkoopprijs") && (
+                        <th className="px-3 py-2.5 font-medium">
+                          Verkoopprijs
+                        </th>
+                      )}
+                      {canViewFinancial && show("foodcost") && (
+                        <th className="px-3 py-2.5 font-medium">Foodcost %</th>
+                      )}
+                      {show("status") && (
+                        <th className="px-3 py-2.5 font-medium">Status</th>
+                      )}
+                      <th className="px-3 py-2.5 font-medium"></th>
                     </tr>
-                  );
-                })}
-                {filteredRecipes.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={canViewFinancial ? 11 : 9} className="px-5 py-6 text-center text-muted">
-                      {error
-                        ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
-                        : q
-                        ? "Geen gerechten gevonden voor deze zoekopdracht."
-                        : "Nog geen gerechten vastgelegd."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-</div>
-          </CardContent>
-        </Card>
-        <p className="mt-3 text-xs text-muted">
-          {referenceCompanyId
-            ? `Kostprijzen zijn live berekend voor ${
-                scope.mode === "group"
-                  ? `${referenceCompanyName} (eerste bedrijf in groepsweergave)`
-                  : referenceCompanyName
-              }, op basis van de actuele inkoopprijzen. Halfproducten beheer je nu apart onder "Halfproducten".`
-            : "Selecteer een bedrijf via de bedrijfsselector rechtsboven om actuele kostprijzen te zien."}
-        </p>
+                  </thead>
+                  <tbody>
+                    {filteredRecipes.map((r) => {
+                      const priceExclVat =
+                        r.sales_price && r.vat_rate !== null
+                          ? r.sales_price / (1 + r.vat_rate / 100)
+                          : r.sales_price;
+                      const foodCostPct =
+                        r.costPrice !== null && priceExclVat
+                          ? (r.costPrice / priceExclVat) * 100
+                          : null;
+                      return (
+                        <tr key={r.id} className="border-t border-border">
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(r.id)}
+                              onChange={() => toggleSelect(r.id)}
+                            />
+                          </td>
+                          <td className="px-1 py-3">
+                            <span
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(RECIPE_DRAG, r.id);
+                                e.dataTransfer.effectAllowed = "move";
+                              }}
+                              title="Sleep naar een map links om te verplaatsen"
+                              className="flex cursor-grab items-center justify-center text-muted hover:text-teal active:cursor-grabbing"
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 font-medium">
+                            <Link
+                              href={withReturnTo(
+                                `/recepturen/${r.id}/bewerken`,
+                              )}
+                              className="hover:text-teal hover:underline"
+                            >
+                              {r.name}
+                            </Link>
+                          </td>
+                          {show("map") && (
+                            <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                              {r.category ?? "—"}
+                            </td>
+                          )}
+                          {show("kaart") && (
+                            <td className="px-3 py-2.5">
+                              <div className="flex max-w-xs flex-wrap gap-1">
+                                {(cardsByRecipe.get(r.id) ?? []).map((c) => (
+                                  <Link
+                                    key={c.id}
+                                    href={`/menukaarten/${c.id}`}
+                                    title={`${c.name} (${c.status})`}
+                                    className={cn(
+                                      "max-w-[14rem] truncate whitespace-nowrap rounded-full border px-2 py-0.5 text-xs",
+                                      c.status === "actief"
+                                        ? "border-teal/40 bg-teal/10 text-teal"
+                                        : "border-border text-muted",
+                                    )}
+                                  >
+                                    {c.name}
+                                  </Link>
+                                ))}
+                                {(cardsByRecipe.get(r.id) ?? []).length ===
+                                  0 && (
+                                  <span className="text-xs text-muted">—</span>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                          {show("bereik") && (
+                            <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                              {r.is_central ? "Centraal" : "Lokaal"}
+                            </td>
+                          )}
+                          {canViewFinancial && show("kostprijs") && (
+                            <td className="whitespace-nowrap px-3 py-2.5 tabular">
+                              {loading
+                                ? "…"
+                                : r.costPrice !== null
+                                  ? `€ ${r.costPrice.toFixed(2)}`
+                                  : "—"}
+                            </td>
+                          )}
+                          {show("verkoopprijs") && (
+                            <td className="whitespace-nowrap px-3 py-2.5 tabular">
+                              {r.sales_price
+                                ? `€ ${r.sales_price.toFixed(2)}`
+                                : "—"}
+                            </td>
+                          )}
+                          {canViewFinancial && show("foodcost") && (
+                            <td className="whitespace-nowrap px-3 py-2.5 tabular">
+                              {foodCostPct !== null ? (
+                                <span
+                                  className={
+                                    foodCostPct > 33
+                                      ? "text-danger"
+                                      : "text-success"
+                                  }
+                                >
+                                  {foodCostPct.toFixed(1)}%
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          )}
+                          {show("status") && (
+                            <td className="px-3 py-2.5">
+                              <StatusBadge status={r.status} />
+                            </td>
+                          )}
+                          <td className="px-3 py-2.5">
+                            <button
+                              onClick={() => handleDeleteRecipe(r)}
+                              title="Recept verwijderen"
+                              className="text-muted hover:text-danger"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredRecipes.length === 0 && !loading && (
+                      <tr>
+                        <td
+                          colSpan={4 + columns.length}
+                          className="px-5 py-6 text-center text-muted"
+                        >
+                          {error
+                            ? "Kan gerechten niet laden — controleer de Supabase-koppeling."
+                            : q
+                              ? "Geen gerechten gevonden voor deze zoekopdracht."
+                              : "Nog geen gerechten vastgelegd."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+          <p className="mt-3 text-xs text-muted">
+            {referenceCompanyId
+              ? `Kostprijzen zijn live berekend voor ${
+                  scope.mode === "group"
+                    ? `${referenceCompanyName} (eerste bedrijf in groepsweergave)`
+                    : referenceCompanyName
+                }, op basis van de actuele inkoopprijzen. Halfproducten beheer je nu apart onder "Halfproducten".`
+              : "Selecteer een bedrijf via de bedrijfsselector rechtsboven om actuele kostprijzen te zien."}
+          </p>
         </div>
       </main>
     </>
@@ -1122,7 +1389,9 @@ function StatusBadge({ status }: { status: string }) {
     vervallen: "gearchiveerd",
   };
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs ${styles[status] ?? styles.concept}`}>
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs ${styles[status] ?? styles.concept}`}
+    >
       {labels[status] ?? status}
     </span>
   );
@@ -1178,7 +1447,7 @@ function TreeRow({
         bold && "font-medium",
         selected && "bg-teal/10 text-teal",
         dragOver && "bg-teal/25 outline outline-2 outline-teal",
-        archived && "opacity-60"
+        archived && "opacity-60",
       )}
       onDragOver={(e) => {
         if (accepts(e.dataTransfer.types)) {
@@ -1200,7 +1469,10 @@ function TreeRow({
       }}
     >
       {toggle && (
-        <button onClick={toggle.onToggle} title={toggle.open ? "Inklappen" : "Uitklappen"}>
+        <button
+          onClick={toggle.onToggle}
+          title={toggle.open ? "Inklappen" : "Uitklappen"}
+        >
           {toggle.open ? (
             <ChevronDown className="h-4 w-4 text-muted" />
           ) : (
@@ -1210,13 +1482,20 @@ function TreeRow({
       )}
       <button onClick={onSelect} className="flex-1 truncate text-left">
         {label}
-        {count !== undefined && <span className="ml-1 text-xs text-muted">({count})</span>}
-        {archived && <span className="ml-1 text-xs italic text-muted">gearchiveerd</span>}
+        {count !== undefined && (
+          <span className="ml-1 text-xs text-muted">({count})</span>
+        )}
+        {archived && (
+          <span className="ml-1 text-xs italic text-muted">gearchiveerd</span>
+        )}
       </button>
       {(onRename || onDelete || onArchive) && (
         <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
           {onArchive && (
-            <button onClick={onArchive} title={archived ? "Terugzetten uit archief" : "Archiveren"}>
+            <button
+              onClick={onArchive}
+              title={archived ? "Terugzetten uit archief" : "Archiveren"}
+            >
               {archived ? (
                 <ArchiveRestore className="h-3 w-3 text-muted hover:text-teal" />
               ) : (
