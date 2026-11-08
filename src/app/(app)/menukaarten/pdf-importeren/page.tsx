@@ -198,7 +198,7 @@ export default function MenukaartPdfImporterenPage() {
     return (
       <>
         <Topbar title="Menukaart controleren" />
-        <main className="max-w-4xl space-y-4 p-6">
+        <main className="space-y-4 p-6">
           <Card>
             <CardContent className="grid gap-4 py-4 sm:grid-cols-2">
               <div>
@@ -270,7 +270,7 @@ export default function MenukaartPdfImporterenPage() {
               <div className="overflow-x-auto">
 <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                  <tr className="whitespace-nowrap text-left text-xs uppercase tracking-wide text-muted">
                     <th className="px-4 py-3 font-medium"></th>
                     <th className="px-4 py-3 font-medium">Naam</th>
                     <th className="px-4 py-3 font-medium">Omschrijving</th>
@@ -294,14 +294,15 @@ export default function MenukaartPdfImporterenPage() {
                         <input
                           value={dish.name}
                           onChange={(e) => updateDish(i, { name: e.target.value })}
-                          className="input-sm"
+                          className="input-sm w-56"
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <input
+                        <textarea
                           value={dish.description ?? ""}
                           onChange={(e) => updateDish(i, { description: e.target.value || null })}
-                          className="input-sm"
+                          rows={2}
+                          className="input-sm h-auto w-80 resize-y py-1.5 leading-snug"
                         />
                       </td>
                       <td className="px-4 py-3">
@@ -320,7 +321,7 @@ export default function MenukaartPdfImporterenPage() {
                           value={dish.section}
                           onChange={(e) => updateDish(i, { section: e.target.value })}
                           list="rubrieken"
-                          className="input-sm min-w-32"
+                          className="input-sm w-40"
                         />
                       </td>
                       <td className="px-4 py-3">
@@ -353,7 +354,7 @@ export default function MenukaartPdfImporterenPage() {
                             onChange={(e) =>
                               updateDish(i, { recipeFolder: e.target.value || null, folderTouched: true })
                             }
-                            className="input-sm min-w-36"
+                            className="input-sm w-44"
                           >
                             <option value="">Zonder map</option>
                             {recipeFolders.map((f) => (
@@ -472,7 +473,7 @@ function LinkCell({
 
   const linked = usable.find((c) => c.recipe_id === dish.linkedRecipeId);
   return (
-    <div className="min-w-56 space-y-1">
+    <div className="w-60 space-y-1">
       {linked && dish.confidence === "zeker" ? (
         <p className="flex items-center gap-1 text-xs text-success">
           <CircleCheck className="h-3.5 w-3.5" />
