@@ -1550,37 +1550,9 @@ export function RecipeForm({
     setMultiplyOpen(false);
   }
 
-  async function handleSubmit(e: React.FormEvent, publishStatus?: RecipeStatus) {
-    e.preventDefault();
-    setError(null);
-
-    const finalStatus = publishStatus ?? status;
-    const validRows = rows.filter((r) => (r.refId || r.unmatchedName) && r.quantity.trim());
-
-    if (validRows.length === 0) {
-      setError("Voeg minimaal één ingrediënt of halfproduct toe.");
-      return;
-    }
-
-    if (finalStatus === "goedgekeurd" && rows.some((r) => !r.refId && !isEmptyRow(r))) {
-      setError(
-        "Kan niet publiceren: één of meer ingrediënten zijn nog niet aan een product gekoppeld. Kies ze in het zoekvenster, of sla op als concept."
-      );
-      return;
-    }
-
-    if (finalStatus === "goedgekeurd" && incompleteLineIndexes.length > 0) {
-      setError(
-        "Kan niet publiceren: één of meer regels missen een geldige prijs, hoeveelheid of eenheid. Sla op als concept, of vul de ontbrekende gegevens aan."
-      );
-      return;
-    }
-
-    setSaving(true);
-    const supabase = createClient();
+  function buildPayload(finalStatus: RecipeStatus) {
     const companyId = scopeChoice === "company" ? referenceCompanyId : null;
-
-    const payload = {
+    return {
       name: name.trim(),
       category: category.trim() || null,
       preparation: preparation.trim() || null,
@@ -1613,6 +1585,64 @@ export function RecipeForm({
       margin_free_costs: marginFreeCosts ? Number(marginFreeCosts) : 0,
       allergen_overrides: allergenOverrides,
     };
+  }
+
+  // Automatisch opslaan als concept: nieuwe recepten en recepten die nog
+  // concept zijn. Gepubliceerde recepten worden nooit stil teruggezet.
+  const autosaveEnabled = !initialRecipe || initialRecipe.status === "concept";
+  const savedIdRef = useRef<string | undefined>(initialRecipe?.id);
+  const lastSavedSnapshotRef = useRef<string | null>(null);
+  const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  function snapshotFor(finalStatus: RecipeStatus) {
+    return JSON.stringify({
+      p: buildPayload(finalStatus),
+      r: rows
+        .filter((r) => !isEmptyRow(r))
+        .map((r) => [r.type, r.refId, r.unmatchedName, r.quantity, r.unitId, r.lossPercentage, r.isOptional, r.note, r.preparation]),
+    });
+  }
+
+  /** Opslaan; `silent` = automatisch (geen melding, geen terugnavigatie). */
+  async function persist(finalStatus: RecipeStatus, silent: boolean): Promise<boolean> {
+    const fail = (message: string) => {
+      if (silent) {
+        setAutoSaveState("error");
+      } else {
+        setError(message);
+        setSaving(false);
+      }
+    };
+    if (!name.trim()) {
+      if (!silent) setError("Vul een naam in.");
+      return false;
+    }
+    const validRows = rows.filter((r) => (r.refId || r.unmatchedName) && r.quantity.trim());
+
+    if (validRows.length === 0 && !silent) {
+      setError("Voeg minimaal één ingrediënt of halfproduct toe.");
+      return false;
+    }
+
+    if (finalStatus === "goedgekeurd" && rows.some((r) => !r.refId && !isEmptyRow(r))) {
+      setError(
+        "Kan niet publiceren: één of meer ingrediënten zijn nog niet aan een product gekoppeld. Kies ze in het zoekvenster, of sla op als concept."
+      );
+      return false;
+    }
+
+    if (finalStatus === "goedgekeurd" && incompleteLineIndexes.length > 0) {
+      setError(
+        "Kan niet publiceren: één of meer regels missen een geldige prijs, hoeveelheid of eenheid. Sla op als concept, of vul de ontbrekende gegevens aan."
+      );
+      return false;
+    }
+
+    if (silent) setAutoSaveState("saving");
+    else setSaving(true);
+    const supabase = createClient();
+    const payload = buildPayload(finalStatus);
 
     // Opgegeven gram/ml bij een stuks-regel (bv. "10 citroenen = 1000 gram")
     // onthouden we bij het product zelf (1 stuk = x gram/ml), zodat het bij
@@ -1640,25 +1670,23 @@ export function RecipeForm({
       }
     }
 
-    let recipeId = initialRecipe?.id;
+    let recipeId = savedIdRef.current;
 
-    if (isEdit && recipeId) {
+    if (recipeId) {
       const { error: updateError } = await supabase
         .from("recipes")
         .update(payload)
         .eq("id", recipeId);
       if (updateError) {
-        setError("Opslaan mislukt: " + updateError.message);
-        setSaving(false);
-        return;
+        fail("Opslaan mislukt: " + updateError.message);
+        return false;
       }
       await supabase.from("recipe_ingredients").delete().eq("recipe_id", recipeId);
     } else {
       const groupId = await getCurrentGroupId(supabase);
       if (!groupId) {
-        setError("Kan groep van gebruiker niet bepalen. Log opnieuw in.");
-        setSaving(false);
-        return;
+        fail("Kan groep van gebruiker niet bepalen. Log opnieuw in.");
+        return false;
       }
       const { data: created, error: insertError } = await supabase
         .from("recipes")
@@ -1666,14 +1694,23 @@ export function RecipeForm({
         .select("id")
         .single();
       if (insertError || !created) {
-        setError("Opslaan mislukt: " + (insertError?.message ?? "onbekende fout"));
-        setSaving(false);
-        return;
+        fail("Opslaan mislukt: " + (insertError?.message ?? "onbekende fout"));
+        return false;
       }
       recipeId = created.id;
+      savedIdRef.current = created.id;
+      // Adresbalk naar het bewerkadres, zodat verversen geen tweede recept maakt.
+      if (typeof window !== "undefined") {
+        const base = recipeKind === "halfproduct" ? "/halfproducten" : "/recepturen";
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${base}/${created.id}/bewerken${window.location.search}`
+        );
+      }
     }
 
-    const { error: linesError } = await supabase.from("recipe_ingredients").insert(
+    const { error: linesError } = validRows.length === 0 ? { error: null } : await supabase.from("recipe_ingredients").insert(
       validRows.map((r, i) => ({
         recipe_id: recipeId,
         product_id: r.type === "ingrediënt" ? r.refId : null,
@@ -1691,19 +1728,82 @@ export function RecipeForm({
       }))
     );
 
-    setSaving(false);
+    if (!silent) setSaving(false);
 
     if (linesError) {
-      setError(
+      fail(
         "Opgeslagen, maar receptregels niet: " +
           linesError.message +
           (linesError.message.toLowerCase().includes("circulair")
             ? ""
             : " Mogelijk een circulaire halfproduct-koppeling.")
       );
-      return;
+      return false;
     }
 
+    // Vergelijken altijd zonder status, anders lijkt een net gepubliceerd recept "gewijzigd".
+    lastSavedSnapshotRef.current = snapshotFor("concept");
+    if (silent) setAutoSaveState("saved");
+    return true;
+  }
+
+
+  /** Opslagacties na elkaar uitvoeren (automatisch en handmatig lopen niet door elkaar). */
+  function runExclusive(fn: () => Promise<boolean>): Promise<boolean> {
+    const next = saveChainRef.current.then(fn, fn);
+    saveChainRef.current = next.catch(() => undefined);
+    return next;
+  }
+
+  async function handleSubmit(e: React.FormEvent, publishStatus?: RecipeStatus) {
+    e.preventDefault();
+    setError(null);
+    const ok = await runExclusive(() => persist(publishStatus ?? status, false));
+    if (ok) goBack();
+  }
+
+  const currentSnapshot = snapshotFor("concept");
+  const isDirty = lastSavedSnapshotRef.current !== null && currentSnapshot !== lastSavedSnapshotRef.current;
+
+  // Eerste stand onthouden; daarna 4 s na de laatste wijziging stil opslaan.
+  useEffect(() => {
+    if (lastSavedSnapshotRef.current === null) {
+      lastSavedSnapshotRef.current = currentSnapshot;
+      return;
+    }
+    if (!autosaveEnabled || currentSnapshot === lastSavedSnapshotRef.current || !name.trim()) return;
+    const timer = window.setTimeout(() => {
+      void runExclusive(() => persist("concept", true));
+    }, 4000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSnapshot]);
+
+  // Weggaan binnen de app (terug-knop, menu): openstaande wijzigingen nog opslaan.
+  const flushRef = useRef<() => void>(() => {});
+  flushRef.current = () => {
+    if (autosaveEnabled && isDirty && name.trim()) void runExclusive(() => persist("concept", true));
+  };
+  useEffect(() => () => flushRef.current(), []);
+
+  // Tabblad sluiten met niet-opgeslagen wijzigingen: browser laat waarschuwen.
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
+  async function handleCancel() {
+    if (autosaveEnabled && isDirty && name.trim()) {
+      await runExclusive(() => persist("concept", true));
+    } else if (!autosaveEnabled && isDirty && !window.confirm("Wijzigingen niet opgeslagen. Toch weggaan?")) {
+      return;
+    }
+    // Na opslaan of bewust weggaan: niet nogmaals opslaan bij het verlaten.
+    lastSavedSnapshotRef.current = currentSnapshot;
     goBack();
   }
 
@@ -2955,7 +3055,16 @@ export function RecipeForm({
           {error ?? deleteError}
         </span>
       )}
-      <Button type="button" variant="secondary" onClick={goBack}>
+      {autosaveEnabled && autoSaveState !== "idle" && (
+        <span className="text-xs text-muted">
+          {autoSaveState === "saving"
+            ? "Concept opslaan…"
+            : autoSaveState === "saved"
+              ? "Automatisch opgeslagen als concept"
+              : "Automatisch opslaan mislukt"}
+        </span>
+      )}
+      <Button type="button" variant="secondary" onClick={handleCancel}>
         Annuleren
       </Button>
       <Button
