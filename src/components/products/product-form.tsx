@@ -355,6 +355,24 @@ export function ProductForm({
     setPackagings((prev) => prev.filter((_, i) => i !== index));
   }
 
+  /** Hoeveel nieuwe basiseenheden zitten er in 1 oude basiseenheid? (null = onbekend) */
+  function baseUnitConversionFactor(oldId: string, newId: string): number | null {
+    const oldU = units.find((u) => u.id === oldId);
+    const newU = units.find((u) => u.id === newId);
+    if (!oldU || !newU) return null;
+    const of = Number(oldU.factor_to_base);
+    const nf = Number(newU.factor_to_base);
+    if (oldU.dimension === newU.dimension) return of / nf;
+    // Brug via "1 stuk = x gram/ml".
+    const avgU = units.find((u) => u.id === avgUnitId);
+    const avgQty = Number(avgUnitQuantity.replace(",", "."));
+    if (!avgU || !(avgQty > 0)) return null;
+    const avgInBase = avgQty * Number(avgU.factor_to_base); // in gram/ml
+    if (oldU.dimension === "aantal" && avgU.dimension === newU.dimension) return (of * avgInBase) / nf;
+    if (newU.dimension === "aantal" && avgU.dimension === oldU.dimension) return (of / avgInBase) * nf;
+    return null;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -425,6 +443,43 @@ export function ProductForm({
         setError("Opslaan mislukt: " + updateError.message);
         setSaving(false);
         return;
+      }
+      // Basiseenheid gewijzigd (bv. stuk → gram): inkoopregels omrekenen,
+      // anders blijft "€ 15,95 per stuk" ineens "€ 15,95 per gram".
+      const oldBaseId = initialProduct?.base_unit_id ?? null;
+      if (oldBaseId && oldBaseId !== baseUnitId) {
+        const factor = baseUnitConversionFactor(oldBaseId, baseUnitId);
+        const oldName = units.find((u) => u.id === oldBaseId)?.name ?? "oude eenheid";
+        const newName = units.find((u) => u.id === baseUnitId)?.name ?? "nieuwe eenheid";
+        if (factor && factor > 0 && factor !== 1) {
+          const ok = window.confirm(
+            `De basiseenheid is gewijzigd van ${oldName} naar ${newName} (1 ${oldName} = ${Number(factor.toFixed(6))} ${newName}).\n\n` +
+              `Inkoopprijzen omrekenen naar prijs per ${newName}? De inkoopprijs zelf blijft gelijk.`
+          );
+          if (ok) {
+            const { data: priceRows } = await supabase
+              .from("supplier_products")
+              .select("id, packaging_unit_count")
+              .eq("product_id", productId);
+            for (const row of priceRows ?? []) {
+              await supabase
+                .from("supplier_products")
+                .update({ packaging_unit_count: Number(row.packaging_unit_count) * factor })
+                .eq("id", row.id);
+            }
+            if (initialProduct?.manual_price_per_base_unit != null) {
+              await supabase
+                .from("products")
+                .update({ manual_price_per_base_unit: initialProduct.manual_price_per_base_unit / factor })
+                .eq("id", productId);
+            }
+          }
+        } else if (!factor) {
+          window.alert(
+            `Let op: de basiseenheid is gewijzigd van ${oldName} naar ${newName}, maar de inkoopprijzen konden niet automatisch worden omgerekend. ` +
+              `Vul "Gemiddeld gewicht/inhoud per stuk" in, of controleer de prijzen onder Prijs & historie.`
+          );
+        }
       }
       // Simpel vervangen i.p.v. per-rij diffen: verwijder bestaande
       // verpakkingen en schrijf de huidige lijst opnieuw weg.
