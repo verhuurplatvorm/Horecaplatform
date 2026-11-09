@@ -522,6 +522,10 @@ export default function RecepturenPage() {
     : folderRows.filter((f) => !isFolderArchived(f));
   const mainFolders = visibleFolderRows.filter((f) => f.is_main);
   const mapFolders = visibleFolderRows.filter((f) => !f.is_main);
+  // Mappen voor de keuzelijst per gerecht (op naam, gerechten koppelen via category).
+  const folderNameOptions = [
+    ...new Set(mapFolders.map((f) => f.name.trim())),
+  ].sort((a, b) => a.localeCompare(b, "nl"));
   const childrenOf = (mainId: string) =>
     mapFolders.filter((f) => f.parent_id === mainId);
   const looseFolders = mapFolders.filter(
@@ -748,6 +752,27 @@ export default function RecepturenPage() {
     }
     setRecipes((prev) =>
       prev.map((r) => (r.id === recipeId ? { ...r, category } : r)),
+    );
+  }
+
+  /**
+   * Verkoopprijs direct in het overzicht aanpassen. Het gerecht wordt
+   * bijgewerkt; de database houdt het gekoppelde verkoopproduct automatisch
+   * gelijk (trigger), en foodcost rekent direct mee.
+   */
+  async function saveSalesPrice(recipeId: string, value: number | null) {
+    const row = recipes.find((r) => r.id === recipeId);
+    if (!row || (row.sales_price ?? null) === value) return;
+    const { error: priceError } = await createClient()
+      .from("recipes")
+      .update({ sales_price: value })
+      .eq("id", recipeId);
+    if (priceError) {
+      window.alert("Verkoopprijs opslaan mislukt: " + priceError.message);
+      return;
+    }
+    setRecipes((prev) =>
+      prev.map((r) => (r.id === recipeId ? { ...r, sales_price: value } : r)),
     );
   }
 
@@ -1259,8 +1284,33 @@ export default function RecepturenPage() {
                             </Link>
                           </td>
                           {show("map") && (
-                            <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                              {r.category ?? "—"}
+                            <td className="whitespace-nowrap px-3 py-2.5">
+                              <select
+                                value={r.category?.trim() ?? ""}
+                                onChange={(e) =>
+                                  moveRecipeToCategory(
+                                    r.id,
+                                    e.target.value || null,
+                                  )
+                                }
+                                className="h-8 max-w-[11rem] rounded border border-border/60 bg-surface px-1.5 text-sm text-muted hover:border-teal focus:border-teal"
+                                title="Map kiezen"
+                              >
+                                <option value="">— geen map —</option>
+                                {r.category?.trim() &&
+                                  !folderNameOptions.includes(
+                                    r.category.trim(),
+                                  ) && (
+                                    <option value={r.category.trim()}>
+                                      {r.category.trim()}
+                                    </option>
+                                  )}
+                                {folderNameOptions.map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                           )}
                           {show("kaart") && (
@@ -1304,9 +1354,11 @@ export default function RecepturenPage() {
                           )}
                           {show("verkoopprijs") && (
                             <td className="whitespace-nowrap px-3 py-2.5 tabular">
-                              {r.sales_price
-                                ? `€ ${r.sales_price.toFixed(2)}`
-                                : "—"}
+                              <PriceInput
+                                key={`${r.id}-${r.sales_price ?? ""}`}
+                                value={r.sales_price}
+                                onSave={(v) => saveSalesPrice(r.id, v)}
+                              />
                             </td>
                           )}
                           {canViewFinancial && show("foodcost") && (
@@ -1516,5 +1568,47 @@ function TreeRow({
         </div>
       )}
     </div>
+  );
+}
+
+/** Verkoopprijs in de tabel: typen en Enter of klik ernaast om op te slaan. */
+function PriceInput({
+  value,
+  onSave,
+}: {
+  value: number | null;
+  onSave: (v: number | null) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value !== null ? value.toFixed(2) : "");
+  function commit() {
+    const cleaned = draft.replace(",", ".").trim();
+    const next =
+      cleaned === "" ? null : Math.round(Number(cleaned) * 100) / 100;
+    if (next !== null && !Number.isFinite(next)) {
+      setDraft(value !== null ? value.toFixed(2) : "");
+      return;
+    }
+    void onSave(next);
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      €
+      <input
+        inputMode="decimal"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            setDraft(value !== null ? value.toFixed(2) : "");
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        placeholder="—"
+        className="h-8 w-20 rounded border border-border/60 bg-surface px-1.5 text-right text-sm hover:border-teal focus:border-teal"
+        title="Verkoopprijs incl. btw — Enter om op te slaan"
+      />
+    </span>
   );
 }
