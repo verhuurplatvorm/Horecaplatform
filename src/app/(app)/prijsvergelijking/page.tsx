@@ -18,7 +18,13 @@ import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { PriceComparisonRow } from "@/lib/types/database";
+import { PriorityBadge } from "@/components/price-comparison/priority-badge";
 import {
+  COMPARISON_FILTER_KEY,
+  loadComparisonFilters,
+  normalizeComparisonRow,
+  type ComparisonFilters,
+  type StatusFilter,
   PERIOD_LABEL,
   PRIORITY_META,
   STATUS_LABEL,
@@ -28,46 +34,8 @@ import {
   periodRange,
   shortDate,
   statusOf,
-  type ComparisonStatus,
   type PeriodKey,
 } from "@/lib/price-comparison";
-
-const FILTER_KEY = "prijsvergelijking-filters";
-
-type StatusFilter = "aandacht" | ComparisonStatus | "alles";
-type View = "regels" | "facturen";
-
-interface Filters {
-  period: PeriodKey;
-  customFrom: string;
-  customTo: string;
-  supplier: string;
-  priority: "alle" | "1" | "2" | "3" | "4" | "5";
-  status: StatusFilter;
-  minImpact: string;
-  view: View;
-}
-
-const DEFAULT_FILTERS: Filters = {
-  period: "90d",
-  customFrom: "",
-  customTo: "",
-  supplier: "alle",
-  priority: "alle",
-  status: "aandacht",
-  minImpact: "",
-  view: "regels",
-};
-
-function loadFilters(): Filters {
-  if (typeof window === "undefined") return DEFAULT_FILTERS;
-  try {
-    const raw = window.sessionStorage.getItem(FILTER_KEY);
-    return raw ? { ...DEFAULT_FILTERS, ...JSON.parse(raw) } : DEFAULT_FILTERS;
-  } catch {
-    return DEFAULT_FILTERS;
-  }
-}
 
 const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
   aandacht: "Vraagt aandacht",
@@ -93,7 +61,9 @@ export default function PrijsvergelijkingPage() {
     activeCompanyIds,
     loading: companiesLoading,
   } = useCompanyScope();
-  const [filters, setFilters] = useState<Filters>(loadFilters);
+  const [filters, setFilters] = useState<ComparisonFilters>(
+    loadComparisonFilters,
+  );
   const [rows, setRows] = useState<PriceComparisonRow[]>([]);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +84,10 @@ export default function PrijsvergelijkingPage() {
 
   useEffect(() => {
     try {
-      window.sessionStorage.setItem(FILTER_KEY, JSON.stringify(filters));
+      window.sessionStorage.setItem(
+        COMPARISON_FILTER_KEY,
+        JSON.stringify(filters),
+      );
     } catch {
       /* sessionStorage niet beschikbaar: filters gewoon niet onthouden */
     }
@@ -138,16 +111,7 @@ export default function PrijsvergelijkingPage() {
         } else {
           setError(null);
           setRows(
-            ((data ?? []) as PriceComparisonRow[]).map((r) => ({
-              ...r,
-              quantity: r.quantity === null ? null : Number(r.quantity),
-              invoice_price: Number(r.invoice_price),
-              ref_price: Number(r.ref_price),
-              diff_per_unit: Number(r.diff_per_unit),
-              diff_pct: r.diff_pct === null ? null : Number(r.diff_pct),
-              impact: r.impact === null ? null : Number(r.impact),
-              reasons: r.reasons ?? [],
-            })),
+            ((data ?? []) as PriceComparisonRow[]).map(normalizeComparisonRow),
           );
         }
         setLoadedKey(`${range.from}|${range.to}|${companyKey}`);
@@ -157,7 +121,7 @@ export default function PrijsvergelijkingPage() {
     };
   }, [range.from, range.to, companyKey, companiesLoading]);
 
-  const update = (patch: Partial<Filters>) =>
+  const update = (patch: Partial<ComparisonFilters>) =>
     setFilters((f) => ({ ...f, ...patch }));
   const updateLocal = update;
 
@@ -656,24 +620,6 @@ function PriorityChip({
       {dot && <span className={cn("h-2 w-2 rounded-full", dot)} />}
       {label}
     </button>
-  );
-}
-
-function PriorityBadge({
-  priority,
-}: {
-  priority: PriceComparisonRow["priority"];
-}) {
-  const meta = PRIORITY_META[priority];
-  return (
-    <span
-      className={cn(
-        "inline-block whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold",
-        meta.className,
-      )}
-    >
-      {meta.short}
-    </span>
   );
 }
 

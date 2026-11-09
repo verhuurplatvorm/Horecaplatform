@@ -178,3 +178,102 @@ export function periodRange(
       return custom;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Filters van de pagina Prijsvergelijking. Andere schermen (dashboard,
+// factuur) zetten hier een filter klaar en sturen dan door — zonder
+// zoekparameters in de URL.
+
+export const COMPARISON_FILTER_KEY = "prijsvergelijking-filters";
+
+export type StatusFilter = "aandacht" | ComparisonStatus | "alles";
+export type ComparisonView = "regels" | "facturen";
+
+export interface ComparisonFilters {
+  period: PeriodKey;
+  customFrom: string;
+  customTo: string;
+  supplier: string;
+  priority: "alle" | "1" | "2" | "3" | "4" | "5";
+  status: StatusFilter;
+  minImpact: string;
+  view: ComparisonView;
+}
+
+export const DEFAULT_COMPARISON_FILTERS: ComparisonFilters = {
+  period: "90d",
+  customFrom: "",
+  customTo: "",
+  supplier: "alle",
+  priority: "alle",
+  status: "aandacht",
+  minImpact: "",
+  view: "regels",
+};
+
+export function loadComparisonFilters(): ComparisonFilters {
+  if (typeof window === "undefined") return DEFAULT_COMPARISON_FILTERS;
+  try {
+    const raw = window.sessionStorage.getItem(COMPARISON_FILTER_KEY);
+    return raw
+      ? { ...DEFAULT_COMPARISON_FILTERS, ...JSON.parse(raw) }
+      : DEFAULT_COMPARISON_FILTERS;
+  } catch {
+    return DEFAULT_COMPARISON_FILTERS;
+  }
+}
+
+/** Zet filters klaar voor de pagina Prijsvergelijking (vóór het doorklikken). */
+export function presetComparisonFilters(
+  patch: Partial<ComparisonFilters>,
+): void {
+  try {
+    window.sessionStorage.setItem(
+      COMPARISON_FILTER_KEY,
+      JSON.stringify({ ...DEFAULT_COMPARISON_FILTERS, ...patch }),
+    );
+  } catch {
+    /* geen sessionStorage: dan opent de pagina met de standaardfilters */
+  }
+}
+
+/** Dashboardperiode in dagen → passende periode op de vergelijkingspagina. */
+export function periodForDays(
+  days: number,
+): Pick<ComparisonFilters, "period" | "customFrom" | "customTo"> {
+  if (days === 30) return { period: "30d", customFrom: "", customTo: "" };
+  if (days === 90) return { period: "90d", customFrom: "", customTo: "" };
+  const now = new Date();
+  return {
+    period: "eigen",
+    customFrom: iso(new Date(now.getTime() - days * 86400000)),
+    customTo: iso(now),
+  };
+}
+
+export function daysAgoIso(days: number, from: Date = new Date()): string {
+  return iso(new Date(from.getTime() - days * 86400000));
+}
+
+/** numeric-kolommen komen soms als tekst binnen; maak er getallen van. */
+export function normalizeComparisonRow(
+  r: PriceComparisonRow,
+): PriceComparisonRow {
+  return {
+    ...r,
+    quantity: r.quantity === null ? null : Number(r.quantity),
+    invoice_price: Number(r.invoice_price),
+    ref_price: Number(r.ref_price),
+    diff_per_unit: Number(r.diff_per_unit),
+    diff_pct: r.diff_pct === null ? null : Number(r.diff_pct),
+    impact: r.impact === null ? null : Number(r.impact),
+    reasons: r.reasons ?? [],
+  };
+}
+
+/** Te veel betaald (open + betwist), voor sorteren en tonen. */
+export function overchargeOf(r: PriceComparisonRow): number {
+  const s = statusOf(r);
+  if (s === "controle" || s === "geaccepteerd") return 0;
+  return Math.max(0, Number(r.impact ?? 0));
+}

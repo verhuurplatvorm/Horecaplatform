@@ -10,6 +10,7 @@ import {
   UnmatchedIngredientsWidget,
   WasteWidget,
 } from "@/components/dashboard/widgets";
+import { PriceCheckWidget } from "@/components/dashboard/price-check-widget";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -239,6 +240,8 @@ export default function DashboardPage() {
             </button>
           )}
         </div>
+
+        <PriceCheckWidget filters={filters} hidden={isHidden("prijscontrole")} onHide={hideWidget} />
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-4">

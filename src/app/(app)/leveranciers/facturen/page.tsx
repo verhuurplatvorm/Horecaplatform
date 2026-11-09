@@ -6,6 +6,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { IgnoreSenderButton } from "@/components/invoices/ignore-sender-button";
 import { DeleteInvoiceButton } from "@/components/invoices/delete-invoice-button";
+import { cn } from "@/lib/utils";
+import type { PriceComparisonRow } from "@/lib/types/database";
+import {
+  PRIORITY_META,
+  computeTotals,
+  daysAgoIso,
+  euro,
+  normalizeComparisonRow,
+  statusOf,
+} from "@/lib/price-comparison";
 
 export default async function FacturenPage({
   searchParams,
@@ -30,6 +40,34 @@ export default async function FacturenPage({
     .in("status", ["wacht_op_leverancier", "fout"])
     .order("received_at", { ascending: false })
     .limit(10);
+
+  // Prijscontrole per factuur (alleen lezen): één vergelijking over de
+  // periode van de getoonde facturen.
+  const invoiceDates = (allBatches ?? [])
+    .map((b) => b.invoice_date)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  const priceCheck = new Map<string, { overcharged: number; top: number; rows: number }>();
+  if (invoiceDates.length > 0) {
+    const { data: comparison } = await supabase.rpc("price_comparison", {
+      p_from: daysAgoIso(120, new Date(invoiceDates[0])),
+      p_to: invoiceDates[invoiceDates.length - 1],
+      p_company_ids: null,
+    });
+    const byBatch = new Map<string, PriceComparisonRow[]>();
+    for (const raw of (comparison ?? []) as PriceComparisonRow[]) {
+      const r = normalizeComparisonRow(raw);
+      byBatch.set(r.batch_id, [...(byBatch.get(r.batch_id) ?? []), r]);
+    }
+    for (const [batchId, rows] of byBatch) {
+      const open = rows.filter((r) => statusOf(r) === "open");
+      priceCheck.set(batchId, {
+        overcharged: computeTotals(rows).overcharged,
+        top: open.length ? Math.min(...open.map((r) => r.priority)) : 5,
+        rows: rows.length,
+      });
+    }
+  }
 
   const toCheckCount = (allBatches ?? []).filter(
     (b) => b.status === "wacht_op_controle"
@@ -123,6 +161,7 @@ export default async function FacturenPage({
                   <th className="px-5 py-3 font-medium">Datum</th>
                   <th className="px-5 py-3 font-medium">Totaal</th>
                   <th className="px-5 py-3 font-medium">Regels</th>
+                  <th className="px-5 py-3 font-medium">Prijscontrole</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
@@ -163,6 +202,9 @@ export default async function FacturenPage({
                         <span className="text-muted">{b.total_rows} gekoppeld</span>
                       )}
                     </td>
+                    <td className="px-5 py-3 text-xs">
+                      <PriceCheckCell check={priceCheck.get(b.id)} />
+                    </td>
                     <td className="px-5 py-3 text-muted">{b.status.replace(/_/g, " ")}</td>
                     <td className="px-5 py-3">
                       <DeleteInvoiceButton batchId={b.id} filename={b.original_filename ?? "deze factuur"} />
@@ -171,7 +213,7 @@ export default async function FacturenPage({
                 ))}
                 {(!batches || batches.length === 0) && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-6 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-6 text-center text-muted">
                       {error
                         ? "Kan facturen niet laden — controleer de Supabase-koppeling."
                         : showAll
@@ -187,5 +229,25 @@ export default async function FacturenPage({
         </Card>
       </main>
     </>
+  );
+}
+
+function PriceCheckCell({
+  check,
+}: {
+  check: { overcharged: number; top: number; rows: number } | undefined;
+}) {
+  if (!check) return <span className="text-muted">—</span>;
+  if (check.top === 5) return <span className="text-success">klopt</span>;
+  const meta = PRIORITY_META[check.top as 1 | 2 | 3 | 4];
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className={cn("h-2 w-2 rounded-full", meta.dot)} title={meta.label} />
+      {check.overcharged > 0 ? (
+        <span className="font-medium text-danger">{euro(check.overcharged)} te veel</span>
+      ) : (
+        <span className="text-muted">{meta.label}</span>
+      )}
+    </span>
   );
 }

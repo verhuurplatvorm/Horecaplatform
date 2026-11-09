@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { ProductForm } from "@/components/products/product-form";
+import { InvoicePriceCheck } from "@/components/price-comparison/invoice-price-check";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -492,6 +493,9 @@ export default function ImportReviewPage({
         )}
         {batch.source_kind === "factuur" && batch.supplier_id && (
           <SupplierInvoiceNotes supplierId={batch.supplier_id} />
+        )}
+        {batch.source_kind === "factuur" && batch.invoice_date && (
+          <InvoicePriceCheck batchId={batch.id} invoiceDate={batch.invoice_date} />
         )}
         <Card>
           <CardHeader>
