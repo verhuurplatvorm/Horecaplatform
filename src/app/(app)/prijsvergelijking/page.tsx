@@ -256,13 +256,11 @@ export default function PrijsvergelijkingPage() {
               .from("price_comparison_reviews")
               .delete()
               .eq("row_id", row.row_id)
-          : await supabase
-              .from("price_comparison_reviews")
-              .upsert({
-                row_id: row.row_id,
-                status,
-                reviewed_at: new Date().toISOString(),
-              });
+          : await supabase.from("price_comparison_reviews").upsert({
+              row_id: row.row_id,
+              status,
+              reviewed_at: new Date().toISOString(),
+            });
       setBusyRow(null);
       if (writeError) {
         setError(`Opslaan lukte niet: ${writeError.message}`);
@@ -439,30 +437,30 @@ export default function PrijsvergelijkingPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                      <th className="px-3 py-2 font-medium">Prio</th>
-                      <th className="px-3 py-2 font-medium">Leverancier</th>
-                      <th className="px-3 py-2 font-medium">Art.nr</th>
-                      <th className="px-3 py-2 font-medium">Product</th>
-                      <th className="px-3 py-2 font-medium">Verpakking</th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 font-medium">Prio</th>
+                      <th className="px-2 py-2 font-medium">Leverancier</th>
+                      <th className="px-2 py-2 font-medium">Art.nr</th>
+                      <th className="px-2 py-2 font-medium">Product</th>
+                      <th className="px-2 py-2 font-medium">Verpakking</th>
+                      <th className="px-2 py-2 text-right font-medium">
                         Referentie
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Factuur
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Verschil
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">%</th>
-                      <th className="px-3 py-2 text-right font-medium">
+
+                      <th className="px-2 py-2 text-right font-medium">
                         Aantal
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Afwijking
                       </th>
-                      <th className="px-3 py-2 font-medium">Datum</th>
-                      <th className="px-3 py-2 font-medium">Status</th>
-                      <th className="px-3 py-2 font-medium">Actie</th>
+                      <th className="px-2 py-2 font-medium">Datum</th>
+                      <th className="px-2 py-2 font-medium">Status</th>
+                      <th className="px-2 py-2 font-medium">Actie</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -477,7 +475,7 @@ export default function PrijsvergelijkingPage() {
                     {!loading && visible.length === 0 && (
                       <tr>
                         <td
-                          colSpan={14}
+                          colSpan={13}
                           className="px-4 py-8 text-center text-muted"
                         >
                           {rows.length === 0
@@ -489,7 +487,7 @@ export default function PrijsvergelijkingPage() {
                     {loading && (
                       <tr>
                         <td
-                          colSpan={14}
+                          colSpan={13}
                           className="px-4 py-8 text-center text-muted"
                         >
                           Bezig met vergelijken…
@@ -508,59 +506,59 @@ export default function PrijsvergelijkingPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                      <th className="px-3 py-2 font-medium">Prio</th>
-                      <th className="px-3 py-2 font-medium">Leverancier</th>
-                      <th className="px-3 py-2 font-medium">Factuur</th>
-                      <th className="px-3 py-2 font-medium">Datum</th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 font-medium">Prio</th>
+                      <th className="px-2 py-2 font-medium">Leverancier</th>
+                      <th className="px-2 py-2 font-medium">Factuur</th>
+                      <th className="px-2 py-2 font-medium">Datum</th>
+                      <th className="px-2 py-2 text-right font-medium">
                         Regels
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Te veel
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Voordelig
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Netto
                       </th>
-                      <th className="px-3 py-2 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         Controle nodig
                       </th>
-                      <th className="px-3 py-2 font-medium" />
+                      <th className="px-2 py-2 font-medium" />
                     </tr>
                   </thead>
                   <tbody>
                     {invoices.map((inv) => (
                       <tr key={inv.batchId} className="border-t border-border">
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-2">
                           <PriorityBadge
                             priority={inv.top as PriceComparisonRow["priority"]}
                           />
                         </td>
-                        <td className="px-3 py-2">{inv.supplier}</td>
-                        <td className="px-3 py-2 font-medium">
+                        <td className="px-2 py-2">{inv.supplier}</td>
+                        <td className="px-2 py-2 font-medium">
                           {inv.invoiceNumber ?? "—"}
                         </td>
-                        <td className="px-3 py-2 text-muted">
+                        <td className="px-2 py-2 text-muted">
                           {shortDate(inv.date)}
                         </td>
-                        <td className="px-3 py-2 text-right tabular">
+                        <td className="px-2 py-2 text-right tabular">
                           {inv.rows.length}
                         </td>
-                        <td className="px-3 py-2 text-right tabular text-danger">
+                        <td className="px-2 py-2 text-right tabular text-danger">
                           {euro(inv.totals.overcharged)}
                         </td>
-                        <td className="px-3 py-2 text-right tabular text-success">
+                        <td className="px-2 py-2 text-right tabular text-success">
                           {euro(inv.totals.favourable)}
                         </td>
-                        <td className="px-3 py-2 text-right tabular font-semibold">
+                        <td className="px-2 py-2 text-right tabular font-semibold">
                           {euro(inv.totals.net, true)}
                         </td>
-                        <td className="px-3 py-2 text-right tabular">
+                        <td className="px-2 py-2 text-right tabular">
                           {inv.totals.toCheck || ""}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-2">
                           <Link
                             href={`/leveranciers/prijzen/importeren/${inv.batchId}`}
                             className="inline-flex items-center gap-1 text-teal hover:underline"
@@ -700,18 +698,19 @@ function ComparisonRow({
         r.priority === 1 && status === "open" && "bg-danger/5",
       )}
     >
-      <td className="px-3 py-2">
+      <td className="px-2 py-2">
         <PriorityBadge priority={r.priority} />
       </td>
-      <td className="whitespace-nowrap px-3 py-2">{r.supplier_name}</td>
-      <td className="px-3 py-2 tabular text-muted">
+      <td className="whitespace-nowrap px-2 py-2">{r.supplier_name}</td>
+      <td className="px-2 py-2 tabular text-muted">
         {r.article_number ?? "—"}
       </td>
-      <td className="min-w-56 px-3 py-2">
+      <td className="min-w-52 px-2 py-2">
         <div className="font-medium">{r.product_name ?? r.description}</div>
         {r.description &&
           r.product_name &&
-          r.description !== r.product_name && (
+          r.description.toLowerCase().replace(/\s+/g, "") !==
+            r.product_name.toLowerCase().replace(/\s+/g, "") && (
             <div className="text-xs text-muted">{r.description}</div>
           )}
         {r.reasons.length > 0 && (
@@ -722,45 +721,43 @@ function ComparisonRow({
           </div>
         )}
       </td>
-      <td className="px-3 py-2 text-muted">{r.packaging ?? "—"}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular">
+      <td className="px-2 py-2 text-muted">{r.packaging ?? "—"}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-right tabular">
         {euro(r.ref_price)}
         <div className="text-xs text-muted">
           {r.ref_source === "contract" ? "contract" : "prijslijst"}{" "}
           {shortDate(r.ref_date)}
         </div>
       </td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular font-medium">
+      <td className="whitespace-nowrap px-2 py-2 text-right tabular font-medium">
         {euro(r.invoice_price)}
       </td>
       <td
         className={cn(
-          "whitespace-nowrap px-3 py-2 text-right tabular",
+          "whitespace-nowrap px-2 py-2 text-right tabular",
           r.diff_per_unit > 0.005 && "text-danger",
           r.diff_per_unit < -0.005 && "text-success",
         )}
       >
         {euro(r.diff_per_unit, true)}
+        <div className="text-xs text-muted">{pct(r.diff_pct)}</div>
       </td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular text-muted">
-        {pct(r.diff_pct)}
-      </td>
-      <td className="px-3 py-2 text-right tabular">
+      <td className="px-2 py-2 text-right tabular">
         {r.quantity === null ? "—" : r.quantity.toLocaleString("nl-NL")}
       </td>
       <td
         className={cn(
-          "whitespace-nowrap px-3 py-2 text-right tabular font-semibold",
+          "whitespace-nowrap px-2 py-2 text-right tabular font-semibold",
           impact > 0 && "text-danger",
           impact < 0 && "text-success",
         )}
       >
         {r.impact === null ? "—" : euro(impact, true)}
       </td>
-      <td className="whitespace-nowrap px-3 py-2 text-muted">
+      <td className="whitespace-nowrap px-2 py-2 text-muted">
         {shortDate(r.invoice_date)}
       </td>
-      <td className="whitespace-nowrap px-3 py-2">
+      <td className="whitespace-nowrap px-2 py-2">
         <span
           className={cn(
             "text-xs font-medium",
@@ -776,7 +773,7 @@ function ComparisonRow({
           {STATUS_LABEL[status]}
         </span>
       </td>
-      <td className="whitespace-nowrap px-3 py-2">
+      <td className="whitespace-nowrap px-2 py-2">
         <div className="flex items-center gap-1">
           {r.review_status ? (
             <button
