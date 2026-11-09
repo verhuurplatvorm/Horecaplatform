@@ -744,6 +744,8 @@ export type PriceImportBatch = {
   iban_mismatch: boolean;
   total_incl_vat: number | null;
   original_file_path: string | null;
+  /** Datum vanaf wanneer een prijslijst geldt (leeg = importdatum). */
+  price_date?: string | null;
 };
 
 export type PriceImportRow = {
@@ -856,6 +858,24 @@ export type Database = {
         Row: PackagingCorrection;
         Insert: Partial<PackagingCorrection>;
         Update: Partial<PackagingCorrection>;
+        Relationships: [];
+      };
+      supplier_contract_prices: {
+        Row: SupplierContractPrice;
+        Insert: Partial<SupplierContractPrice> & { supplier_id: string; price: number };
+        Update: Partial<SupplierContractPrice>;
+        Relationships: [];
+      };
+      price_comparison_reviews: {
+        Row: PriceComparisonReview;
+        Insert: Partial<PriceComparisonReview> & { row_id: string; status: PriceComparisonReview["status"] };
+        Update: Partial<PriceComparisonReview>;
+        Relationships: [];
+      };
+      price_comparison_settings: {
+        Row: PriceComparisonSettings;
+        Insert: Partial<PriceComparisonSettings>;
+        Update: Partial<PriceComparisonSettings>;
         Relationships: [];
       };
       dismissed_price_alerts: {
@@ -1163,6 +1183,10 @@ export type Database = {
           similarity_score: number;
           is_exact: boolean;
         }[];
+      };
+      price_comparison: {
+        Args: { p_from: string; p_to: string; p_company_ids?: string[] | null };
+        Returns: PriceComparisonRow[];
       };
       match_product_by_name: {
         Args: { p_group_id: string; p_name: string };
@@ -1530,4 +1554,74 @@ export type SupplierDescriptionMatch = {
   normalized_description: string;
   product_id: string;
   updated_at: string;
+};
+
+export type SupplierContractPrice = {
+  id: string;
+  group_id: string;
+  supplier_id: string;
+  product_id: string | null;
+  company_id: string | null;
+  article_number: string | null;
+  description: string | null;
+  packaging_description: string | null;
+  price: number;
+  valid_from: string;
+  valid_to: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PriceComparisonReview = {
+  row_id: string;
+  group_id: string;
+  status: "geaccepteerd" | "betwist";
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string;
+};
+
+export type PriceComparisonSettings = {
+  group_id: string;
+  p1_amount: number;
+  p2_amount: number;
+  p3_amount: number;
+  p1_pct: number;
+  p2_pct: number;
+  p3_pct: number;
+  repeat_count: number;
+  updated_at: string;
+};
+
+/** Eén factuurregel vergeleken met de referentieprijs (rpc price_comparison). */
+export type PriceComparisonRow = {
+  row_id: string;
+  batch_id: string;
+  invoice_number: string | null;
+  invoice_date: string;
+  supplier_id: string;
+  supplier_name: string;
+  company_id: string | null;
+  product_id: string | null;
+  product_name: string | null;
+  article_number: string | null;
+  description: string | null;
+  packaging: string | null;
+  quantity: number | null;
+  invoice_price: number;
+  ref_price: number;
+  ref_source: "contract" | "prijslijst";
+  ref_date: string | null;
+  ref_after_invoice: boolean;
+  compare_basis: "verpakking" | "basiseenheid" | null;
+  diff_per_unit: number;
+  diff_pct: number | null;
+  impact: number | null;
+  priority: 1 | 2 | 3 | 4 | 5;
+  reasons: string[];
+  needs_check: boolean;
+  review_status: "geaccepteerd" | "betwist" | null;
+  review_note: string | null;
 };

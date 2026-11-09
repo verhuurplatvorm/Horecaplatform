@@ -17,6 +17,7 @@ import {
   FileText,
   Mail,
   Upload,
+  Scale,
 } from "lucide-react";
 
 export interface NavItem {
@@ -58,6 +59,7 @@ export const NAV_TABS: NavTab[] = [
       { href: "/producten", label: "Ingrediënten", icon: Package, moduleKey: "producten" },
       { href: "/leveranciers", label: "Leveranciers", icon: Truck, moduleKey: "leveranciers" },
       { href: "/verkoopproducten", label: "Verkoopproducten", icon: ShoppingCart, moduleKey: "verkoopproducten" },
+      { href: "/prijsvergelijking", label: "Prijsvergelijking", icon: Scale, moduleKey: "leveranciers" },
     ],
   },
   {
