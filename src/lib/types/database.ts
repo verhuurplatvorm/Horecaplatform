@@ -1088,6 +1088,24 @@ export type Database = {
         Update: Partial<InboundInvoiceQueueItem>;
         Relationships: [];
       };
+      departments: {
+        Row: Department;
+        Insert: Partial<Department> & { company_id: string; location_id: string; group_id: string; name: string };
+        Update: Partial<Department>;
+        Relationships: [];
+      };
+      haccp_areas: {
+        Row: HaccpArea;
+        Insert: Partial<HaccpArea> & { company_id: string; name: string };
+        Update: Partial<HaccpArea>;
+        Relationships: [];
+      };
+      haccp_tasks: {
+        Row: HaccpTask;
+        Insert: Partial<HaccpTask> & { company_id: string; area_id: string; title: string };
+        Update: Partial<HaccpTask>;
+        Relationships: [];
+      };
     };
     Views: {
       dashboard_unmatched_ingredients: {
@@ -1121,6 +1139,37 @@ export type Database = {
       };
     };
     Functions: {
+      haccp_today: {
+        Args: { p_company_id: string };
+        Returns: HaccpTodayRow[];
+      };
+      haccp_staff: {
+        Args: { p_company_id: string };
+        Returns: { id: string; full_name: string; has_pin: boolean }[];
+      };
+      haccp_set_pin: {
+        Args: { p_company_id: string; p_user_id: string; p_pin: string | null };
+        Returns: undefined;
+      };
+      haccp_start_staff_session: {
+        Args: { p_company_id: string; p_staff_id: string; p_pin: string };
+        Returns: string;
+      };
+      haccp_complete: {
+        Args: {
+          p_event_id: string;
+          p_occurrence_id: string | null;
+          p_task_id: string | null;
+          p_session_id?: string | null;
+          p_client_at?: string | null;
+          p_note?: string | null;
+        };
+        Returns: { status: string; event_id?: string; occurrence_id?: string; recorded_at?: string };
+      };
+      haccp_undo: {
+        Args: { p_event_id: string; p_undo_event_id: string };
+        Returns: undefined;
+      };
       apply_price_import_row: {
         Args: { p_row_id: string };
         Returns: void;
@@ -1624,4 +1673,90 @@ export type PriceComparisonRow = {
   needs_check: boolean;
   review_status: "geaccepteerd" | "betwist" | null;
   review_note: string | null;
+};
+
+// ---------------------------------------------------------------------
+// HACCP → Schoonmaak & Controle (migratie 0112)
+// ---------------------------------------------------------------------
+
+export type Department = {
+  id: string;
+  group_id: string;
+  company_id: string;
+  location_id: string;
+  name: string;
+  department_type: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HaccpFrequency =
+  | "na_gebruik"
+  | "meerdere_per_dag"
+  | "dagelijks"
+  | "wekelijks"
+  | "maandelijks"
+  | "kwartaal"
+  | "jaarlijks"
+  | "handmatig";
+
+export type HaccpArea = {
+  id: string;
+  group_id: string;
+  company_id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HaccpTask = {
+  id: string;
+  group_id: string;
+  company_id: string;
+  area_id: string;
+  department_id: string | null;
+  title: string;
+  instruction: string | null;
+  cleaning_agent: string | null;
+  frequency: HaccpFrequency;
+  times_per_day: number;
+  weekday: number | null;
+  month_day: number | null;
+  month: number | null;
+  requires_check: boolean;
+  is_active: boolean;
+  sort_order: number;
+  version_no: number;
+  current_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Eén regel voor het scherm Vandaag (rpc haccp_today). */
+export type HaccpTodayRow = {
+  kind: "gepland" | "op_aanvraag";
+  occurrence_id: string | null;
+  task_id: string;
+  title: string;
+  instruction: string | null;
+  cleaning_agent: string | null;
+  frequency: HaccpFrequency;
+  area_id: string;
+  area_name: string;
+  area_sort: number;
+  task_sort: number;
+  department_id: string | null;
+  department_name: string | null;
+  due_date: string;
+  slot: number | null;
+  slots_total: number | null;
+  status: "open" | "uitgevoerd" | "niet_uitgevoerd" | "vervallen";
+  is_late: boolean;
+  completed_at: string | null;
+  completed_by: string | null;
+  last_event_id: string | null;
+  done_today: number | null;
 };

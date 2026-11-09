@@ -18,6 +18,9 @@ import {
   Mail,
   Upload,
   Scale,
+  ClipboardCheck,
+  ListChecks,
+  Settings,
 } from "lucide-react";
 
 export interface NavItem {
@@ -44,44 +47,169 @@ export const NAV_TABS: NavTab[] = [
     label: "Keuken",
     homeHref: "/recepturen",
     items: [
-      { href: "/menukaarten", label: "Menukaarten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
-      { href: "/recepturen", label: "Gerechten", icon: BookOpen, moduleKey: "recepturen" },
-      { href: "/halfproducten", label: "Halfproducten", icon: SoupIcon, moduleKey: "halfproducten" },
-      { href: "/menus", label: "Menu's & buffetten", icon: UtensilsCrossed, moduleKey: "menukaarten" },
-      { href: "/afval", label: "Afvalregistratie", icon: Trash2, moduleKey: "afval" },
-      { href: "/voorraad", label: "Producties", icon: Warehouse, moduleKey: "producties" },
+      {
+        href: "/menukaarten",
+        label: "Menukaarten",
+        icon: UtensilsCrossed,
+        moduleKey: "menukaarten",
+      },
+      {
+        href: "/recepturen",
+        label: "Gerechten",
+        icon: BookOpen,
+        moduleKey: "recepturen",
+      },
+      {
+        href: "/halfproducten",
+        label: "Halfproducten",
+        icon: SoupIcon,
+        moduleKey: "halfproducten",
+      },
+      {
+        href: "/menus",
+        label: "Menu's & buffetten",
+        icon: UtensilsCrossed,
+        moduleKey: "menukaarten",
+      },
+      {
+        href: "/afval",
+        label: "Afvalregistratie",
+        icon: Trash2,
+        moduleKey: "afval",
+      },
+      {
+        href: "/voorraad",
+        label: "Producties",
+        icon: Warehouse,
+        moduleKey: "producties",
+      },
+    ],
+  },
+  {
+    key: "haccp",
+    label: "HACCP",
+    homeHref: "/haccp/vandaag",
+    items: [
+      {
+        href: "/haccp/vandaag",
+        label: "Schoonmaak vandaag",
+        icon: ClipboardCheck,
+        moduleKey: "haccp",
+      },
+      {
+        href: "/haccp/plan",
+        label: "Schoonmaakplan",
+        icon: ListChecks,
+        moduleKey: "haccp_plan",
+      },
+      {
+        href: "/haccp/instellingen",
+        label: "Instellingen",
+        icon: Settings,
+        moduleKey: "haccp_plan",
+      },
     ],
   },
   {
     key: "inkoop",
     label: "Inkoop",
     items: [
-      { href: "/producten", label: "Ingrediënten", icon: Package, moduleKey: "producten" },
-      { href: "/leveranciers", label: "Leveranciers", icon: Truck, moduleKey: "leveranciers" },
-      { href: "/verkoopproducten", label: "Verkoopproducten", icon: ShoppingCart, moduleKey: "verkoopproducten" },
-      { href: "/prijsvergelijking", label: "Prijsvergelijking", icon: Scale, moduleKey: "leveranciers" },
+      {
+        href: "/producten",
+        label: "Ingrediënten",
+        icon: Package,
+        moduleKey: "producten",
+      },
+      {
+        href: "/leveranciers",
+        label: "Leveranciers",
+        icon: Truck,
+        moduleKey: "leveranciers",
+      },
+      {
+        href: "/verkoopproducten",
+        label: "Verkoopproducten",
+        icon: ShoppingCart,
+        moduleKey: "verkoopproducten",
+      },
+      {
+        href: "/prijsvergelijking",
+        label: "Prijsvergelijking",
+        icon: Scale,
+        moduleKey: "leveranciers",
+      },
     ],
   },
   {
     key: "prijzen",
     label: "Prijzen & facturen",
     items: [
-      { href: "/leveranciers/facturen", label: "Facturen", icon: FileText, moduleKey: "leveranciers" },
-      { href: "/leveranciers/prijzen/wijzigingen", label: "Prijswijzigingen", icon: History, moduleKey: "leveranciers" },
-      { href: "/dashboard/prijzen", label: "Prijsontwikkeling", icon: LineChart, moduleKey: "leveranciers" },
-      { href: "/financieel/bedrijven", label: "Per bedrijf", icon: Building2, moduleKey: "leveranciers" },
+      {
+        href: "/leveranciers/facturen",
+        label: "Facturen",
+        icon: FileText,
+        moduleKey: "leveranciers",
+      },
+      {
+        href: "/leveranciers/prijzen/wijzigingen",
+        label: "Prijswijzigingen",
+        icon: History,
+        moduleKey: "leveranciers",
+      },
+      {
+        href: "/dashboard/prijzen",
+        label: "Prijsontwikkeling",
+        icon: LineChart,
+        moduleKey: "leveranciers",
+      },
+      {
+        href: "/financieel/bedrijven",
+        label: "Per bedrijf",
+        icon: Building2,
+        moduleKey: "leveranciers",
+      },
     ],
   },
   {
     key: "beheer",
     label: "Beheer",
     items: [
-      { href: "/importeren", label: "Importeren", icon: Upload, moduleKey: "producten" },
-      { href: "/bedrijven", label: "Bedrijven", icon: Building2, moduleKey: "bedrijven" },
-      { href: "/gebruikers", label: "Gebruikers & rechten", icon: Users, moduleKey: "gebruikers" },
-      { href: "/gebruikers/rollen", label: "Rollen", icon: ShieldCheck, moduleKey: "gebruikers" },
-      { href: "/beheer/wijzigingslog", label: "Wijzigingslog", icon: History, moduleKey: "gebruikers" },
-      { href: "/beheer/factuurverwerking", label: "Factuurverwerking", icon: Mail, moduleKey: "gebruikers" },
+      {
+        href: "/importeren",
+        label: "Importeren",
+        icon: Upload,
+        moduleKey: "producten",
+      },
+      {
+        href: "/bedrijven",
+        label: "Bedrijven",
+        icon: Building2,
+        moduleKey: "bedrijven",
+      },
+      {
+        href: "/gebruikers",
+        label: "Gebruikers & rechten",
+        icon: Users,
+        moduleKey: "gebruikers",
+      },
+      {
+        href: "/gebruikers/rollen",
+        label: "Rollen",
+        icon: ShieldCheck,
+        moduleKey: "gebruikers",
+      },
+      {
+        href: "/beheer/wijzigingslog",
+        label: "Wijzigingslog",
+        icon: History,
+        moduleKey: "gebruikers",
+      },
+      {
+        href: "/beheer/factuurverwerking",
+        label: "Factuurverwerking",
+        icon: Mail,
+        moduleKey: "gebruikers",
+      },
     ],
   },
 ];
@@ -91,7 +219,10 @@ export function findTabForPath(pathname: string): NavTab | null {
   let best: { tab: NavTab; len: number } | null = null;
   for (const tab of NAV_TABS) {
     for (const item of tab.items) {
-      if (pathname.startsWith(item.href) && (!best || item.href.length > best.len)) {
+      if (
+        pathname.startsWith(item.href) &&
+        (!best || item.href.length > best.len)
+      ) {
         best = { tab, len: item.href.length };
       }
     }
