@@ -11,6 +11,8 @@ import {
 import { Topbar } from "@/components/layout/topbar";
 import { SingleCompany } from "@/components/haccp/single-company";
 import { StaffSwitcher } from "@/components/haccp/staff-switcher";
+import { NotDoneDialog } from "@/components/haccp/not-done-dialog";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -78,6 +80,8 @@ function Vandaag({ companyId }: { companyId: string }) {
       return ALL;
     }
   });
+  const canClose = usePermissions().can("haccp_controle").canEdit;
+  const [notDone, setNotDone] = useState<HaccpTodayRow | null>(null);
   const [undo, setUndo] = useState<{ eventId: string; title: string } | null>(
     null,
   );
@@ -382,6 +386,15 @@ function Vandaag({ companyId }: { companyId: string }) {
           </span>
         ) : (
           <div className="flex shrink-0 items-center gap-3">
+            {r.is_late && canClose && r.occurrence_id && (
+              <button
+                type="button"
+                onClick={() => setNotDone(r)}
+                className="h-12 rounded-lg border border-border px-3 text-sm text-muted hover:text-foreground"
+              >
+                Niet gedaan
+              </button>
+            )}
             {r.kind === "op_aanvraag" && (r.done_today ?? 0) > 0 && (
               <span className="hidden text-right text-xs text-muted sm:block">
                 vandaag {r.done_today}×
@@ -538,6 +551,19 @@ function Vandaag({ companyId }: { companyId: string }) {
             </button>
           </div>
         </div>
+      )}
+
+      {notDone && notDone.occurrence_id && (
+        <NotDoneDialog
+          occurrenceId={notDone.occurrence_id}
+          title={notDone.title}
+          dueDate={notDone.due_date}
+          onClose={() => setNotDone(null)}
+          onDone={async () => {
+            setNotDone(null);
+            await load();
+          }}
+        />
       )}
 
       {switching && (

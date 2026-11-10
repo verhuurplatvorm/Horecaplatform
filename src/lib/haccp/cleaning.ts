@@ -332,3 +332,87 @@ export function writeStaffSession(s: StaffSession | null, companyId: string) {
     /* geen opslag: dan telt de ingelogde gebruiker */
   }
 }
+
+// ---------------------------------------------------------------------
+// Datums (yyyy-mm-dd, lokale tijd = Nederland)
+// ---------------------------------------------------------------------
+
+export function toISODate(d: Date): string {
+  return d.toLocaleDateString("sv-SE");
+}
+
+export function todayISO(): string {
+  return toISODate(new Date());
+}
+
+export function addDaysISO(iso: string, days: number): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return toISODate(d);
+}
+
+/** Periode-snelkeuzes voor Historie. */
+export function periodRange(
+  key:
+    "vandaag" | "gisteren" | "week" | "vorige_week" | "maand" | "vorige_maand",
+): { from: string; to: string } {
+  const today = todayISO();
+  const d = new Date(`${today}T12:00:00`);
+  const isoDow = ((d.getDay() + 6) % 7) + 1; // 1 = maandag
+  switch (key) {
+    case "vandaag":
+      return { from: today, to: today };
+    case "gisteren": {
+      const y = addDaysISO(today, -1);
+      return { from: y, to: y };
+    }
+    case "week":
+      return { from: addDaysISO(today, 1 - isoDow), to: today };
+    case "vorige_week": {
+      const mon = addDaysISO(today, 1 - isoDow - 7);
+      return { from: mon, to: addDaysISO(mon, 6) };
+    }
+    case "maand":
+      return { from: `${today.slice(0, 8)}01`, to: today };
+    case "vorige_maand": {
+      const first = new Date(d.getFullYear(), d.getMonth() - 1, 1, 12);
+      const last = new Date(d.getFullYear(), d.getMonth(), 0, 12);
+      return { from: toISODate(first), to: toISODate(last) };
+    }
+  }
+}
+
+export function formatDateNL(iso: string, withWeekday = true): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("nl-NL", {
+    weekday: withWeekday ? "short" : undefined,
+    day: "numeric",
+    month: "short",
+  });
+}
+
+export function formatTimeNL(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("nl-NL", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function formatDateTimeNL(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("nl-NL", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Snelle redenen voor "niet uitgevoerd". */
+export const NOT_DONE_REASONS = [
+  "Geen dienst / gesloten",
+  "Vergeten",
+  "Geen tijd (te druk)",
+  "Ruimte of apparaat niet in gebruik",
+  "Defect / niet mogelijk",
+];

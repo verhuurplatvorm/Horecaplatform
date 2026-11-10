@@ -11,5 +11,9 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: "gebruikers", label: "Gebruikers & rechten" },
   { key: "afval", label: "Afvalregistratie" },
   { key: "haccp", label: "HACCP schoonmaak (afvinken, controle)" },
+  {
+    key: "haccp_controle",
+    label: "HACCP historie & correcties (leidinggevende)",
+  },
   { key: "haccp_plan", label: "HACCP schoonmaakplan beheren" },
 ];

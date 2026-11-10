@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   ListChecks,
   Settings,
+  ScrollText,
 } from "lucide-react";
 
 export interface NavItem {
@@ -95,6 +96,12 @@ export const NAV_TABS: NavTab[] = [
         label: "Schoonmaak vandaag",
         icon: ClipboardCheck,
         moduleKey: "haccp",
+      },
+      {
+        href: "/haccp/historie",
+        label: "Registratie & historie",
+        icon: ScrollText,
+        moduleKey: "haccp_controle",
       },
       {
         href: "/haccp/plan",

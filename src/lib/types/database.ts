@@ -1100,6 +1100,18 @@ export type Database = {
         Update: Partial<HaccpArea>;
         Relationships: [];
       };
+      haccp_closed_days: {
+        Row: HaccpClosedDay;
+        Insert: Partial<HaccpClosedDay>;
+        Update: Partial<HaccpClosedDay>;
+        Relationships: [];
+      };
+      haccp_settings: {
+        Row: HaccpSettings;
+        Insert: Partial<HaccpSettings> & { company_id: string };
+        Update: Partial<HaccpSettings>;
+        Relationships: [];
+      };
       haccp_tasks: {
         Row: HaccpTask;
         Insert: Partial<HaccpTask> & { company_id: string; area_id: string; title: string };
@@ -1165,6 +1177,32 @@ export type Database = {
           p_note?: string | null;
         };
         Returns: { status: string; event_id?: string; occurrence_id?: string; recorded_at?: string };
+      };
+      haccp_set_closed_day: {
+        Args: { p_company_id: string; p_day: string; p_closed: boolean; p_reason?: string | null };
+        Returns: undefined;
+      };
+      haccp_mark_not_done: {
+        Args: { p_event_id: string; p_occurrence_id: string; p_reason: string };
+        Returns: undefined;
+      };
+      haccp_correct: {
+        Args: {
+          p_event_id: string;
+          p_occurrence_id: string;
+          p_kind: "ongeldig" | "andere_medewerker" | "heropenen";
+          p_reason: string;
+          p_new_performer?: string | null;
+        };
+        Returns: undefined;
+      };
+      haccp_history: {
+        Args: { p_company_id: string; p_from: string; p_to: string };
+        Returns: HaccpHistoryRow[];
+      };
+      haccp_occurrence_events: {
+        Args: { p_occurrence_id: string };
+        Returns: HaccpEventRow[];
       };
       haccp_undo: {
         Args: { p_event_id: string; p_undo_event_id: string };
@@ -1759,4 +1797,67 @@ export type HaccpTodayRow = {
   completed_by: string | null;
   last_event_id: string | null;
   done_today: number | null;
+};
+
+export type HaccpClosedDay = {
+  id: string;
+  company_id: string;
+  day: string;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type HaccpSettings = {
+  company_id: string;
+  retention_months: number;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type HaccpOccurrenceStatus = "open" | "uitgevoerd" | "niet_uitgevoerd" | "vervallen";
+
+/** Eén gepland/afgemeld moment in de historie (rpc haccp_history). */
+export type HaccpHistoryRow = {
+  occurrence_id: string;
+  due_date: string;
+  slot: number;
+  slots_total: number;
+  is_on_demand: boolean;
+  task_id: string;
+  title: string;
+  version_no: number;
+  frequency: HaccpFrequency;
+  area_id: string;
+  area_name: string;
+  department_name: string | null;
+  status: HaccpOccurrenceStatus;
+  void_reason: string | null;
+  completed_at: string | null;
+  completed_by_id: string | null;
+  completed_by: string | null;
+  clicked_by: string | null;
+  done_late: boolean;
+  has_corrections: boolean;
+};
+
+/** Eén registratie in de tijdlijn van een moment (rpc haccp_occurrence_events). */
+export type HaccpEventRow = {
+  id: string;
+  event_type:
+    | "uitgevoerd"
+    | "ingetrokken"
+    | "correctie"
+    | "niet_uitgevoerd"
+    | "gecontroleerd_akkoord"
+    | "gecontroleerd_afgekeurd"
+    | "probleem";
+  performed_by: string | null;
+  recorded_by: string | null;
+  recorded_at: string;
+  client_at: string | null;
+  note: string | null;
+  details: { soort?: string } | null;
+  corrects_event_id: string | null;
+  version_no: number | null;
 };

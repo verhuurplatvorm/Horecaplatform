@@ -9,8 +9,13 @@ import { SingleCompany } from "@/components/haccp/single-company";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { cn } from "@/lib/utils";
-import { haccpError } from "@/lib/haccp/cleaning";
-import type { HaccpArea } from "@/lib/types/database";
+import {
+  addDaysISO,
+  formatDateNL,
+  haccpError,
+  todayISO,
+} from "@/lib/haccp/cleaning";
+import type { HaccpArea, HaccpClosedDay } from "@/lib/types/database";
 
 export default function HaccpInstellingenPage() {
   return (
@@ -41,13 +46,18 @@ function Instellingen({ companyId }: { companyId: string }) {
   const [newDept, setNewDept] = useState("");
   const [pinFor, setPinFor] = useState<string | null>(null);
   const [pin, setPin] = useState("");
+  const [today] = useState(() => todayISO());
+  const [closed, setClosed] = useState<HaccpClosedDay[]>([]);
+  const [closeDay, setCloseDay] = useState("");
+  const [closeReason, setCloseReason] = useState("");
+  const [retention, setRetention] = useState<number>(24);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(
     null,
   );
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [a, d, s] = await Promise.all([
+    const [a, d, s, c, st] = await Promise.all([
       supabase
         .from("haccp_areas")
         .select("*")
@@ -61,13 +71,26 @@ function Instellingen({ companyId }: { companyId: string }) {
         .eq("is_active", true)
         .order("name"),
       supabase.rpc("haccp_staff", { p_company_id: companyId }),
+      supabase
+        .from("haccp_closed_days")
+        .select("*")
+        .eq("company_id", companyId)
+        .gte("day", addDaysISO(today, -60))
+        .order("day"),
+      supabase
+        .from("haccp_settings")
+        .select("*")
+        .eq("company_id", companyId)
+        .maybeSingle(),
     ]);
     const err = a.error ?? d.error ?? s.error;
     if (err) setError(haccpError(err));
     setAreas((a.data as HaccpArea[]) ?? []);
     setDepts(d.data ?? []);
     setStaff((s.data as Staff[]) ?? []);
-  }, [companyId]);
+    setClosed((c.data as HaccpClosedDay[]) ?? []);
+    setRetention(st.data?.retention_months ?? 24);
+  }, [companyId, today]);
 
   useEffect(() => {
     // load() zet pas state na het ophalen (asynchroon), niet direct in het effect.
@@ -128,14 +151,12 @@ function Instellingen({ companyId }: { companyId: string }) {
       return;
     }
     const ok = await run(
-      supabase
-        .from("departments")
-        .insert({
-          company_id: companyId,
-          location_id: locationId,
-          group_id: groupId,
-          name,
-        }),
+      supabase.from("departments").insert({
+        company_id: companyId,
+        location_id: locationId,
+        group_id: groupId,
+        name,
+      }),
       `Afdeling "${name}" toegevoegd.`,
     );
     if (ok) setNewDept("");
@@ -154,6 +175,38 @@ function Instellingen({ companyId }: { companyId: string }) {
       setPinFor(null);
       setPin("");
     }
+  }
+
+  async function setDayClosed(day: string, isClosed: boolean, reason?: string) {
+    const ok = await run(
+      createClient().rpc("haccp_set_closed_day", {
+        p_company_id: companyId,
+        p_day: day,
+        p_closed: isClosed,
+        p_reason: reason ?? null,
+      }),
+      isClosed
+        ? `${formatDateNL(day)} staat als gesloten.`
+        : `${formatDateNL(day)} is weer open.`,
+    );
+    if (ok && isClosed) {
+      setCloseDay("");
+      setCloseReason("");
+    }
+  }
+
+  async function saveRetention(months: number) {
+    setRetention(months);
+    await run(
+      createClient()
+        .from("haccp_settings")
+        .upsert({
+          company_id: companyId,
+          retention_months: months,
+          updated_at: new Date().toISOString(),
+        }),
+      "Bewaartermijn opgeslagen.",
+    );
   }
 
   return (
@@ -256,6 +309,107 @@ function Instellingen({ companyId }: { companyId: string }) {
               </li>
             ))}
           </ul>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Gesloten dagen</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted">
+            Op een gesloten dag worden geen schoonmaaktaken gepland en
+            verschijnt er niets als &quot;te laat&quot;. Taken die al zijn
+            afgemeld blijven gewoon staan.
+          </p>
+          <form
+            className="mb-3 flex flex-wrap gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (closeDay) void setDayClosed(closeDay, true, closeReason);
+            }}
+          >
+            <input
+              type="date"
+              className={inputCls}
+              value={closeDay}
+              onChange={(e) => setCloseDay(e.target.value)}
+            />
+            <input
+              className={cn(inputCls, "min-w-40 flex-1")}
+              placeholder="Reden (optioneel), bv. sluitingsdag"
+              value={closeReason}
+              onChange={(e) => setCloseReason(e.target.value)}
+            />
+            <Button type="submit" variant="secondary" disabled={!closeDay}>
+              Gesloten zetten
+            </Button>
+            {!closed.some((c) => c.day === today) && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() =>
+                  void setDayClosed(today, true, "Vandaag gesloten")
+                }
+              >
+                Vandaag gesloten
+              </Button>
+            )}
+          </form>
+          {closed.length === 0 ? (
+            <p className="text-sm text-muted">Geen gesloten dagen ingesteld.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {closed.map((c) => (
+                <li
+                  key={c.id}
+                  className={cn(
+                    "flex items-center gap-3 py-2",
+                    c.day < today && "opacity-60",
+                  )}
+                >
+                  <span className="w-32 text-sm font-medium text-foreground">
+                    {formatDateNL(c.day)}
+                  </span>
+                  <span className="flex-1 text-sm text-muted">{c.reason}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void setDayClosed(c.day, false)}
+                  >
+                    Toch open
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bewaartermijn registraties</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              className={inputCls}
+              value={retention}
+              onChange={(e) => void saveRetention(Number(e.target.value))}
+            >
+              {[6, 12, 24, 36, 60, 84, 120].map((m) => (
+                <option key={m} value={m}>
+                  {m < 12 ? `${m} maanden` : `${m / 12} jaar`}
+                </option>
+              ))}
+            </select>
+            <span className="text-sm text-muted">minimaal bewaren</span>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            KHN adviseert registraties minstens zes maanden te bewaren. Er wordt
+            nooit automatisch iets verwijderd; opruimen na de termijn gebeurt
+            alleen na jouw uitdrukkelijke bevestiging.
+          </p>
         </CardContent>
       </Card>
 
