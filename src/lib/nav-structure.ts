@@ -23,6 +23,7 @@ import {
   Settings,
   ScrollText,
   ShieldAlert,
+  FileBarChart,
 } from "lucide-react";
 
 export interface NavItem {
@@ -108,6 +109,12 @@ export const NAV_TABS: NavTab[] = [
         href: "/haccp/historie",
         label: "Registratie & historie",
         icon: ScrollText,
+        moduleKey: "haccp_controle",
+      },
+      {
+        href: "/haccp/rapport",
+        label: "Inspectierapport",
+        icon: FileBarChart,
         moduleKey: "haccp_controle",
       },
       {

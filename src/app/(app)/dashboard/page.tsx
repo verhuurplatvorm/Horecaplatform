@@ -11,6 +11,7 @@ import {
   WasteWidget,
 } from "@/components/dashboard/widgets";
 import { PriceCheckWidget } from "@/components/dashboard/price-check-widget";
+import { HaccpWidget } from "@/components/dashboard/haccp-widget";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -240,6 +241,8 @@ export default function DashboardPage() {
             </button>
           )}
         </div>
+
+        <HaccpWidget hidden={isHidden("haccp")} onHide={hideWidget} />
 
         <PriceCheckWidget filters={filters} hidden={isHidden("prijscontrole")} onHide={hideWidget} />
 

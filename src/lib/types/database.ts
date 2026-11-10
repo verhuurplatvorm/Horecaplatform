@@ -1263,6 +1263,22 @@ export type Database = {
         Args: { p_occurrence_id?: string | null; p_deviation_id?: string | null };
         Returns: HaccpPhotoRow[];
       };
+      haccp_dashboard: {
+        Args: { p_company_ids: string[] };
+        Returns: HaccpDashboardRow[];
+      };
+      haccp_report: {
+        Args: { p_company_id: string; p_from: string; p_to: string };
+        Returns: HaccpReportRow[];
+      };
+      haccp_report_events: {
+        Args: { p_company_id: string; p_from: string; p_to: string };
+        Returns: HaccpReportEventRow[];
+      };
+      haccp_plan_versions: {
+        Args: { p_company_id: string; p_from: string; p_to: string };
+        Returns: HaccpPlanVersionRow[];
+      };
       haccp_undo: {
         Args: { p_event_id: string; p_undo_event_id: string };
         Returns: undefined;
@@ -1974,4 +1990,74 @@ export type HaccpPhotoRow = {
   taken_by: string | null;
   recorded_at: string;
   note: string | null;
+};
+
+export type HaccpDashboardRow = {
+  company_id: string;
+  company_name: string;
+  area_id: string | null;
+  area_name: string | null;
+  area_sort: number;
+  planned: number;
+  done: number;
+  late: number;
+  to_check: number;
+  deviations_open: number;
+};
+
+export type HaccpReportRow = {
+  occurrence_id: string;
+  due_date: string;
+  slot: number;
+  slots_total: number;
+  is_on_demand: boolean;
+  title: string;
+  version_no: number;
+  area_name: string;
+  area_sort: number;
+  department_name: string | null;
+  status: HaccpOccurrenceStatus;
+  void_reason: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  clicked_by: string | null;
+  done_late: boolean;
+  check_status: "akkoord" | "afgekeurd" | null;
+  checked_by: string | null;
+  checked_at: string | null;
+  has_corrections: boolean;
+  problem_count: number;
+  photo_count: number;
+};
+
+export type HaccpReportEventRow = {
+  due_date: string;
+  title: string;
+  area_name: string;
+  event_type: string;
+  kind: string | null;
+  performed_by: string | null;
+  recorded_by: string | null;
+  recorded_at: string;
+  note: string | null;
+};
+
+export type HaccpPlanVersionRow = {
+  task_id: string;
+  version_no: number;
+  title: string;
+  area_name: string;
+  area_sort: number;
+  department_name: string | null;
+  frequency: HaccpFrequency;
+  times_per_day: number;
+  weekday: number | null;
+  month_day: number | null;
+  month: number | null;
+  instruction: string | null;
+  cleaning_agent: string | null;
+  valid_from: string;
+  valid_to: string | null;
+  task_active: boolean;
+  requires_check: boolean;
 };

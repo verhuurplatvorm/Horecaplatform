@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { History, Search } from "lucide-react";
+import Link from "next/link";
+import { FileBarChart, FileSpreadsheet, History, Search } from "lucide-react";
+import { useCompanyScope } from "@/components/company-context";
+import { exportHaccpExcel } from "@/lib/haccp/report";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -19,7 +22,12 @@ import {
   periodRange,
   todayISO,
 } from "@/lib/haccp/cleaning";
-import type { HaccpEventRow, HaccpHistoryRow } from "@/lib/types/database";
+import type {
+  HaccpEventRow,
+  HaccpHistoryRow,
+  HaccpReportEventRow,
+  HaccpReportRow,
+} from "@/lib/types/database";
 
 export default function HaccpHistoriePage() {
   return (
@@ -137,6 +145,35 @@ function Historie({ companyId }: { companyId: string }) {
   const [status, setStatus] = useState<StatusFilter>("alle");
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<HaccpHistoryRow | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const { companies } = useCompanyScope();
+
+  async function exportExcel() {
+    setExporting(true);
+    const supabase = createClient();
+    const args = {
+      p_company_id: companyId,
+      p_from: range.from,
+      p_to: range.to,
+    };
+    const [r, e] = await Promise.all([
+      supabase.rpc("haccp_report", args),
+      supabase.rpc("haccp_report_events", args),
+    ]);
+    setExporting(false);
+    if (r.error || e.error) {
+      setError(haccpError(r.error ?? e.error));
+      return;
+    }
+    exportHaccpExcel({
+      companyName: companies.find((c) => c.id === companyId)?.name ?? "bedrijf",
+      from: range.from,
+      to: range.to,
+      rows: (r.data as HaccpReportRow[]) ?? [],
+      events: (e.data as HaccpReportEventRow[]) ?? [],
+      today,
+    });
+  }
 
   const load = useCallback(async () => {
     const { data, error: err } = await createClient().rpc("haccp_history", {
@@ -214,6 +251,24 @@ function Historie({ companyId }: { companyId: string }) {
 
   return (
     <div className="mx-auto max-w-5xl p-3 sm:p-6">
+      <div className="mb-3 flex flex-wrap justify-end gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void exportExcel()}
+          disabled={exporting}
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          {exporting ? "Exporteren…" : "Excel (deze periode)"}
+        </Button>
+        <Link
+          href="/haccp/rapport"
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-foreground hover:bg-background"
+        >
+          <FileBarChart className="h-4 w-4" /> Inspectierapport
+        </Link>
+      </div>
+
       <div className="mb-3 flex flex-wrap gap-2">
         {PERIODS.map((p) => (
           <button

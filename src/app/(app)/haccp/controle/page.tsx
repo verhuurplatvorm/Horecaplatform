@@ -90,6 +90,38 @@ function Controle({ companyId }: { companyId: string }) {
   const late = (todayRows ?? []).filter((r) => r.is_late);
   const openDevs = deviations.filter((d) => d.status !== "afgesloten");
 
+  const areaProgress = useMemo(() => {
+    const m = new Map<
+      string,
+      {
+        name: string;
+        sort: number;
+        planned: number;
+        done: number;
+        late: number;
+      }
+    >();
+    for (const r of todayRows ?? []) {
+      if (r.kind !== "gepland") continue;
+      const a = m.get(r.area_id) ?? {
+        name: r.area_name,
+        sort: r.area_sort,
+        planned: 0,
+        done: 0,
+        late: 0,
+      };
+      if (r.is_late) a.late++;
+      else {
+        a.planned++;
+        if (r.status === "uitgevoerd") a.done++;
+      }
+      m.set(r.area_id, a);
+    }
+    return [...m.values()].sort(
+      (a, b) => a.sort - b.sort || a.name.localeCompare(b.name),
+    );
+  }, [todayRows]);
+
   const checkGroups = useMemo(() => {
     const m = new Map<
       string,
@@ -160,6 +192,49 @@ function Controle({ companyId }: { companyId: string }) {
         <p className="mb-4 rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </p>
+      )}
+
+      {/* Voortgang per ruimte */}
+      {areaProgress.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
+            Voortgang per ruimte vandaag
+          </h2>
+          <ul className="space-y-2 rounded-lg border border-border bg-surface p-4">
+            {areaProgress.map((a) => {
+              const pct = a.planned
+                ? Math.round((a.done / a.planned) * 100)
+                : 0;
+              return (
+                <li key={a.name} className="flex items-center gap-3 text-sm">
+                  <span className="w-36 truncate text-foreground">
+                    {a.name}
+                  </span>
+                  <span className="h-2 flex-1 overflow-hidden rounded-full bg-background">
+                    <span
+                      className={cn(
+                        "block h-full rounded-full",
+                        pct === 100 ? "bg-teal" : "bg-teal/70",
+                      )}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </span>
+                  <span className="w-12 text-right tabular-nums text-muted">
+                    {a.done}/{a.planned}
+                  </span>
+                  <span
+                    className={cn(
+                      "w-20 text-right text-xs",
+                      a.late ? "text-danger" : "text-transparent",
+                    )}
+                  >
+                    {a.late} te laat
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {/* Te controleren */}
