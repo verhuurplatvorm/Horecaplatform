@@ -51,6 +51,7 @@ export function ConfigurableTable<T extends { id: string }>({
   emptyLabel = "Geen resultaten.",
   rowClassName,
   onFilterActiveChange,
+  countLabel = "ingrediënten",
 }: {
   columns: DataColumn<T>[];
   rows: T[];
@@ -63,6 +64,8 @@ export function ConfigurableTable<T extends { id: string }>({
   rowClassName?: (row: T) => string | undefined;
   /** Wordt aangeroepen als er een kolomfilter aan- of uitgaat (bv. om alle regels te laden). */
   onFilterActiveChange?: (active: boolean) => void;
+  /** Woord in de teller onder de tabel ("12 van 40 …"). */
+  countLabel?: string;
 }) {
   const defaultOrder = useMemo(() => columns.map((c) => c.key), [columns]);
   const defaultHidden = useMemo(
@@ -480,7 +483,7 @@ export function ConfigurableTable<T extends { id: string }>({
       </div>
 
       <p className="text-xs text-muted">
-        {filtered.length} van {rows.length} ingrediënten
+        {filtered.length} van {rows.length} {countLabel}
       </p>
     </div>
   );

@@ -9,12 +9,17 @@ import {
   Flag,
   RotateCcw,
   Scale,
+  X,
 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { PageActions } from "@/components/layout/page-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
+import {
+  ConfigurableTable,
+  type DataColumn,
+} from "@/components/ui/configurable-table";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { PriceComparisonRow } from "@/lib/types/database";
@@ -47,6 +52,15 @@ const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
   alles: "Alles",
 };
 
+type ReviewStatus = "geaccepteerd" | "betwist" | null;
+type TableRow = PriceComparisonRow & { id: string };
+
+/** Max. aantal regels per schrijfactie, zodat verzoeken niet te groot worden. */
+const BULK_CHUNK = 200;
+
+/** Kan deze regel betwist worden? Alleen bij een prijsverhoging. */
+const canDisputeRow = (r: PriceComparisonRow) => r.diff_per_unit > 0.005;
+
 function matchesStatus(row: PriceComparisonRow, filter: StatusFilter): boolean {
   const s = statusOf(row);
   if (filter === "alles") return true;
@@ -68,6 +82,9 @@ export default function PrijsvergelijkingPage() {
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyRow, setBusyRow] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const range = useMemo(
     () =>
@@ -208,10 +225,7 @@ export default function PrijsvergelijkingPage() {
   }, [visible]);
 
   const review = useCallback(
-    async (
-      row: PriceComparisonRow,
-      status: "geaccepteerd" | "betwist" | null,
-    ) => {
+    async (row: PriceComparisonRow, status: ReviewStatus) => {
       setBusyRow(row.row_id);
       const supabase = createClient();
       const { error: writeError } =
@@ -237,6 +251,154 @@ export default function PrijsvergelijkingPage() {
       );
     },
     [],
+  );
+
+  // ---- Bulk: selecteren en in één keer beoordelen ----
+  const tableRows = useMemo<TableRow[]>(
+    () => visible.map((r) => ({ ...r, id: r.row_id })),
+    [visible],
+  );
+
+  // Alleen geselecteerde regels die nog binnen de filters vallen tellen mee.
+  const selectedRows = useMemo(
+    () => visible.filter((r) => selected.has(r.row_id)),
+    [visible, selected],
+  );
+  const bulkTargets = useMemo(
+    () => ({
+      geaccepteerd: selectedRows.filter(
+        (r) => statusOf(r) !== "akkoord" && r.review_status !== "geaccepteerd",
+      ),
+      betwist: selectedRows.filter(
+        (r) => canDisputeRow(r) && r.review_status !== "betwist",
+      ),
+      reset: selectedRows.filter((r) => r.review_status),
+    }),
+    [selectedRows],
+  );
+  const selectedImpact = useMemo(
+    () =>
+      selectedRows.reduce(
+        (sum, r) => sum + Math.max(0, Number(r.impact ?? 0)),
+        0,
+      ),
+    [selectedRows],
+  );
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback((ids: string[]) => {
+    setSelected((prev) => {
+      const allIn = ids.length > 0 && ids.every((id) => prev.has(id));
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (allIn) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const bulkReview = useCallback(
+    async (status: ReviewStatus) => {
+      const targets =
+        status === null
+          ? bulkTargets.reset
+          : status === "geaccepteerd"
+            ? bulkTargets.geaccepteerd
+            : bulkTargets.betwist;
+      if (targets.length === 0) return;
+
+      const verb =
+        status === null
+          ? "terugzetten naar open"
+          : status === "geaccepteerd"
+            ? "accepteren"
+            : "betwisten";
+      const skipped = selectedRows.length - targets.length;
+      const question =
+        `${targets.length} regel${targets.length === 1 ? "" : "s"} ${verb}?` +
+        (skipped > 0
+          ? `\n\n${skipped} geselecteerde regel${skipped === 1 ? " wordt" : "s worden"} overgeslagen` +
+            (status === "betwist"
+              ? " (geen prijsverhoging of al betwist)."
+              : " (niet van toepassing).")
+          : "");
+      if (!window.confirm(question)) return;
+
+      setBulkBusy(true);
+      setError(null);
+      setNotice(null);
+      const supabase = createClient();
+      const ids = targets.map((r) => r.row_id);
+      const done: string[] = [];
+      let failMessage: string | null = null;
+
+      for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+        const chunk = ids.slice(i, i + BULK_CHUNK);
+        const reviewedAt = new Date().toISOString();
+        const { error: writeError } =
+          status === null
+            ? await supabase
+                .from("price_comparison_reviews")
+                .delete()
+                .in("row_id", chunk)
+            : await supabase.from("price_comparison_reviews").upsert(
+                chunk.map((row_id) => ({
+                  row_id,
+                  status,
+                  reviewed_at: reviewedAt,
+                })),
+              );
+        if (writeError) {
+          failMessage = writeError.message;
+          break;
+        }
+        done.push(...chunk);
+      }
+
+      const doneSet = new Set(done);
+      setRows((prev) =>
+        prev.map((r) =>
+          doneSet.has(r.row_id) ? { ...r, review_status: status } : r,
+        ),
+      );
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of done) next.delete(id);
+        return next;
+      });
+      setBulkBusy(false);
+
+      if (failMessage) {
+        setError(
+          `Opslaan lukte niet helemaal (${done.length} van ${ids.length} verwerkt): ${failMessage}`,
+        );
+      } else {
+        const past =
+          status === null
+            ? "teruggezet"
+            : status === "geaccepteerd"
+              ? "geaccepteerd"
+              : "betwist";
+        setNotice(
+          `${done.length} regel${done.length === 1 ? "" : "s"} ${past}.`,
+        );
+      }
+    },
+    [bulkTargets, selectedRows.length],
+  );
+
+  const columns = useMemo<DataColumn<TableRow>[]>(
+    () => buildColumns({ busyRow, bulkBusy, onReview: review }),
+    [busyRow, bulkBusy, review],
   );
 
   return (
@@ -394,75 +556,98 @@ export default function PrijsvergelijkingPage() {
           </div>
         )}
 
-        {filters.view === "regels" ? (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                      <th className="px-2 py-2 font-medium">Prio</th>
-                      <th className="px-2 py-2 font-medium">Leverancier</th>
-                      <th className="px-2 py-2 font-medium">Art.nr</th>
-                      <th className="px-2 py-2 font-medium">Product</th>
-                      <th className="px-2 py-2 font-medium">Verpakking</th>
-                      <th className="px-2 py-2 text-right font-medium">
-                        Referentie
-                      </th>
-                      <th className="px-2 py-2 text-right font-medium">
-                        Factuur
-                      </th>
-                      <th className="px-2 py-2 text-right font-medium">
-                        Verschil
-                      </th>
+        {notice && (
+          <div className="flex items-center justify-between rounded-md border border-success/30 bg-success/5 px-4 py-2 text-sm text-success">
+            {notice}
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              title="Sluiten"
+              className="opacity-70 hover:opacity-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
-                      <th className="px-2 py-2 text-right font-medium">
-                        Aantal
-                      </th>
-                      <th className="px-2 py-2 text-right font-medium">
-                        Afwijking
-                      </th>
-                      <th className="px-2 py-2 font-medium">Datum</th>
-                      <th className="px-2 py-2 font-medium">Status</th>
-                      <th className="px-2 py-2 font-medium">Actie</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.map((r) => (
-                      <ComparisonRow
-                        key={r.row_id}
-                        row={r}
-                        busy={busyRow === r.row_id}
-                        onReview={review}
-                      />
-                    ))}
-                    {!loading && visible.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={13}
-                          className="px-4 py-8 text-center text-muted"
-                        >
-                          {rows.length === 0
-                            ? "Geen factuurregels met een referentieprijs in deze periode. Importeer een prijslijst of leg een contractprijs vast."
-                            : "Niets gevonden met deze filters."}
-                        </td>
-                      </tr>
-                    )}
-                    {loading && (
-                      <tr>
-                        <td
-                          colSpan={13}
-                          className="px-4 py-8 text-center text-muted"
-                        >
-                          Bezig met vergelijken…
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+        {filters.view === "regels" ? (
+          <div className="space-y-2">
+            {selectedRows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-teal/40 bg-teal/5 px-3 py-2 text-sm">
+                <span className="font-medium">
+                  {selectedRows.length} geselecteerd
+                </span>
+                {selectedImpact > 0 && (
+                  <span className="text-muted">
+                    · {euro(selectedImpact)} te veel
+                  </span>
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={bulkBusy || bulkTargets.geaccepteerd.length === 0}
+                    onClick={() => bulkReview("geaccepteerd")}
+                    className="text-success"
+                  >
+                    <Check className="h-4 w-4" /> Accepteren (
+                    {bulkTargets.geaccepteerd.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={bulkBusy || bulkTargets.betwist.length === 0}
+                    onClick={() => bulkReview("betwist")}
+                    className="text-danger"
+                  >
+                    <Flag className="h-4 w-4" /> Betwisten (
+                    {bulkTargets.betwist.length})
+                  </Button>
+                  {bulkTargets.reset.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={bulkBusy}
+                      onClick={() => bulkReview(null)}
+                      className="text-muted"
+                    >
+                      <RotateCcw className="h-4 w-4" /> Terugzetten (
+                      {bulkTargets.reset.length})
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={bulkBusy}
+                    onClick={() => setSelected(new Set())}
+                  >
+                    Selectie wissen
+                  </Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            )}
+            <ConfigurableTable<TableRow>
+              storageKey="prijsvergelijking-regels"
+              rows={loading ? [] : tableRows}
+              columns={columns}
+              selectedIds={selected}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              countLabel="regels"
+              rowClassName={(r) =>
+                r.priority === 1 && statusOf(r) === "open"
+                  ? "bg-danger/5"
+                  : undefined
+              }
+              emptyLabel={
+                loading
+                  ? "Bezig met vergelijken…"
+                  : rows.length === 0
+                    ? "Geen factuurregels met een referentieprijs in deze periode. Importeer een prijslijst of leg een contractprijs vast."
+                    : "Niets gevonden met deze filters."
+              }
+            />
+          </div>
         ) : (
           <Card>
             <CardContent className="p-0">
@@ -623,149 +808,245 @@ function PriorityChip({
   );
 }
 
-function ComparisonRow({
-  row: r,
-  busy,
+/**
+ * Kolommen van de regel-weergave. Elke kolom kan de gebruiker via
+ * "Kolommen" aan- of uitzetten, verslepen en breder/smaller maken.
+ */
+function buildColumns({
+  busyRow,
+  bulkBusy,
   onReview,
 }: {
-  row: PriceComparisonRow;
-  busy: boolean;
-  onReview: (
-    row: PriceComparisonRow,
-    status: "geaccepteerd" | "betwist" | null,
-  ) => void;
-}) {
-  const status = statusOf(r);
-  const impact = Number(r.impact ?? 0);
-  return (
-    <tr
-      className={cn(
-        "border-t border-border align-top",
-        r.priority === 1 && status === "open" && "bg-danger/5",
-      )}
-    >
-      <td className="px-2 py-2">
-        <PriorityBadge priority={r.priority} />
-      </td>
-      <td className="whitespace-nowrap px-2 py-2">{r.supplier_name}</td>
-      <td className="px-2 py-2 tabular text-muted">
-        {r.article_number ?? "—"}
-      </td>
-      <td className="min-w-52 px-2 py-2">
-        <div className="font-medium">{r.product_name ?? r.description}</div>
-        {r.description &&
-          r.product_name &&
-          r.description.toLowerCase().replace(/\s+/g, "") !==
-            r.product_name.toLowerCase().replace(/\s+/g, "") && (
-            <div className="text-xs text-muted">{r.description}</div>
+  busyRow: string | null;
+  bulkBusy: boolean;
+  onReview: (row: PriceComparisonRow, status: ReviewStatus) => void;
+}): DataColumn<TableRow>[] {
+  return [
+    {
+      key: "prio",
+      label: "Prio",
+      width: 100,
+      value: (r) => r.priority,
+      render: (r) => <PriorityBadge priority={r.priority} />,
+    },
+    {
+      key: "leverancier",
+      label: "Leverancier",
+      width: 150,
+      value: (r) => r.supplier_name,
+    },
+    {
+      key: "artnr",
+      label: "Art.nr",
+      width: 80,
+      value: (r) => r.article_number,
+      render: (r) => (
+        <span className="tabular text-muted">{r.article_number ?? "—"}</span>
+      ),
+    },
+    {
+      key: "product",
+      label: "Product",
+      width: 260,
+      value: (r) => r.product_name ?? r.description,
+      render: (r) => (
+        <div>
+          <div className="font-medium">{r.product_name ?? r.description}</div>
+          {r.description &&
+            r.product_name &&
+            r.description.toLowerCase().replace(/\s+/g, "") !==
+              r.product_name.toLowerCase().replace(/\s+/g, "") && (
+              <div className="text-xs text-muted">{r.description}</div>
+            )}
+          {r.reasons.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-warning">
+              {r.reasons.map((reason) => (
+                <span key={reason}>• {reason}</span>
+              ))}
+            </div>
           )}
-        {r.reasons.length > 0 && (
-          <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-warning">
-            {r.reasons.map((reason) => (
-              <span key={reason}>• {reason}</span>
-            ))}
-          </div>
-        )}
-      </td>
-      <td className="px-2 py-2 text-muted">{r.packaging ?? "—"}</td>
-      <td className="whitespace-nowrap px-2 py-2 text-right tabular">
-        {euro(r.ref_price)}
-        <div className="text-xs text-muted">
-          {r.ref_source === "contract" ? "contract" : "prijslijst"}{" "}
-          {shortDate(r.ref_date)}
         </div>
-      </td>
-      <td className="whitespace-nowrap px-2 py-2 text-right tabular font-medium">
-        {euro(r.invoice_price)}
-      </td>
-      <td
-        className={cn(
-          "whitespace-nowrap px-2 py-2 text-right tabular",
-          r.diff_per_unit > 0.005 && "text-danger",
-          r.diff_per_unit < -0.005 && "text-success",
-        )}
-      >
-        {euro(r.diff_per_unit, true)}
-        <div className="text-xs text-muted">{pct(r.diff_pct)}</div>
-      </td>
-      <td className="px-2 py-2 text-right tabular">
-        {r.quantity === null ? "—" : r.quantity.toLocaleString("nl-NL")}
-      </td>
-      <td
-        className={cn(
-          "whitespace-nowrap px-2 py-2 text-right tabular font-semibold",
-          impact > 0 && "text-danger",
-          impact < 0 && "text-success",
-        )}
-      >
-        {r.impact === null ? "—" : euro(impact, true)}
-      </td>
-      <td className="whitespace-nowrap px-2 py-2 text-muted">
-        {shortDate(r.invoice_date)}
-      </td>
-      <td className="whitespace-nowrap px-2 py-2">
+      ),
+    },
+    {
+      key: "verpakking",
+      label: "Verpakking",
+      width: 110,
+      value: (r) => r.packaging,
+      render: (r) => <span className="text-muted">{r.packaging ?? "—"}</span>,
+    },
+    {
+      key: "referentie",
+      label: "Referentie",
+      width: 120,
+      align: "right",
+      value: (r) => r.ref_price,
+      render: (r) => (
+        <>
+          {euro(r.ref_price)}
+          <div className="text-xs text-muted">
+            {r.ref_source === "contract" ? "contract" : "prijslijst"}{" "}
+            {shortDate(r.ref_date)}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "factuur",
+      label: "Factuur",
+      width: 90,
+      align: "right",
+      value: (r) => r.invoice_price,
+      render: (r) => (
+        <span className="font-medium">{euro(r.invoice_price)}</span>
+      ),
+    },
+    {
+      key: "verschil",
+      label: "Verschil",
+      width: 95,
+      align: "right",
+      value: (r) => r.diff_per_unit,
+      render: (r) => (
         <span
           className={cn(
-            "text-xs font-medium",
-            status === "controle" && "text-warning",
-            status === "betwist" && "text-danger",
-            (status === "akkoord" || status === "geaccepteerd") &&
-              "text-success",
+            r.diff_per_unit > 0.005 && "text-danger",
+            r.diff_per_unit < -0.005 && "text-success",
           )}
         >
-          {status === "controle" && (
-            <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
-          )}
-          {STATUS_LABEL[status]}
+          {euro(r.diff_per_unit, true)}
+          <div className="text-xs text-muted">{pct(r.diff_pct)}</div>
         </span>
-      </td>
-      <td className="whitespace-nowrap px-2 py-2">
-        <div className="flex items-center gap-1">
-          {r.review_status ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onReview(r, null)}
-              title="Beoordeling terugzetten"
-              className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-black/5"
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> Terugzetten
-            </button>
-          ) : (
-            status !== "akkoord" && (
-              <>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => onReview(r, "geaccepteerd")}
-                  title="Accepteren: het verschil is in orde"
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-success hover:bg-success/10"
-                >
-                  <Check className="h-3.5 w-3.5" /> Accepteren
-                </button>
-                {r.diff_per_unit > 0.005 && (
+      ),
+    },
+    {
+      key: "aantal",
+      label: "Aantal",
+      width: 70,
+      align: "right",
+      value: (r) => r.quantity,
+      render: (r) =>
+        r.quantity === null ? "—" : r.quantity.toLocaleString("nl-NL"),
+    },
+    {
+      key: "afwijking",
+      label: "Afwijking",
+      width: 100,
+      align: "right",
+      value: (r) => (r.impact === null ? null : Number(r.impact)),
+      render: (r) => {
+        const impact = Number(r.impact ?? 0);
+        return (
+          <span
+            className={cn(
+              "font-semibold",
+              impact > 0 && "text-danger",
+              impact < 0 && "text-success",
+            )}
+          >
+            {r.impact === null ? "—" : euro(impact, true)}
+          </span>
+        );
+      },
+    },
+    {
+      key: "datum",
+      label: "Datum",
+      width: 90,
+      value: (r) => r.invoice_date,
+      render: (r) => (
+        <span className="text-muted">{shortDate(r.invoice_date)}</span>
+      ),
+    },
+    {
+      key: "factuurnr",
+      label: "Factuurnr",
+      width: 110,
+      hiddenByDefault: true,
+      value: (r) => r.invoice_number,
+    },
+    {
+      key: "status",
+      label: "Status",
+      width: 120,
+      value: (r) => STATUS_LABEL[statusOf(r)],
+      render: (r) => {
+        const status = statusOf(r);
+        return (
+          <span
+            className={cn(
+              "text-xs font-medium",
+              status === "controle" && "text-warning",
+              status === "betwist" && "text-danger",
+              (status === "akkoord" || status === "geaccepteerd") &&
+                "text-success",
+            )}
+          >
+            {status === "controle" && (
+              <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+            )}
+            {STATUS_LABEL[status]}
+          </span>
+        );
+      },
+    },
+    {
+      key: "actie",
+      label: "Actie",
+      width: 230,
+      noFilter: true,
+      value: () => null,
+      render: (r) => {
+        const status = statusOf(r);
+        const busy = bulkBusy || busyRow === r.row_id;
+        return (
+          <div className="flex items-center gap-1">
+            {r.review_status ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onReview(r, null)}
+                title="Beoordeling terugzetten"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-black/5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Terugzetten
+              </button>
+            ) : (
+              status !== "akkoord" && (
+                <>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => onReview(r, "betwist")}
-                    title="Betwisten: terugvragen bij de leverancier"
-                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-danger hover:bg-danger/10"
+                    onClick={() => onReview(r, "geaccepteerd")}
+                    title="Accepteren: het verschil is in orde"
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-success hover:bg-success/10"
                   >
-                    <Flag className="h-3.5 w-3.5" /> Betwisten
+                    <Check className="h-3.5 w-3.5" /> Accepteren
                   </button>
-                )}
-              </>
-            )
-          )}
-          <Link
-            href={`/leveranciers/prijzen/importeren/${r.batch_id}`}
-            title={`Factuur ${r.invoice_number ?? ""} bekijken`}
-            className="inline-flex items-center rounded px-2 py-1 text-xs text-teal hover:bg-teal/10"
-          >
-            <FileText className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      </td>
-    </tr>
-  );
+                  {canDisputeRow(r) && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onReview(r, "betwist")}
+                      title="Betwisten: terugvragen bij de leverancier"
+                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-danger hover:bg-danger/10"
+                    >
+                      <Flag className="h-3.5 w-3.5" /> Betwisten
+                    </button>
+                  )}
+                </>
+              )
+            )}
+            <Link
+              href={`/leveranciers/prijzen/importeren/${r.batch_id}`}
+              title={`Factuur ${r.invoice_number ?? ""} bekijken`}
+              className="inline-flex items-center rounded px-2 py-1 text-xs text-teal hover:bg-teal/10"
+            >
+              <FileText className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        );
+      },
+    },
+  ];
 }
