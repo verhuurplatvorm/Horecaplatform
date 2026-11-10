@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ListPlus, Pencil, Plus } from "lucide-react";
+import { Copy, ListPlus, Pencil, Plus } from "lucide-react";
+import { useCompanyScope } from "@/components/company-context";
 import { Topbar } from "@/components/layout/topbar";
 import { PageActions } from "@/components/layout/page-actions";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,8 @@ function Plan({ companyId }: { companyId: string }) {
   const [newArea, setNewArea] = useState<string | null>(null);
   const [standardOpen, setStandardOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const { companies } = useCompanyScope();
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -214,6 +217,12 @@ function Plan({ companyId }: { companyId: string }) {
     <div className="mx-auto max-w-4xl p-3 sm:p-6">
       {canEdit && (
         <PageActions>
+          {companies.length > 1 && activeAreas.length > 0 && (
+            <Button variant="ghost" onClick={() => setCopyOpen(true)}>
+              <Copy className="h-4 w-4" />
+              Kopiëren naar…
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => setStandardOpen(true)}>
             <ListPlus className="h-4 w-4" />
             Standaardtaken
@@ -541,6 +550,15 @@ function Plan({ companyId }: { companyId: string }) {
             )}
           </form>
         </Modal>
+      )}
+
+      {copyOpen && (
+        <CopyPlanModal
+          fromId={companyId}
+          companies={companies.filter((c) => c.id !== companyId)}
+          fromName={companies.find((c) => c.id === companyId)?.name ?? ""}
+          onClose={() => setCopyOpen(false)}
+        />
       )}
 
       {standardOpen && (
@@ -874,6 +892,93 @@ function StandardTasksModal({
           </div>
         ))}
       </div>
+    </Modal>
+  );
+}
+
+function CopyPlanModal({
+  fromId,
+  fromName,
+  companies,
+  onClose,
+}: {
+  fromId: string;
+  fromName: string;
+  companies: { id: string; name: string }[];
+  onClose: () => void;
+}) {
+  const [target, setTarget] = useState(companies[0]?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function copy() {
+    setBusy(true);
+    setError(null);
+    const { data, error: err } = await createClient().rpc("haccp_copy_plan", {
+      p_from_company: fromId,
+      p_to_company: target,
+    });
+    setBusy(false);
+    if (err) return setError(haccpError(err));
+    const r = data as { ruimtes: number; taken: number; overgeslagen: number };
+    const name = companies.find((c) => c.id === target)?.name ?? "";
+    setResult(
+      `${r.taken} taken en ${r.ruimtes} nieuwe ruimtes gekopieerd naar ${name}.` +
+        (r.overgeslagen
+          ? ` ${r.overgeslagen} taken stonden er al en zijn overgeslagen.`
+          : "") +
+        ` Kies bovenaan ${name} om het plan daar aan te passen.`,
+    );
+  }
+
+  return (
+    <Modal title="Schoonmaakplan kopiëren" onClose={onClose}>
+      {result ? (
+        <>
+          <p className="mb-4 rounded-md bg-teal/10 px-3 py-2 text-sm text-teal">
+            {result}
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>Sluiten</Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="mb-3 text-sm text-foreground">
+            Kopieer alle ruimtes en taken van <b>{fromName}</b> naar:
+          </p>
+          <select
+            className="mb-3 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+          >
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <p className="mb-4 text-xs text-muted">
+            Er wordt alleen toegevoegd: wat daar al staat blijft staan, dubbele
+            taken worden overgeslagen. Daarna kun je het plan daar gewoon
+            aanpassen.
+          </p>
+          {error && (
+            <p className="mb-3 rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              Annuleren
+            </Button>
+            <Button onClick={() => void copy()} disabled={busy || !target}>
+              {busy ? "Kopiëren…" : "Kopiëren"}
+            </Button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }

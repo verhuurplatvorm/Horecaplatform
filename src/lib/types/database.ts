@@ -1279,6 +1279,10 @@ export type Database = {
         Args: { p_company_id: string; p_from: string; p_to: string };
         Returns: HaccpPlanVersionRow[];
       };
+      haccp_copy_plan: {
+        Args: { p_from_company: string; p_to_company: string };
+        Returns: { ruimtes: number; taken: number; overgeslagen: number };
+      };
       haccp_undo: {
         Args: { p_event_id: string; p_undo_event_id: string };
         Returns: undefined;

@@ -23,7 +23,6 @@ import {
   Settings,
   ScrollText,
   ShieldAlert,
-  FileBarChart,
 } from "lucide-react";
 
 export interface NavItem {
@@ -109,12 +108,6 @@ export const NAV_TABS: NavTab[] = [
         href: "/haccp/historie",
         label: "Registratie & historie",
         icon: ScrollText,
-        moduleKey: "haccp_controle",
-      },
-      {
-        href: "/haccp/rapport",
-        label: "Inspectierapport",
-        icon: FileBarChart,
         moduleKey: "haccp_controle",
       },
       {
@@ -248,5 +241,8 @@ export function findTabForPath(pathname: string): NavTab | null {
       }
     }
   }
-  return best?.tab ?? null;
+  if (best) return best.tab;
+  // Pagina's die niet in het menu staan (bv. /haccp/rapport): tabblad op basis van het eerste deel van het pad.
+  const first = pathname.split("/")[1];
+  return NAV_TABS.find((tab) => tab.homeHref?.split("/")[1] === first) ?? null;
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, KeyRound } from "lucide-react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, KeyRound, QrCode } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -420,6 +421,12 @@ function Instellingen({ companyId }: { companyId: string }) {
             Volgorde bepaalt de volgorde op het scherm Vandaag. Een ruimte die
             uit staat verdwijnt uit de planning; de historie blijft bewaard.
           </p>
+          <Link
+            href="/haccp/qr"
+            className="mb-3 inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-foreground hover:bg-background"
+          >
+            <QrCode className="h-4 w-4" /> QR-codes per ruimte afdrukken
+          </Link>
           {areas.length === 0 && (
             <p className="text-sm text-muted">
               Nog geen ruimtes — die ontstaan bij Schoonmaakplan.
