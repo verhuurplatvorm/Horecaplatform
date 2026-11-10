@@ -47,6 +47,9 @@ function Instellingen({ companyId }: { companyId: string }) {
   const [newDept, setNewDept] = useState("");
   const [pinFor, setPinFor] = useState<string | null>(null);
   const [pin, setPin] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [adding, setAdding] = useState(false);
   const [today] = useState(() => todayISO());
   const [closed, setClosed] = useState<HaccpClosedDay[]>([]);
   const [closeDay, setCloseDay] = useState("");
@@ -163,6 +166,33 @@ function Instellingen({ companyId }: { companyId: string }) {
     if (ok) setNewDept("");
   }
 
+  async function addStaff() {
+    setError(null);
+    setNotice(null);
+    setAdding(true);
+    const res = await fetch("/api/haccp/staff", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        companyId,
+        fullName: newName.trim(),
+        pin: newPin,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setAdding(false);
+    if (!res.ok) {
+      setError(json.error ?? "Toevoegen mislukt.");
+      return;
+    }
+    setNotice(
+      `${newName.trim()} is toegevoegd en kan nu op de tablet met de pincode werken.`,
+    );
+    setNewName("");
+    setNewPin("");
+    await load();
+  }
+
   async function savePin(userId: string, value: string | null) {
     const ok = await run(
       createClient().rpc("haccp_set_pin", {
@@ -229,8 +259,8 @@ function Instellingen({ companyId }: { companyId: string }) {
           <p className="mb-3 text-sm text-muted">
             Op een gedeelde keukentablet kiest een medewerker zijn naam en tikt
             zijn pincode (4 cijfers). Afmeldingen worden dan op zijn naam
-            vastgelegd. Nieuwe medewerkers voeg je toe bij Beheer → Gebruikers
-            &amp; rechten.
+            vastgelegd. Heeft iemand geen e-mailadres, voeg hem dan hieronder
+            toe met alleen een naam en pincode.
           </p>
           <ul className="divide-y divide-border">
             {staff.map((s) => (
@@ -308,6 +338,42 @@ function Instellingen({ companyId }: { companyId: string }) {
               </li>
             ))}
           </ul>
+          <form
+            className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addStaff();
+            }}
+          >
+            <span className="w-full text-sm font-medium text-foreground">
+              Medewerker toevoegen (zonder e-mail)
+            </span>
+            <input
+              className={cn(inputCls, "min-w-40 flex-1")}
+              placeholder="Naam"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <input
+              inputMode="numeric"
+              maxLength={4}
+              className={cn(inputCls, "w-28 text-center tracking-widest")}
+              placeholder="Pincode"
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
+            />
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={adding || !newName.trim() || newPin.length !== 4}
+            >
+              {adding ? "Toevoegen…" : "Toevoegen"}
+            </Button>
+            <span className="w-full text-xs text-muted">
+              Kan alleen op de tablet afmelden met naam en pincode; niet zelf
+              inloggen.
+            </span>
+          </form>
         </CardContent>
       </Card>
 

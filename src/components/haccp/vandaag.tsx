@@ -22,7 +22,9 @@ import { cn } from "@/lib/utils";
 import {
   describeFrequency,
   haccpError,
+  isTabletHome,
   readStaffSession,
+  setTabletHome,
   writeStaffSession,
   type StaffSession,
 } from "@/lib/haccp/cleaning";
@@ -82,6 +84,9 @@ export function Vandaag({
   const canClose = usePermissions().can("haccp_controle").canEdit;
   const [notDone, setNotDone] = useState<HaccpTodayRow | null>(null);
   const [menu, setMenu] = useState<HaccpTodayRow | null>(null);
+  const [tabletHome, setTabletHomeState] = useState(() =>
+    typeof window === "undefined" ? false : isTabletHome(),
+  );
   const [reportFor, setReportFor] = useState<HaccpTodayRow | null>(null);
   const [photoKey, setPhotoKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -699,6 +704,22 @@ export function Vandaag({
             await load();
           }}
         />
+      )}
+
+      {!areaId && rows !== null && (
+        <label className="mt-6 flex items-center gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={tabletHome}
+            onChange={(e) => {
+              setTabletHome(e.target.checked);
+              setTabletHomeState(e.target.checked);
+            }}
+          />
+          Dit apparaat altijd openen op Schoonmaak vandaag (handig voor de
+          keukentablet)
+        </label>
       )}
 
       {switching && (

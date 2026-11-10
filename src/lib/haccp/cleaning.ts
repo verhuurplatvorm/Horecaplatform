@@ -416,3 +416,38 @@ export const NOT_DONE_REASONS = [
   "Ruimte of apparaat niet in gebruik",
   "Defect / niet mogelijk",
 ];
+
+// ---------------------------------------------------------------------
+// Startscherm: medewerkers en gedeelde tablets openen op Schoonmaak vandaag
+// ---------------------------------------------------------------------
+
+const TABLET_HOME_KEY = "haccp:tablet-start";
+const LANDED_KEY = "haccp:startscherm-gedaan";
+
+export function isTabletHome(): boolean {
+  try {
+    return window.localStorage.getItem(TABLET_HOME_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setTabletHome(on: boolean) {
+  try {
+    if (on) window.localStorage.setItem(TABLET_HOME_KEY, "1");
+    else window.localStorage.removeItem(TABLET_HOME_KEY);
+  } catch {
+    /* geen opslag: dan gewoon het dashboard */
+  }
+}
+
+/** Eén keer per sessie doorsturen, zodat je daarna gewoon naar het dashboard kunt. */
+export function takeLandingRedirect(): boolean {
+  try {
+    if (window.sessionStorage.getItem(LANDED_KEY)) return false;
+    window.sessionStorage.setItem(LANDED_KEY, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}

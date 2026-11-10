@@ -550,6 +550,8 @@ export type UserCompanyAccess = {
   user_id: string;
   company_id: string;
   role_id: string;
+  granted_at?: string;
+  granted_by?: string | null;
 }
 
 export type RolePermission = {
@@ -1282,6 +1284,10 @@ export type Database = {
       haccp_copy_plan: {
         Args: { p_from_company: string; p_to_company: string };
         Returns: { ruimtes: number; taken: number; overgeslagen: number };
+      };
+      has_module_permission: {
+        Args: { p_company_id: string; p_module_key: string; p_action: "view" | "create" | "edit" | "delete" };
+        Returns: boolean;
       };
       haccp_undo: {
         Args: { p_event_id: string; p_undo_event_id: string };
