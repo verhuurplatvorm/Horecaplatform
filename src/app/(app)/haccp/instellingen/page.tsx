@@ -198,13 +198,11 @@ function Instellingen({ companyId }: { companyId: string }) {
   async function saveRetention(months: number) {
     setRetention(months);
     await run(
-      createClient()
-        .from("haccp_settings")
-        .upsert({
-          company_id: companyId,
-          retention_months: months,
-          updated_at: new Date().toISOString(),
-        }),
+      createClient().from("haccp_settings").upsert({
+        company_id: companyId,
+        retention_months: months,
+        updated_at: new Date().toISOString(),
+      }),
       "Bewaartermijn opgeslagen.",
     );
   }

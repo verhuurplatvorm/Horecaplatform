@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { SingleCompany } from "@/components/haccp/single-company";
 import { NotDoneDialog } from "@/components/haccp/not-done-dialog";
+import { PhotoStrip } from "@/components/haccp/photos";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -668,6 +669,10 @@ function Detail({
           </li>
         ))}
       </ol>
+
+      <div className="mb-5">
+        <PhotoStrip occurrenceId={row.occurrence_id} />
+      </div>
 
       {canEdit && !mode && (
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">

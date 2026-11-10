@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  MoreHorizontal,
   RefreshCw,
   User,
 } from "lucide-react";
@@ -13,6 +14,11 @@ import { SingleCompany } from "@/components/haccp/single-company";
 import { StaffSwitcher } from "@/components/haccp/staff-switcher";
 import { NotDoneDialog } from "@/components/haccp/not-done-dialog";
 import { usePermissions } from "@/components/permissions/permissions-context";
+import { ReportProblemDialog } from "@/components/haccp/report-problem-dialog";
+import { PhotoButton, PhotoStrip } from "@/components/haccp/photos";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -82,6 +88,14 @@ function Vandaag({ companyId }: { companyId: string }) {
   });
   const canClose = usePermissions().can("haccp_controle").canEdit;
   const [notDone, setNotDone] = useState<HaccpTodayRow | null>(null);
+  const [menu, setMenu] = useState<HaccpTodayRow | null>(null);
+  const [reportFor, setReportFor] = useState<HaccpTodayRow | null>(null);
+  const [photoKey, setPhotoKey] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [leadInfo, setLeadInfo] = useState<{
+    devs: number;
+    toCheck: number;
+  } | null>(null);
   const [undo, setUndo] = useState<{ eventId: string; title: string } | null>(
     null,
   );
@@ -97,7 +111,18 @@ function Vandaag({ companyId }: { companyId: string }) {
     }
     setError(null);
     setRows((data as HaccpTodayRow[]) ?? []);
-  }, [companyId]);
+    if (canClose) {
+      const supabase = createClient();
+      const [d, c] = await Promise.all([
+        supabase.rpc("haccp_deviation_list", { p_company_id: companyId }),
+        supabase.rpc("haccp_to_check", { p_company_id: companyId }),
+      ]);
+      setLeadInfo({
+        devs: (d.data ?? []).length,
+        toCheck: (c.data ?? []).length,
+      });
+    }
+  }, [companyId, canClose]);
 
   // Ophalen bij openen, elke minuut en zodra de tablet weer actief wordt.
   useEffect(() => {
@@ -374,6 +399,15 @@ function Vandaag({ companyId }: { companyId: string }) {
           )}
         </button>
 
+        <button
+          type="button"
+          onClick={() => setMenu(r)}
+          className="shrink-0 rounded-md p-2 text-muted hover:bg-background"
+          aria-label="Meer: probleem melden, foto"
+        >
+          <MoreHorizontal className="h-5 w-5" />
+        </button>
+
         {done ? (
           <span className="flex shrink-0 items-center gap-2 text-right text-sm text-teal">
             <Check className="h-5 w-5" />
@@ -477,6 +511,36 @@ function Vandaag({ companyId }: { companyId: string }) {
         </div>
       )}
 
+      {leadInfo && (leadInfo.devs > 0 || leadInfo.toCheck > 0) && (
+        <Link
+          href="/haccp/controle"
+          className="mb-4 flex items-center justify-between rounded-lg border border-copper/40 bg-copper/10 px-4 py-3 text-sm text-foreground"
+        >
+          <span>
+            {leadInfo.devs > 0 && (
+              <>
+                <span className="font-semibold">{leadInfo.devs}</span> afwijking
+                {leadInfo.devs === 1 ? "" : "en"} open
+              </>
+            )}
+            {leadInfo.devs > 0 && leadInfo.toCheck > 0 && " · "}
+            {leadInfo.toCheck > 0 && (
+              <>
+                <span className="font-semibold">{leadInfo.toCheck}</span> te
+                controleren
+              </>
+            )}
+          </span>
+          <span className="text-teal">Naar Controle →</span>
+        </Link>
+      )}
+
+      {notice && (
+        <p className="mb-4 rounded-md bg-teal/10 px-4 py-3 text-sm text-teal">
+          {notice}
+        </p>
+      )}
+
       {error && (
         <p className="mb-4 rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
@@ -551,6 +615,72 @@ function Vandaag({ companyId }: { companyId: string }) {
             </button>
           </div>
         </div>
+      )}
+
+      {menu && (
+        <Modal title={menu.title} onClose={() => setMenu(null)}>
+          <p className="mb-3 text-sm text-muted">{menu.area_name}</p>
+          {(menu.instruction || menu.cleaning_agent) && (
+            <div className="mb-4 rounded-md bg-surface p-3 text-sm">
+              {menu.instruction && (
+                <p className="whitespace-pre-line text-foreground">
+                  {menu.instruction}
+                </p>
+              )}
+              {menu.cleaning_agent && (
+                <p className="text-muted">Middel: {menu.cleaning_agent}</p>
+              )}
+            </div>
+          )}
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              onClick={() => {
+                setReportFor(menu);
+                setMenu(null);
+              }}
+            >
+              <AlertTriangle className="h-4 w-4" /> Probleem melden
+            </Button>
+            {menu.occurrence_id && (
+              <PhotoButton
+                companyId={companyId}
+                occurrenceId={menu.occurrence_id}
+                sessionId={session?.sessionId ?? null}
+                onAdded={() => setPhotoKey((k) => k + 1)}
+              />
+            )}
+          </div>
+          {menu.occurrence_id && (
+            <PhotoStrip
+              occurrenceId={menu.occurrence_id}
+              reloadKey={photoKey}
+            />
+          )}
+          {!menu.occurrence_id && (
+            <p className="text-xs text-muted">
+              Een foto kun je toevoegen nadat de taak is afgemeld.
+            </p>
+          )}
+        </Modal>
+      )}
+
+      {reportFor && (
+        <ReportProblemDialog
+          companyId={companyId}
+          occurrenceId={reportFor.occurrence_id}
+          taskId={reportFor.task_id}
+          title={reportFor.title}
+          sessionId={session?.sessionId ?? null}
+          onClose={() => setReportFor(null)}
+          onDone={async () => {
+            setReportFor(null);
+            setNotice(
+              "Probleem gemeld. De leidinggevende ziet het bij Controle.",
+            );
+            await load();
+          }}
+        />
       )}
 
       {notDone && notDone.occurrence_id && (

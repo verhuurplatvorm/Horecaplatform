@@ -13,7 +13,7 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: "haccp", label: "HACCP schoonmaak (afvinken, controle)" },
   {
     key: "haccp_controle",
-    label: "HACCP historie & correcties (leidinggevende)",
+    label: "HACCP controle, afwijkingen, historie (leidinggevende)",
   },
   { key: "haccp_plan", label: "HACCP schoonmaakplan beheren" },
 ];

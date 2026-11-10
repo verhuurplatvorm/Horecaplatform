@@ -22,6 +22,7 @@ import {
   ListChecks,
   Settings,
   ScrollText,
+  ShieldAlert,
 } from "lucide-react";
 
 export interface NavItem {
@@ -96,6 +97,12 @@ export const NAV_TABS: NavTab[] = [
         label: "Schoonmaak vandaag",
         icon: ClipboardCheck,
         moduleKey: "haccp",
+      },
+      {
+        href: "/haccp/controle",
+        label: "Controle",
+        icon: ShieldAlert,
+        moduleKey: "haccp_controle",
       },
       {
         href: "/haccp/historie",

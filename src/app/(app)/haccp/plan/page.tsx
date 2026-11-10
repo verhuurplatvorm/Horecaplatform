@@ -54,6 +54,7 @@ type Draft = {
   instruction: string;
   cleaning_agent: string;
   is_active: boolean;
+  requires_check: boolean;
 };
 
 const inputCls =
@@ -129,6 +130,7 @@ function Plan({ companyId }: { companyId: string }) {
       instruction: "",
       cleaning_agent: "",
       is_active: true,
+      requires_check: false,
     });
   }
 
@@ -146,6 +148,7 @@ function Plan({ companyId }: { companyId: string }) {
       instruction: t.instruction ?? "",
       cleaning_agent: t.cleaning_agent ?? "",
       is_active: t.is_active,
+      requires_check: t.requires_check,
     });
   }
 
@@ -171,6 +174,7 @@ function Plan({ companyId }: { companyId: string }) {
       instruction: draft.instruction.trim() || null,
       cleaning_agent: draft.cleaning_agent.trim() || null,
       is_active: activeOverride ?? draft.is_active,
+      requires_check: draft.requires_check,
     };
     const supabase = createClient();
     const res = draft.id
@@ -320,6 +324,11 @@ function Plan({ companyId }: { companyId: string }) {
                       </td>
                       <td className="hidden px-4 py-2.5 text-foreground sm:table-cell">
                         {describeFrequency(t)}
+                        {t.requires_check && (
+                          <span className="ml-2 rounded-full bg-copper/15 px-2 py-0.5 text-xs text-copper">
+                            controle
+                          </span>
+                        )}
                       </td>
                       <td className="hidden px-4 py-2.5 text-foreground sm:table-cell">
                         {t.department_id
@@ -504,6 +513,26 @@ function Plan({ companyId }: { companyId: string }) {
                 }
               />
             </div>
+            <label className="flex items-start gap-3 rounded-md border border-border bg-surface p-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-5 w-5"
+                checked={draft.requires_check}
+                onChange={(e) =>
+                  setDraft({ ...draft, requires_check: e.target.checked })
+                }
+              />
+              <span className="text-sm">
+                <span className="font-medium text-foreground">
+                  Controle door leidinggevende
+                </span>
+                <span className="block text-xs text-muted">
+                  Na afmelden verschijnt de taak bij Controle om goed of af te
+                  keuren. Gebruik dit alleen waar het nodig is, bv. grondige
+                  reiniging of periodieke controles.
+                </span>
+              </span>
+            </label>
             {draft.id && (
               <p className="text-xs text-muted">
                 Wijzigingen gelden vanaf nu. Eerdere registraties blijven

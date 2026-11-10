@@ -1204,6 +1204,65 @@ export type Database = {
         Args: { p_occurrence_id: string };
         Returns: HaccpEventRow[];
       };
+      haccp_check: {
+        Args: { p_event_id: string; p_occurrence_id: string; p_result: "akkoord" | "afgekeurd"; p_note?: string | null };
+        Returns: string | null;
+      };
+      haccp_check_many: {
+        Args: { p_occurrence_ids: string[] };
+        Returns: number;
+      };
+      haccp_to_check: {
+        Args: { p_company_id: string };
+        Returns: HaccpToCheckRow[];
+      };
+      haccp_report_problem: {
+        Args: {
+          p_deviation_id: string;
+          p_company_id: string;
+          p_description: string;
+          p_occurrence_id?: string | null;
+          p_task_id?: string | null;
+          p_area_id?: string | null;
+          p_session_id?: string | null;
+        };
+        Returns: string;
+      };
+      haccp_deviation_action: {
+        Args: {
+          p_event_id: string;
+          p_deviation_id: string;
+          p_action: "maatregel" | "opgelost" | "afgesloten" | "heropend" | "opmerking";
+          p_note?: string | null;
+          p_responsible?: string | null;
+          p_session_id?: string | null;
+        };
+        Returns: undefined;
+      };
+      haccp_deviation_list: {
+        Args: { p_company_id: string; p_include_closed?: boolean };
+        Returns: HaccpDeviationRow[];
+      };
+      haccp_deviation_events_list: {
+        Args: { p_deviation_id: string };
+        Returns: HaccpDeviationEventRow[];
+      };
+      haccp_add_photo: {
+        Args: {
+          p_photo_id: string;
+          p_company_id: string;
+          p_storage_path: string;
+          p_occurrence_id?: string | null;
+          p_deviation_id?: string | null;
+          p_session_id?: string | null;
+          p_note?: string | null;
+        };
+        Returns: undefined;
+      };
+      haccp_photo_list: {
+        Args: { p_occurrence_id?: string | null; p_deviation_id?: string | null };
+        Returns: HaccpPhotoRow[];
+      };
       haccp_undo: {
         Args: { p_event_id: string; p_undo_event_id: string };
         Returns: undefined;
@@ -1860,4 +1919,59 @@ export type HaccpEventRow = {
   details: { soort?: string } | null;
   corrects_event_id: string | null;
   version_no: number | null;
+};
+
+export type HaccpToCheckRow = {
+  occurrence_id: string;
+  due_date: string;
+  slot: number;
+  slots_total: number;
+  title: string;
+  area_id: string;
+  area_name: string;
+  area_sort: number;
+  completed_at: string | null;
+  completed_by: string | null;
+  photo_count: number;
+};
+
+export type HaccpDeviationStatus = "open" | "in_behandeling" | "opgelost" | "afgesloten";
+
+export type HaccpDeviationRow = {
+  id: string;
+  description: string;
+  status: HaccpDeviationStatus;
+  area_name: string | null;
+  task_title: string | null;
+  due_date: string | null;
+  occurrence_id: string | null;
+  reported_by: string | null;
+  reported_at: string;
+  corrective_action: string | null;
+  responsible_id: string | null;
+  responsible: string | null;
+  resolution: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  closed_by: string | null;
+  closed_at: string | null;
+  photo_count: number;
+};
+
+export type HaccpDeviationEventRow = {
+  id: string;
+  event_type: "gemeld" | "maatregel" | "opgelost" | "afgesloten" | "heropend" | "opmerking";
+  performed_by: string | null;
+  recorded_by: string | null;
+  recorded_at: string;
+  note: string | null;
+  responsible: string | null;
+};
+
+export type HaccpPhotoRow = {
+  id: string;
+  storage_path: string;
+  taken_by: string | null;
+  recorded_at: string;
+  note: string | null;
 };
