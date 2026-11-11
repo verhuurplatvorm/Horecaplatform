@@ -2,7 +2,17 @@
 
 import { Fragment, use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, FileSpreadsheet, Plus, Save, Trash2, Users } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  FileSpreadsheet,
+  Plus,
+  Save,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -214,22 +224,44 @@ export default function MenuDetailPage({
       await updateLine(lineId, { section_id: null });
       return;
     }
-    const { data: existing } = await supabase
-      .from("event_menu_sections")
-      .select("id")
-      .eq("menu_id", id)
-      .eq("name", trimmed)
-      .maybeSingle();
-    let sectionId = existing?.id ?? null;
+    // Bestaand onderdeel zoeken zonder op hoofdletters/spaties te letten,
+    // zodat "koud" bij "Koud" komt en er geen dubbel onderdeel ontstaat.
+    const key = trimmed.toLowerCase().replace(/\s+/g, " ");
+    let sectionId =
+      sections.find((s) => s.name.trim().toLowerCase().replace(/\s+/g, " ") === key)?.id ?? null;
     if (!sectionId) {
+      // Nieuw onderdeel komt achteraan.
+      const nextSort = sections.reduce((m, s) => Math.max(m, s.sort_order ?? 0), 0) + 1;
       const { data: created } = await supabase
         .from("event_menu_sections")
-        .insert({ menu_id: id, name: trimmed })
+        .insert({ menu_id: id, name: trimmed, sort_order: nextSort })
         .select("id")
         .single();
       sectionId = created?.id ?? null;
     }
     await updateLine(lineId, { section_id: sectionId });
+  }
+
+  /** Onderdeel een plek omhoog/omlaag in het menu. */
+  async function moveSection(order: string[], name: string, dir: -1 | 1) {
+    const norm = (v: string) => v.trim().toLowerCase();
+    const ids = order
+      .map((n) => sections.find((s) => norm(s.name) === norm(n))?.id)
+      .filter((v): v is string => Boolean(v));
+    const target = sections.find((s) => norm(s.name) === norm(name))?.id;
+    const i = target ? ids.indexOf(target) : -1;
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    const supabase = createClient();
+    await Promise.all(
+      ids.map((sid, idx) =>
+        sections.find((s) => s.id === sid)?.sort_order === idx
+          ? null
+          : supabase.from("event_menu_sections").update({ sort_order: idx }).eq("id", sid),
+      ),
+    );
+    load();
   }
 
   async function deleteMenu() {
@@ -275,12 +307,19 @@ export default function MenuDetailPage({
     );
   }
 
-  // Regels groeperen per onderdeel, in de volgorde die de database geeft.
+  // Regels groeperen per onderdeel (zelfde naam = zelfde groep), in de
+  // volgorde waarin een onderdeel voor het eerst voorkomt.
   const sectionGroups: [string, BreakdownLine[]][] = [];
+  const groupByName = new Map<string, [string, BreakdownLine[]]>();
   for (const l of lines) {
-    const last = sectionGroups[sectionGroups.length - 1];
-    if (last && last[0] === l.section_name) last[1].push(l);
-    else sectionGroups.push([l.section_name, [l]]);
+    const key = l.section_name.trim().toLowerCase();
+    const group = groupByName.get(key);
+    if (group) group[1].push(l);
+    else {
+      const g: [string, BreakdownLine[]] = [l.section_name, [l]];
+      groupByName.set(key, g);
+      sectionGroups.push(g);
+    }
   }
 
   // Optellen uit de regels zelf, zodat dit nooit uit de pas loopt met
@@ -512,13 +551,14 @@ export default function MenuDetailPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {sectionGroups.map(([sectionName, group]) => {
+                      {sectionGroups.map(([sectionName, group], groupIndex) => {
                         const isCollapsed = collapsed.has(sectionName);
                         const subtotal = group.reduce((sum, l) => sum + (l.total_cost ?? 0), 0);
                         return (
                           <Fragment key={sectionName}>
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={canViewFinancial ? 9 : 6} className="px-4 py-2">
+                              <td colSpan={canViewFinancial ? 8 : 6} className="px-4 py-2">
+                                <div className="flex items-center gap-2">
                                 <button
                                   onClick={() =>
                                     setCollapsed((prev) => {
@@ -540,6 +580,41 @@ export default function MenuDetailPage({
                                     ({group.length})
                                   </span>
                                 </button>
+                                {sectionName !== "Overig" && (
+                                  <span className="flex items-center gap-0.5 text-muted">
+                                    <button
+                                      type="button"
+                                      disabled={groupIndex === 0}
+                                      onClick={() =>
+                                        moveSection(
+                                          sectionGroups.map((g) => g[0]),
+                                          sectionName,
+                                          -1,
+                                        )
+                                      }
+                                      className="rounded p-1 hover:bg-teal/10 hover:text-teal disabled:opacity-30"
+                                      title="Onderdeel omhoog"
+                                    >
+                                      <ArrowUp className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={groupIndex === sectionGroups.length - 1}
+                                      onClick={() =>
+                                        moveSection(
+                                          sectionGroups.map((g) => g[0]),
+                                          sectionName,
+                                          1,
+                                        )
+                                      }
+                                      className="rounded p-1 hover:bg-teal/10 hover:text-teal disabled:opacity-30"
+                                      title="Onderdeel omlaag"
+                                    >
+                                      <ArrowDown className="h-3.5 w-3.5" />
+                                    </button>
+                                  </span>
+                                )}
+                                </div>
                               </td>
                               {canViewFinancial && (
                                 <td className="px-4 py-2 text-right tabular font-medium">

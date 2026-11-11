@@ -168,12 +168,15 @@ export function MenuLineForm({
     // Onderdeel (bv. "Koud buffet") aanmaken of hergebruiken.
     let sectionId: string | null = null;
     if (sectionName.trim()) {
-      const { data: existing } = await supabase
+      // Zonder op hoofdletters/spaties te letten, zodat er geen dubbel onderdeel ontstaat.
+      const { data: all } = await supabase
         .from("event_menu_sections")
-        .select("id")
-        .eq("menu_id", id)
-        .eq("name", sectionName.trim())
-        .maybeSingle();
+        .select("id, name")
+        .eq("menu_id", id);
+      const key = sectionName.trim().toLowerCase().replace(/\s+/g, " ");
+      const existing = (all ?? []).find(
+        (s) => s.name.trim().toLowerCase().replace(/\s+/g, " ") === key
+      );
       if (existing) sectionId = existing.id;
       else {
         const { data: created } = await supabase
