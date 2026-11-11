@@ -344,6 +344,7 @@ export default function MenuImportPage({
             company_id: companyId,
             name: r.name,
             recipe_kind: "gerecht" as const,
+            category: "Partijgerechten",
             status: "concept" as const,
             created_by: profile.user?.id ?? null,
           })
@@ -644,7 +645,7 @@ export default function MenuImportPage({
                                 </option>
                               )}
                             <option value="nieuw">
-                              + Nieuw gerecht aanmaken (concept)
+                              + Nieuw gerecht aanmaken (concept, map Partijgerechten)
                             </option>
                             <option value="overslaan">Overslaan</option>
                           </select>
