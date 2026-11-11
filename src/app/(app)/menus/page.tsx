@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { FileSpreadsheet, Plus } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { ConfigurableTable } from "@/components/ui/configurable-table";
@@ -93,12 +93,20 @@ export default function MenusPage() {
             Stel een menu, buffet of arrangement samen en reken het automatisch door op
             het aantal personen — tot en met de productiewerklijst en de bestellijst.
           </p>
-          <Link href="/menus/nieuw">
-            <Button>
-              <Plus className="h-4 w-4" />
-              Nieuw menu of buffet
-            </Button>
-          </Link>
+          <div className="flex shrink-0 gap-2">
+            <Link href="/menus/nieuw?sheet=1">
+              <Button variant="secondary">
+                <FileSpreadsheet className="h-4 w-4" />
+                Nieuw uit sheet
+              </Button>
+            </Link>
+            <Link href="/menus/nieuw">
+              <Button>
+                <Plus className="h-4 w-4" />
+                Nieuw menu of buffet
+              </Button>
+            </Link>
+          </div>
         </div>
 
         <ConfigurableTable<MenuRow>

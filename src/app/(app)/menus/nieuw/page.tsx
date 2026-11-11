@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
+import { FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
@@ -19,7 +20,7 @@ export default function NieuwMenuPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function create() {
+  async function create(withSheet = false) {
     if (!name.trim()) {
       setError("Geef het menu een naam.");
       return;
@@ -50,7 +51,10 @@ export default function NieuwMenuPage() {
       setError("Aanmaken mislukt: " + (insertError?.message ?? "onbekende fout"));
       return;
     }
-    router.push(`/menus/${data.id}`);
+    // Via "Nieuw uit sheet" (?sheet=1) of de knop hieronder: direct door naar importeren.
+    const fromSheet =
+      withSheet || new URLSearchParams(window.location.search).get("sheet") === "1";
+    router.push(fromSheet ? `/menus/${data.id}/importeren` : `/menus/${data.id}`);
   }
 
   return (
@@ -101,8 +105,12 @@ export default function NieuwMenuPage() {
             </div>
             {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex gap-2">
-              <Button onClick={create} disabled={saving}>
+              <Button onClick={() => void create()} disabled={saving}>
                 {saving ? "Aanmaken…" : "Aanmaken"}
+              </Button>
+              <Button variant="secondary" onClick={() => void create(true)} disabled={saving}>
+                <FileSpreadsheet className="h-4 w-4" />
+                Aanmaken en sheet importeren
               </Button>
               <Button variant="secondary" onClick={() => router.push("/menus")}>
                 Annuleren
