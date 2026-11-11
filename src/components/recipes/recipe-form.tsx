@@ -258,6 +258,7 @@ export function RecipeForm({
         priceDirection: "up" | "down" | null;
         purchasePrice: number | null;
         packagingDescription: string | null;
+        supplierName: string | null;
         isProvisional: boolean;
       }
     >
@@ -274,6 +275,7 @@ export function RecipeForm({
         allergensContains: string[];
         allergensTraces: string[];
         nutritionTotals: Record<string, number>;
+        supplierNames: string[];
       }
     >
   >(new Map());
@@ -371,7 +373,7 @@ export function RecipeForm({
   async function loadProductPrice(productId: string) {
     if (!referenceCompanyId) return;
     const supabase = createClient();
-    const [{ data: cost }, { data: product }, { data: history }, { data: activeSupplierPrice }] =
+    const [{ data: cost }, { data: product }, { data: history }, { data: activeSupplierPrices }] =
       await Promise.all([
         supabase
           .from("current_product_cost")
@@ -381,7 +383,7 @@ export function RecipeForm({
           .maybeSingle(),
         supabase
           .from("products")
-          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, allergens_checked, contains_traces, nutrition_per_100, is_provisional")
+          .select("base_unit_id, avg_unit_quantity, avg_unit_id, net_unit_quantity, default_loss_percentage, allergens, allergens_checked, contains_traces, nutrition_per_100, is_provisional, preferred_supplier_id")
           .eq("id", productId)
           .single(),
         supabase
@@ -394,13 +396,21 @@ export function RecipeForm({
           .limit(1),
         supabase
           .from("supplier_products")
-          .select("purchase_price, packaging_description")
+          .select("purchase_price, packaging_description, supplier_id, suppliers(name)")
           .eq("product_id", productId)
           .is("valid_to", null)
           .order("valid_from", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+          .limit(20),
       ]);
+    // Vaste voorkeursleverancier gaat voor, anders het meest recente artikel.
+    const supplierRows = (activeSupplierPrices ?? []) as unknown as {
+      purchase_price: number | null;
+      packaging_description: string | null;
+      supplier_id: string;
+      suppliers: { name: string } | null;
+    }[];
+    const activeSupplierPrice =
+      supplierRows.find((s) => s.supplier_id === product?.preferred_supplier_id) ?? supplierRows[0] ?? null;
     const latestChange = history?.[0];
     const priceDirection: "up" | "down" | null =
       latestChange?.new_price_per_base_unit != null && latestChange?.old_price_per_base_unit != null
@@ -425,6 +435,7 @@ export function RecipeForm({
         priceDirection,
         purchasePrice: activeSupplierPrice?.purchase_price ?? null,
         packagingDescription: activeSupplierPrice?.packaging_description ?? null,
+        supplierName: activeSupplierPrice?.suppliers?.name ?? null,
         isProvisional: Boolean(product?.is_provisional),
       })
     );
@@ -447,6 +458,8 @@ export function RecipeForm({
         supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
         supabase.rpc("calculate_recipe_nutrition", { p_recipe_id: recipeId }),
       ]);
+    // Leveranciers van de ingrediënten in dit halfproduct (bv. ijsbergsla → Rovers).
+    const supplierNames = await halfproductSupplierNames(recipeId);
     setHalfproductCosts((prev) =>
       new Map(prev).set(recipeId, {
         totalCost: cost ?? 0,
@@ -457,8 +470,43 @@ export function RecipeForm({
         allergensContains: allergens?.bevat ?? [],
         allergensTraces: allergens?.sporen ?? [],
         nutritionTotals: nutrition ?? {},
+        supplierNames,
       })
     );
+  }
+
+  async function halfproductSupplierNames(recipeId: string): Promise<string[]> {
+    const supabase = createClient();
+    const { data: lines } = await supabase
+      .from("recipe_ingredients")
+      .select("product_id")
+      .eq("recipe_id", recipeId)
+      .not("product_id", "is", null);
+    const productIds = [...new Set((lines ?? []).map((l) => l.product_id as string))];
+    if (productIds.length === 0) return [];
+    const [{ data: sp }, { data: prods }] = await Promise.all([
+      supabase
+        .from("supplier_products")
+        .select("product_id, supplier_id, valid_from, suppliers(name)")
+        .in("product_id", productIds.slice(0, 200))
+        .is("valid_to", null)
+        .order("valid_from", { ascending: false }),
+      supabase.from("products").select("id, preferred_supplier_id").in("id", productIds.slice(0, 200)),
+    ]);
+    const pref = new Map((prods ?? []).map((p) => [p.id, p.preferred_supplier_id]));
+    const rows = (sp ?? []) as unknown as {
+      product_id: string;
+      supplier_id: string;
+      suppliers: { name: string } | null;
+    }[];
+    const names: string[] = [];
+    for (const id of productIds) {
+      const list = rows.filter((r) => r.product_id === id);
+      const pick = list.find((r) => r.supplier_id === pref.get(id)) ?? list[0];
+      const n = pick?.suppliers?.name;
+      if (n && !names.includes(n)) names.push(n);
+    }
+    return names;
   }
 
   const unitsById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
@@ -2574,6 +2622,16 @@ export function RecipeForm({
                           ? productPrices.get(row.refId)?.packagingDescription ?? null
                           : null
                       }
+                      supplierLabel={
+                        !row.refId
+                          ? null
+                          : row.type === "ingrediënt"
+                            ? productPrices.get(row.refId)?.supplierName ?? null
+                            : (() => {
+                                const n = halfproductCosts.get(row.refId)?.supplierNames ?? [];
+                                return n.length === 0 ? null : n.length <= 2 ? n.join(", ") : `${n.slice(0, 2).join(", ")} +${n.length - 2}`;
+                              })()
+                      }
                       isProvisional={
                         row.type === "ingrediënt" && row.refId
                           ? productPrices.get(row.refId)?.isProvisional ?? false
@@ -3414,6 +3472,7 @@ function IngredientLine({
   priceDirection,
   purchasePrice,
   packagingDescription,
+  supplierLabel,
   isProvisional = false,
   conversionNote,
   isDuplicate,
@@ -3437,6 +3496,7 @@ function IngredientLine({
   priceDirection?: "up" | "down" | null;
   purchasePrice?: number | null;
   packagingDescription?: string | null;
+  supplierLabel?: string | null;
   isProvisional?: boolean;
   conversionNote?: string | null;
   isDuplicate: boolean;
@@ -3545,6 +3605,14 @@ function IngredientLine({
           <span className={`truncate ${isLinked ? "text-foreground" : isSearching ? "text-copper" : "font-medium text-danger"}`}>
             {label || "Ingrediënt kiezen…"}
           </span>
+          {isLinked && supplierLabel && (
+            <span
+              className="shrink-0 truncate text-xs text-muted"
+              title={row.type === "halfproduct" ? "Leverancier(s) van de ingrediënten in dit halfproduct" : "Leverancier"}
+            >
+              · {supplierLabel}
+            </span>
+          )}
           {!isLinked && !isSearching && (
             <span className="shrink-0 text-xs text-danger">— kiezen</span>
           )}
