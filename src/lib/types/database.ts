@@ -294,6 +294,10 @@ export type EventMenu = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  actual_person_count?: number | null;
+  actual_notes?: string | null;
+  actual_recorded_at?: string | null;
+  actual_recorded_by?: string | null;
 }
 
 export type EventMenuSection = {
@@ -1098,6 +1102,12 @@ export type Database = {
         Update: Partial<Department>;
         Relationships: [];
       };
+      event_menu_actuals: {
+        Row: EventMenuActual;
+        Insert: Partial<EventMenuActual> & { menu_id: string; quantity_total: number };
+        Update: Partial<EventMenuActual>;
+        Relationships: [];
+      };
       kitchen_stations: {
         Row: KitchenStation;
         Insert: Partial<KitchenStation> & { name: string };
@@ -1185,6 +1195,24 @@ export type Database = {
       };
     };
     Functions: {
+      match_menu_items: {
+        Args: { p_names: string[] };
+        Returns: {
+          name_index: number;
+          item_kind: "gerecht" | "halfproduct" | "ingrediënt";
+          item_id: string;
+          item_name: string;
+          company_id: string | null;
+          status: string | null;
+          category: string | null;
+          similarity_score: number;
+          is_exact: boolean;
+        }[];
+      };
+      get_event_menu_actuals: {
+        Args: { p_menu_id: string; p_company_id: string };
+        Returns: EventMenuActualRow[];
+      };
       kitchen_list: {
         Args: { p_card_ids: string[]; p_portions?: Record<string, number> | null };
         Returns: KitchenListRow[];
@@ -2263,4 +2291,38 @@ export type KitchenListRow = {
   using_station_id: string | null;
   quantity_base: number | null;
   problem: string | null;
+};
+
+// ---------------------------------------------------------------------
+// Menu's & buffetten: nacalculatie (migratie 0120)
+// ---------------------------------------------------------------------
+export type EventMenuActual = {
+  id: string;
+  menu_id: string;
+  line_id: string | null;
+  recipe_id: string | null;
+  product_id: string | null;
+  quantity_total: number;
+  unit_id: string | null;
+  note: string | null;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EventMenuActualRow = {
+  actual_id: string;
+  line_id: string | null;
+  recipe_id: string | null;
+  product_id: string | null;
+  display_name: string;
+  line_type: string;
+  quantity_total: number;
+  unit_id: string | null;
+  unit_name: string | null;
+  unit_price: number | null;
+  total_cost: number | null;
+  note: string | null;
+  sort_order: number;
 };

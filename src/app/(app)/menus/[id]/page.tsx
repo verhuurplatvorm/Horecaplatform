@@ -2,7 +2,7 @@
 
 import { Fragment, use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Plus, Save, Trash2, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, FileSpreadsheet, Plus, Save, Trash2, Users } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/modal";
 import { MenuLineForm } from "@/components/menus/menu-line-form";
 import { MenuOrderList } from "@/components/menus/menu-order-list";
 import { MenuWorkList } from "@/components/menus/menu-work-list";
+import { MenuNacalculatie } from "@/components/menus/menu-nacalculatie";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
@@ -23,6 +24,7 @@ const TABS = [
   { key: "financieel", label: "Financieel" },
   { key: "werklijst", label: "Productiewerklijst" },
   { key: "bestellijst", label: "Bestellijst" },
+  { key: "nacalculatie", label: "Nacalculatie" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -420,14 +422,22 @@ export default function MenuDetailPage({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Samenstelling</CardTitle>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setAddingLine(true)}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Regel toevoegen
-                </Button>
+                <div className="flex gap-2">
+                  <Link href={`/menus/${id}/importeren`}>
+                    <Button variant="secondary" size="sm">
+                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                      Sheet importeren
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setAddingLine(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Regel toevoegen
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <datalist id="menu-secties">
@@ -792,6 +802,17 @@ export default function MenuDetailPage({
         )}
 
         {tab === "bestellijst" && <MenuOrderList menuId={id} />}
+
+        {tab === "nacalculatie" && (
+          <MenuNacalculatie
+            menu={menu}
+            lines={lines}
+            referenceCompanyId={referenceCompanyId}
+            canViewFinancial={canViewFinancial}
+            units={units}
+            onSaveMenu={saveMenu}
+          />
+        )}
       </main>
       {addingLine && (
         <Modal title="Regel toevoegen" onClose={() => setAddingLine(false)}>
