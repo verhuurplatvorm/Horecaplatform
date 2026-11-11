@@ -162,6 +162,14 @@ export function RecipeForm({
     () => startsByWeight(initialRecipe) || (!initialRecipe && initialCategory === PARTY_FOLDER)
   );
   // Gerechten voor Partijen: productievorm, hoofdproduct per vorm, portie p.p.
+  // Hoofdproduct per vorm volgt automatisch het totaalgewicht, tot de kok
+  // het zelf aanpast (fine-tunen). Gelijk aan het totaalgewicht = automatisch.
+  const [partyCapAuto, setPartyCapAuto] = useState<boolean>(
+    () =>
+      initialRecipe?.party_capacity == null ||
+      (initialRecipe.party_capacity_unit_id === initialRecipe.base_unit_id &&
+        Number(initialRecipe.party_capacity) === Number(initialRecipe.yield_quantity))
+  );
   const [party, setParty] = useState<PartySettingsValue>(() => ({
     container: initialRecipe?.party_container ?? "schaal",
     capacity: initialRecipe?.party_capacity?.toString() ?? "",
@@ -1614,9 +1622,18 @@ export function RecipeForm({
 
   /** Partijvelden: alleen voor gerechten in de map Partijgerechten. */
   // Eenheden laden later in; zonder keuze is de capaciteit in gram.
+  const partyUnitId = party.capacityUnitId || (units.find((u) => u.key === "g")?.id ?? "");
+  const capacityFromTotal = (() => {
+    if (!dishByWeight || !(yieldQuantityNum > 0) || !baseUnitId) return null;
+    const from = unitsById.get(baseUnitId);
+    const to = unitsById.get(partyUnitId);
+    if (!from || !to || from.dimension !== to.dimension || !(to.factor_to_base > 0)) return null;
+    return Math.round(((yieldQuantityNum * from.factor_to_base) / to.factor_to_base) * 10) / 10;
+  })();
   const partyValue: PartySettingsValue = {
     ...party,
-    capacityUnitId: party.capacityUnitId || (units.find((u) => u.key === "g")?.id ?? ""),
+    capacityUnitId: partyUnitId,
+    capacity: partyCapAuto && capacityFromTotal !== null ? String(capacityFromTotal) : party.capacity,
   };
 
   function partyPayload() {
@@ -2110,7 +2127,13 @@ export function RecipeForm({
               {isPartyDish ? (
                 <PartySettings
                   value={partyValue}
-                  onChange={setParty}
+                  onChange={(v) => {
+                    if (v.capacity !== partyValue.capacity) setPartyCapAuto(false);
+                    setParty(v);
+                  }}
+                  capacityAuto={partyCapAuto && capacityFromTotal !== null}
+                  capacityFromTotal={capacityFromTotal}
+                  onCapacityAuto={() => setPartyCapAuto(true)}
                   units={units}
                   totalCost={totalCost}
                   totalWeight={dishByWeight ? yieldQuantityNum : 0}

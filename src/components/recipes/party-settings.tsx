@@ -37,6 +37,9 @@ export function PartySettings({
   totalCost,
   totalWeight,
   totalWeightUnitKey,
+  capacityAuto = false,
+  capacityFromTotal = null,
+  onCapacityAuto,
 }: {
   value: PartySettingsValue;
   onChange: (v: PartySettingsValue) => void;
@@ -46,6 +49,10 @@ export function PartySettings({
   /** Totaalgewicht (opbrengst) van één vorm incl. garnering */
   totalWeight: number;
   totalWeightUnitKey: string | null;
+  /** Hoofdproduct volgt nu automatisch het totaalgewicht. */
+  capacityAuto?: boolean;
+  capacityFromTotal?: number | null;
+  onCapacityAuto?: () => void;
 }) {
   const [guests, setGuests] = useState("50");
   const [pct, setPct] = useState("100");
@@ -148,6 +155,20 @@ export function PartySettings({
                 ))}
             </select>
           </div>
+          {capacityAuto ? (
+            <p className="mt-1 text-xs text-muted">
+              Automatisch = totaalgewicht. Pas aan als de garnering niet
+              meetelt.
+            </p>
+          ) : capacityFromTotal !== null && onCapacityAuto ? (
+            <button
+              type="button"
+              onClick={onCapacityAuto}
+              className="mt-1 text-xs text-teal underline"
+            >
+              = totaalgewicht ({num(capacityFromTotal)} {capUnitKey})
+            </button>
+          ) : null}
         </div>
         <div>
           <span className={label}>
