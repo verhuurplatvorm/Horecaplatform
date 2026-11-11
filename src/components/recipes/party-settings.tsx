@@ -85,12 +85,19 @@ export function PartySettings({
     }
   }
 
+  const label =
+    "mb-1 block text-xs font-medium uppercase tracking-wide text-muted";
+  const active = "border-teal bg-teal/10 text-teal";
+  const idle = "border-border text-muted hover:border-teal/50";
+
   return (
-    <div className="space-y-3 rounded-md border border-teal/30 bg-teal/5 p-3 sm:col-span-2">
-      <p className="text-sm font-medium">Partij-instellingen</p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-muted">Productievorm</span>
+    <div className="col-span-full space-y-4 rounded-md border border-teal/30 bg-teal/5 p-4">
+      <p className="text-sm font-semibold">Partij-instellingen</p>
+
+      {/* Rij 1: vorm, capaciteit, portie, personen per vorm */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_minmax(0,0.7fr)]">
+        <div>
+          <span className={label}>Productievorm</span>
           <select
             value={value.container}
             onChange={(e) => {
@@ -104,7 +111,7 @@ export function PartySettings({
                     : (unit?.id ?? ""),
               });
             }}
-            className="input"
+            className="input w-full"
           >
             {PARTY_CONTAINERS.map((c) => (
               <option key={c.key} value={c.key}>
@@ -112,20 +119,20 @@ export function PartySettings({
               </option>
             ))}
           </select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-muted">
+        </div>
+        <div>
+          <span className={label}>
             Hoofdproduct per {vorm.label.toLowerCase()}
           </span>
-          <span className="flex gap-1">
+          <div className="flex gap-2">
             <input
               type="number"
               min="0"
               step="any"
               value={value.capacity}
               onChange={(e) => set({ capacity: e.target.value })}
-              className="input w-24!"
-              placeholder="1200"
+              className={`input min-w-0 flex-1 ${capacity > 0 ? "" : "border-copper!"}`}
+              placeholder="bijv. 1200"
             />
             <select
               value={value.capacityUnitId}
@@ -140,19 +147,19 @@ export function PartySettings({
                   </option>
                 ))}
             </select>
+          </div>
+        </div>
+        <div>
+          <span className={label}>
+            Portie per persoon ({capUnit?.name ?? "gram"})
           </span>
-        </label>
-        <div className="text-sm">
-          <span className="mb-1 block text-muted">
-            Standaardportie per persoon
-          </span>
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex items-center gap-1">
             {PORTION_PRESETS.map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => set({ portion: String(p) })}
-                className={`rounded border px-2 py-1 text-xs ${portion === p ? "border-teal bg-teal/10 text-teal" : "border-border text-muted"}`}
+                className={`h-10 w-11 rounded-md border text-sm tabular ${portion === p ? active : idle}`}
               >
                 {p}
               </button>
@@ -163,85 +170,85 @@ export function PartySettings({
               step="any"
               value={value.portion}
               onChange={(e) => set({ portion: e.target.value })}
-              className={`input h-7! w-16! text-xs ${custom ? "border-teal" : ""}`}
+              className={`input w-20! text-center ${custom ? "border-teal!" : ""}`}
               title="Eigen portie"
+              placeholder="eigen"
             />
-            <span className="text-xs text-muted">{capUnit?.name ?? ""}</span>
           </div>
+        </div>
+        <div>
+          <span className={label}>Personen per {vorm.label.toLowerCase()}</span>
+          <p className="flex h-10 items-center text-lg font-semibold tabular">
+            {perContainer !== null ? (
+              num(perContainer)
+            ) : (
+              <span className="text-sm font-normal text-copper">vul in</span>
+            )}
+          </p>
         </div>
       </div>
 
-      <p className="text-sm">
-        {perContainer !== null ? (
-          <>
-            1 {vorm.label.toLowerCase()} ={" "}
-            <strong>{num(perContainer)} personen</strong> bij {num(portion)}{" "}
-            {capUnitKey} p.p.
-          </>
-        ) : (
-          <span className="text-muted">
-            Vul hoofdproduct per vorm en standaardportie in.
-          </span>
-        )}
-      </p>
-
-      <div className="flex flex-wrap gap-2 text-sm">
-        <button
-          type="button"
-          onClick={() => set({ full: true })}
-          className={`rounded-md border px-3 py-1.5 ${value.full ? "border-teal bg-teal/10 text-teal" : "border-border text-muted"}`}
-        >
-          A. Volle {vorm.plural} (standaard)
-        </button>
-        <button
-          type="button"
-          onClick={() => set({ full: false })}
-          className={`rounded-md border px-3 py-1.5 ${!value.full ? "border-teal bg-teal/10 text-teal" : "border-border text-muted"}`}
-        >
-          B. Laatste {vorm.label.toLowerCase()} aanpassen
-        </button>
+      {/* Rij 2: afronding */}
+      <div>
+        <span className={label}>Afronding</span>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:w-2/3">
+          <button
+            type="button"
+            onClick={() => set({ full: true })}
+            className={`h-10 rounded-md border px-3 text-sm ${value.full ? active : idle}`}
+          >
+            A. Volle {vorm.plural} (standaard)
+          </button>
+          <button
+            type="button"
+            onClick={() => set({ full: false })}
+            className={`h-10 rounded-md border px-3 text-sm ${!value.full ? active : idle}`}
+          >
+            B. Laatste {vorm.label.toLowerCase()} aanpassen
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+      {/* Rij 3: kosten */}
+      <div className="grid grid-cols-2 gap-4 border-t border-teal/20 pt-3 lg:grid-cols-4">
         <div>
-          <p className="text-xs text-muted">
-            Kosten per {vorm.label.toLowerCase()}
-          </p>
-          <p className="tabular font-medium">
+          <span className={label}>Kosten per {vorm.label.toLowerCase()}</span>
+          <p className="tabular text-base font-semibold">
             {totalCost > 0 ? euro(totalCost) : "—"}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted">
-            Per {perKiloLabel ?? "kg / liter"}
-          </p>
-          <p className="tabular font-medium">
+          <span className={label}>Per {perKiloLabel ?? "kg / liter"}</span>
+          <p className="tabular text-base font-semibold">
             {perKilo !== null ? euro(perKilo) : "—"}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted">Per standaardportie</p>
-          <p className="tabular font-medium">
+          <span className={label}>Per standaardportie</span>
+          <p className="tabular text-base font-semibold">
             {perContainer && totalCost > 0
               ? euro(totalCost / perContainer)
               : "—"}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted">Geen verkoopprijs</p>
-          <p className="text-xs text-muted">Marge staat op menu/buffet</p>
+          <span className={label}>Verkoopprijs</span>
+          <p className="text-sm text-muted">
+            Niet hier — marge staat op menu/buffet
+          </p>
         </div>
       </div>
 
-      <div className="rounded border border-border bg-surface p-2 text-sm">
+      {/* Rij 4: rekenvoorbeeld */}
+      <div className="rounded-md border border-border bg-surface p-3 text-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted">Rekenvoorbeeld:</span>
+          <span className="font-medium">Rekenvoorbeeld</span>
           <input
             type="number"
             min="0"
             value={guests}
             onChange={(e) => setGuests(e.target.value)}
-            className="input h-7! w-20!"
+            className="input w-20! text-right"
           />
           <span>gasten ×</span>
           <input
@@ -250,37 +257,52 @@ export function PartySettings({
             max="100"
             value={pct}
             onChange={(e) => setPct(e.target.value)}
-            className="input h-7! w-16!"
+            className="input w-20! text-right"
           />
           <span>% deelname</span>
         </div>
-        {plan && plan.containers > 0 && (
-          <p className="mt-1">
-            Netto nodig{" "}
-            <strong>
-              {num(plan.needed)} {capUnitKey}
-            </strong>{" "}
-            →{" "}
-            <strong>
-              {plan.containers}{" "}
-              {containerLabel(value.container, plan.containers)}
-            </strong>{" "}
-            ({formatDistribution(plan.distribution, capUnitKey)}) · capaciteit{" "}
-            {num(plan.containers * capacity)} {capUnitKey} · verschil{" "}
-            {num(plan.containers * capacity - plan.needed)} {capUnitKey}
-            {totalCost > 0 && (
-              <>
-                {" "}
-                · kosten {euro(totalCost * plan.recipeFactor)}
-                {plan.difference > 0 && (
-                  <>
-                    {" "}
-                    (waarvan overproductie{" "}
-                    {euro((totalCost * plan.difference) / capacity)})
-                  </>
-                )}
-              </>
-            )}
+        {plan && plan.containers > 0 ? (
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div>
+              <span className={label}>Netto nodig</span>
+              <p className="tabular font-semibold">
+                {num(plan.needed)} {capUnitKey}
+              </p>
+            </div>
+            <div>
+              <span className={label}>Aantal</span>
+              <p className="tabular font-semibold">
+                {plan.containers}{" "}
+                {containerLabel(value.container, plan.containers)}
+              </p>
+            </div>
+            <div>
+              <span className={label}>Verdeling</span>
+              <p className="tabular">
+                {formatDistribution(plan.distribution, capUnitKey)}
+              </p>
+            </div>
+            <div>
+              <span className={label}>Over</span>
+              <p className="tabular">
+                {num(plan.difference)} {capUnitKey}
+              </p>
+            </div>
+            <div>
+              <span className={label}>Kosten</span>
+              <p className="tabular font-semibold">
+                {totalCost > 0 ? euro(totalCost * plan.recipeFactor) : "—"}
+              </p>
+              {totalCost > 0 && plan.difference > 0 && (
+                <p className="text-xs text-muted">
+                  waarvan over {euro((totalCost * plan.difference) / capacity)}
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-muted">
+            Vul hoofdproduct per vorm en portie in om te rekenen.
           </p>
         )}
       </div>

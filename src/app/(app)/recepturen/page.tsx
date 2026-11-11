@@ -27,6 +27,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { cn } from "@/lib/utils";
 import type { Recipe, RecipeFolder } from "@/lib/types/database";
+import { RecipeTabs } from "@/components/recipes/recipe-tabs";
 
 const RECIPE_DRAG = "text/recipe-id";
 const FOLDER_DRAG = "text/recipe-folder-id";
@@ -890,6 +891,7 @@ export default function RecepturenPage() {
   return (
     <>
       <Topbar title="Recepten (Gerechten)" />
+      <RecipeTabs active="alle" />
       <main className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[240px_minmax(0,1fr)] md:p-6">
         <div>
           <Card>

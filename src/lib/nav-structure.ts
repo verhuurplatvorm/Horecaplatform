@@ -84,12 +84,6 @@ export const NAV_TABS: NavTab[] = [
         moduleKey: "halfproducten",
       },
       {
-        href: "/partijgerechten",
-        label: "Gerechten voor Partijen",
-        icon: Users,
-        moduleKey: "recepturen",
-      },
-      {
         href: "/menus",
         label: "Menu's & buffetten",
         icon: UtensilsCrossed,

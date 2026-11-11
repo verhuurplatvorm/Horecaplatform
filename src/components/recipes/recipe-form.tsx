@@ -2058,9 +2058,10 @@ export function RecipeForm({
               </Field>
               {dishByWeight ? (
                 <Field
+                  span2
                   label={
                     isPartyDish
-                      ? "Totaalgewicht van één standaardvorm incl. garnering (opbrengst)"
+                      ? "Totaalgewicht van één standaardvorm incl. garnering"
                       : "Totaalgewicht van dit recept (opbrengst)"
                   }
                 >
@@ -2091,7 +2092,7 @@ export function RecipeForm({
                       <button
                         type="button"
                         onClick={() => setYieldQuantity(String(Math.round(computedYieldFromIngredients)))}
-                        className="text-xs text-teal underline"
+                        className="whitespace-nowrap text-xs text-teal underline"
                       >
                         = som ingrediënten ({formatAmount(computedYieldFromIngredients, baseUnitName)})
                       </button>
