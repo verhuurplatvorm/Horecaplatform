@@ -535,6 +535,7 @@ export type UserProfile = {
   email: string;
   is_group_admin: boolean;
   is_active: boolean;
+  is_shared_account?: boolean;
 }
 
 export type Role = {
@@ -1096,6 +1097,24 @@ export type Database = {
         Update: Partial<Department>;
         Relationships: [];
       };
+      sticker_freezer_categories: {
+        Row: StickerFreezerCategory;
+        Insert: Partial<StickerFreezerCategory> & { name: string };
+        Update: Partial<StickerFreezerCategory>;
+        Relationships: [];
+      };
+      sticker_product_settings: {
+        Row: StickerProductSettings;
+        Insert: Partial<StickerProductSettings>;
+        Update: Partial<StickerProductSettings>;
+        Relationships: [];
+      };
+      sticker_prints: {
+        Row: StickerPrint;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       haccp_areas: {
         Row: HaccpArea;
         Insert: Partial<HaccpArea> & { company_id: string; name: string };
@@ -1153,6 +1172,29 @@ export type Database = {
       };
     };
     Functions: {
+      sticker_staff: {
+        Args: { p_company_id: string };
+        Returns: StickerStaff[];
+      };
+      sticker_print: {
+        Args: { p: Record<string, unknown> };
+        Returns: { status: string; id: string; employee_name?: string };
+      };
+      sticker_reprint: {
+        Args: {
+          p_id: string;
+          p_original_id: string;
+          p_session_id?: string | null;
+          p_count?: number;
+          p_reason?: string | null;
+          p_format?: string | null;
+        };
+        Returns: { status: string; id: string; original_id?: string };
+      };
+      sticker_can_manage: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       haccp_today: {
         Args: { p_company_id: string };
         Returns: HaccpTodayRow[];
@@ -2070,4 +2112,88 @@ export type HaccpPlanVersionRow = {
   valid_to: string | null;
   task_active: boolean;
   requires_check: boolean;
+};
+
+// ---------------------------------------------------------------------
+// Stickers (migratie 0117)
+// ---------------------------------------------------------------------
+export type StickerFreezerCategory = {
+  id: string;
+  group_id: string;
+  key: string | null;
+  name: string;
+  months: number | null;
+  storage_temp: string;
+  sort_order: number;
+  is_active: boolean;
+  approved_at: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StickerProductSettings = {
+  id: string;
+  group_id: string;
+  recipe_id: string | null;
+  product_id: string | null;
+  freezer_category_id: string | null;
+  freezer_months: number | null;
+  fresh_days: number | null;
+  note: string | null;
+  category_set_by: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StickerPrint = {
+  id: string;
+  group_id: string;
+  company_id: string;
+  company_name: string;
+  recipe_id: string | null;
+  product_id: string | null;
+  product_name: string;
+  sticker_type: "productie" | "vers" | "diepvries";
+  freezer_category_id: string | null;
+  product_group: string | null;
+  production_date: string;
+  production_time: string | null;
+  original_expiry: string | null;
+  original_expiry_kind: "TGT" | "THT" | null;
+  original_source: "batch" | "handmatig" | null;
+  source_label_id: string | null;
+  standard_term: number | null;
+  term_unit: "dagen" | "maanden" | null;
+  applied_term: number | null;
+  expiry_date: string | null;
+  term_source: string | null;
+  term_changed: boolean;
+  change_reason: string | null;
+  approved_by: string | null;
+  approved_by_name: string | null;
+  storage_temp: string | null;
+  batch_number: string | null;
+  quantity: string | null;
+  note: string | null;
+  employee_id: string;
+  employee_name: string;
+  printed_by_id: string;
+  printed_by_name: string;
+  recorded_by: string | null;
+  staff_session_id: string | null;
+  sticker_count: number;
+  sticker_format: string | null;
+  reprint_of: string | null;
+  reprint_reason: string | null;
+  printed_at: string;
+};
+
+export type StickerStaff = {
+  id: string;
+  full_name: string;
+  has_pin: boolean;
+  can_approve: boolean;
 };

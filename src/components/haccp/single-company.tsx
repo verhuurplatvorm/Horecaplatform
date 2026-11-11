@@ -9,8 +9,10 @@ import { useCompanyScope } from "@/components/company-context";
  */
 export function SingleCompany({
   children,
+  hint = "Het schoonmaakplan en de registraties zijn per bedrijf. Kies er één.",
 }: {
   children: (companyId: string) => React.ReactNode;
+  hint?: string;
 }) {
   const { companies, activeCompanyIds, loading, setScope } = useCompanyScope();
 
@@ -31,7 +33,7 @@ export function SingleCompany({
         Voor welk bedrijf?
       </h2>
       <p className="mb-5 text-sm text-muted">
-        Het schoonmaakplan en de registraties zijn per bedrijf. Kies er één.
+        {hint}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {options.map((c) => (

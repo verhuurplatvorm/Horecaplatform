@@ -13,6 +13,7 @@ import {
 import { PriceCheckWidget } from "@/components/dashboard/price-check-widget";
 import { HaccpWidget } from "@/components/dashboard/haccp-widget";
 import { HaccpLanding } from "@/components/haccp/haccp-landing";
+import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -140,6 +141,7 @@ export default function DashboardPage() {
     <>
       <Topbar title="Dashboard" />
       <main className="space-y-4 p-6">
+        <StickerQuickButton big />
         <Link
           href="/leveranciers/facturen"
           className={cn(

@@ -16,4 +16,9 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
     label: "HACCP controle, afwijkingen, historie (leidinggevende)",
   },
   { key: "haccp_plan", label: "HACCP schoonmaakplan beheren" },
+  { key: "stickers", label: "Stickers afdrukken (vers, diepvries, productiedatum)" },
+  {
+    key: "stickers_beheer",
+    label: "Bewaartermijnen beheren en langere houdbaarheid goedkeuren",
+  },
 ];

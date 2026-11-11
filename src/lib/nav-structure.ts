@@ -23,6 +23,9 @@ import {
   Settings,
   ScrollText,
   ShieldAlert,
+  Printer,
+  Tags,
+  Timer,
 } from "lucide-react";
 
 export interface NavItem {
@@ -49,6 +52,12 @@ export const NAV_TABS: NavTab[] = [
     label: "Keuken",
     homeHref: "/recepturen",
     items: [
+      {
+        href: "/stickers",
+        label: "Sticker afdrukken",
+        icon: Printer,
+        moduleKey: "stickers",
+      },
       {
         href: "/menukaarten",
         label: "Menukaarten",
@@ -109,6 +118,18 @@ export const NAV_TABS: NavTab[] = [
         label: "Registratie & historie",
         icon: ScrollText,
         moduleKey: "haccp_controle",
+      },
+      {
+        href: "/stickers/historie",
+        label: "Stickerhistorie",
+        icon: Tags,
+        moduleKey: "stickers",
+      },
+      {
+        href: "/beheer/haccp/bewaartermijnen",
+        label: "Bewaartermijnen",
+        icon: Timer,
+        moduleKey: "stickers_beheer",
       },
       {
         href: "/haccp/plan",

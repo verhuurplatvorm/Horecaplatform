@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
+import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
 import { RecipeForm } from "@/components/recipes/recipe-form";
 import { RecipeMenuPlacements } from "@/components/recipes/recipe-menu-placements";
 import { createClient } from "@/lib/supabase/server";
@@ -31,6 +32,9 @@ export default async function BewerkReceptuurPage({
     <>
       <Topbar title={`Bewerken: ${recipe.name}`} />
       <main className="space-y-4 p-6">
+        <div className="flex justify-end">
+          <StickerQuickButton recipeId={id} />
+        </div>
         <RecipeForm
           initialRecipe={recipe as Recipe}
           initialIngredients={(ingredients as RecipeIngredient[]) ?? []}

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ProductForm } from "@/components/products/product-form";
 import { PageActionsSlot } from "@/components/layout/page-actions";
+import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
 import { ProductPricing } from "@/components/products/product-pricing";
 import { ProductUsageTab } from "@/components/products/product-usage-tab";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,7 @@ export function ProductDetailTabs({
             </p>
           </div>
           <PageActionsSlot name="header" />
+          <StickerQuickButton productId={product.id} />
           <div className="flex items-center gap-1">
             {prevId ? (
               <Link
