@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { formatDateNL, type StickerType } from "@/lib/stickers/stickers";
 
@@ -78,20 +79,42 @@ export function StickerLabel({
   className?: string;
 }) {
   const f = findFormat(format);
-  // Grotere stickers krijgen naar verhouding grotere letters.
-  const k = Math.min(
-    1.8,
-    Math.max(1, Math.min(f.heightMm / 30, f.widthMm / 60)),
-  );
-  const pt = (n: number) => `${(n * k).toFixed(1)}pt`;
-  const small = f.heightMm <= 32;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
   const name = `${TITLE_PREFIX[data.type]}${data.productName}`;
-  // Titel zo groot mogelijk, kleiner bij lange namen.
-  const titleSize = name.length <= 14 ? 15 : name.length <= 22 ? 13 : 11;
   const time = data.productionTime ? ` ${data.productionTime.slice(0, 5)}` : "";
   const extra = [data.batchNumber && `Batch ${data.batchNumber}`, data.quantity]
     .filter(Boolean)
     .join(" · ");
+
+  // Tekst zo groot mogelijk: alle maten zijn in em, hier zoeken we de
+  // grootste basisgrootte waarbij alles nog op de sticker past.
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const inner = innerRef.current;
+    if (!box || !inner) return;
+    const cs = getComputedStyle(box);
+    const availW =
+      box.clientWidth -
+      parseFloat(cs.paddingLeft) -
+      parseFloat(cs.paddingRight);
+    const availH =
+      box.clientHeight -
+      parseFloat(cs.paddingTop) -
+      parseFloat(cs.paddingBottom);
+    if (availW <= 0 || availH <= 0) return;
+    const fits = () =>
+      inner.scrollWidth <= availW + 0.5 && inner.offsetHeight <= availH + 0.5;
+    let lo = 4;
+    let hi = 40;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      box.style.fontSize = `${mid}pt`;
+      if (fits()) lo = mid;
+      else hi = mid;
+    }
+    box.style.fontSize = `${lo}pt`;
+  });
 
   /** Klein label + grote vette datum op één regel. */
   const dateLine = (
@@ -99,69 +122,81 @@ export function StickerLabel({
     date: string | null | undefined,
     size: number,
   ) => (
-    <p className="whitespace-nowrap" style={{ lineHeight: 1.1 }}>
-      <span style={{ fontSize: pt(8) }}>{label} </span>
-      <span className="font-extrabold" style={{ fontSize: pt(size) }}>
+    <p className="whitespace-nowrap" style={{ lineHeight: 1.05 }}>
+      <span>{label} </span>
+      <span className="font-extrabold" style={{ fontSize: `${size}em` }}>
         {formatDateNL(date)}
       </span>
       {time && label !== "THT" && label !== "Te gebruiken tot" && (
-        <span style={{ fontSize: pt(8) }}>{time}</span>
+        <span>{time}</span>
       )}
     </p>
   );
 
   return (
     <div
+      ref={boxRef}
       className={`sticker-label flex flex-col justify-center overflow-hidden bg-white text-black ${className ?? ""}`}
       style={{
         width: `${f.widthMm}mm`,
         height: `${f.heightMm}mm`,
-        padding: small ? "1.2mm 2mm" : "3mm",
-        fontSize: pt(8),
-        lineHeight: 1.15,
+        padding: "1.5mm 2mm",
+        fontSize: "8pt",
+        lineHeight: 1.1,
         fontFamily: "Arial, Helvetica, sans-serif",
-        gap: "0.4mm",
+        boxSizing: "border-box",
       }}
     >
-      <p
-        className="line-clamp-2 font-extrabold uppercase"
-        style={{ fontSize: pt(titleSize), lineHeight: 1.0 }}
+      <div
+        ref={innerRef}
+        className="flex flex-col"
+        style={{ gap: "0.15em" }}
       >
-        {name}
-      </p>
-      {data.type === "diepvries" ? (
-        <>
-          {dateLine("Ingevroren", data.productionDate, 10)}
-          {dateLine("THT", data.expiryDate, 15)}
-          <p className="truncate">
-            Bewaren bij: {data.storageTemp || "-18 °C of kouder"}
-          </p>
-        </>
-      ) : data.type === "vers" ? (
-        <>
-          {dateLine("Productiedatum", data.productionDate, 10)}
-          {dateLine("Te gebruiken tot", data.expiryDate, 14)}
-          {data.storageTemp && (
-            <p className="truncate">Bewaren bij: {data.storageTemp}</p>
-          )}
-        </>
-      ) : (
-        <>
-          {dateLine("Productiedatum", data.productionDate, 15)}
-          {data.storageTemp && (
-            <p className="truncate">Bewaren bij: {data.storageTemp}</p>
-          )}
-        </>
-      )}
-      {extra && <p className="truncate">{extra}</p>}
-      {data.note && <p className="truncate italic">{data.note}</p>}
-      <p className="truncate">
-        Medewerker: <span className="font-semibold">{data.employeeName}</span>
-        {small ? (
-          <span className="font-bold"> · {data.companyName}</span>
-        ) : null}
-      </p>
-      {!small && <p className="truncate font-bold">{data.companyName}</p>}
+        <p
+          className="font-extrabold uppercase"
+          style={{
+            fontSize: "1.75em",
+            lineHeight: 1.0,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {name}
+        </p>
+        {data.type === "diepvries" ? (
+          <>
+            {dateLine("Ingevroren", data.productionDate, 1.25)}
+            {dateLine("THT", data.expiryDate, 1.75)}
+            <p className="whitespace-nowrap">
+              Bewaren bij: {data.storageTemp || "-18 °C of kouder"}
+            </p>
+          </>
+        ) : data.type === "vers" ? (
+          <>
+            {dateLine("Productiedatum", data.productionDate, 1.25)}
+            {dateLine("Te gebruiken tot", data.expiryDate, 1.75)}
+            {data.storageTemp && (
+              <p className="whitespace-nowrap">
+                Bewaren bij: {data.storageTemp}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            {dateLine("Productiedatum", data.productionDate, 1.75)}
+            {data.storageTemp && (
+              <p className="whitespace-nowrap">
+                Bewaren bij: {data.storageTemp}
+              </p>
+            )}
+          </>
+        )}
+        {extra && <p className="whitespace-nowrap">{extra}</p>}
+        {data.note && <p className="whitespace-nowrap italic">{data.note}</p>}
+        <p className="whitespace-nowrap">
+          {data.employeeName}{" "}
+          <span className="font-bold">· {data.companyName}</span>
+        </p>
+      </div>
     </div>
   );
 }
@@ -185,7 +220,7 @@ export function StickerPrintArea({
   // pop-up linksboven op de pagina wordt geprint.
   return createPortal(
     <>
-      <div className="sticker-print-area hidden print:block">
+      <div className="sticker-print-area">
         {Array.from({ length: Math.max(1, count) }).map((_, i) => (
           <div key={i} className="sticker-print-page">
             <StickerLabel data={data} format={format} />
@@ -193,12 +228,13 @@ export function StickerPrintArea({
         ))}
       </div>
       <style>{`
+        .sticker-print-area { position: fixed; left: -10000px; top: 0; pointer-events: none; }
         @media print {
           @page { size: ${f.widthMm}mm ${f.heightMm}mm; margin: 0; }
           html, body { background: #fff !important; }
           body * { visibility: hidden; }
           .sticker-print-area, .sticker-print-area * { visibility: visible; }
-          .sticker-print-area { position: absolute; left: 0; top: 0; }
+          .sticker-print-area { position: absolute !important; left: 0 !important; top: 0 !important; }
           .sticker-print-page { break-after: page; page-break-after: always; }
           .sticker-print-page:last-child { break-after: auto; page-break-after: auto; }
         }
