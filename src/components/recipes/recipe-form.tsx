@@ -275,7 +275,6 @@ export function RecipeForm({
         allergensContains: string[];
         allergensTraces: string[];
         nutritionTotals: Record<string, number>;
-        supplierNames: string[];
       }
     >
   >(new Map());
@@ -458,8 +457,6 @@ export function RecipeForm({
         supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
         supabase.rpc("calculate_recipe_nutrition", { p_recipe_id: recipeId }),
       ]);
-    // Leveranciers van de ingrediënten in dit halfproduct (bv. ijsbergsla → Rovers).
-    const supplierNames = await halfproductSupplierNames(recipeId);
     setHalfproductCosts((prev) =>
       new Map(prev).set(recipeId, {
         totalCost: cost ?? 0,
@@ -470,43 +467,8 @@ export function RecipeForm({
         allergensContains: allergens?.bevat ?? [],
         allergensTraces: allergens?.sporen ?? [],
         nutritionTotals: nutrition ?? {},
-        supplierNames,
       })
     );
-  }
-
-  async function halfproductSupplierNames(recipeId: string): Promise<string[]> {
-    const supabase = createClient();
-    const { data: lines } = await supabase
-      .from("recipe_ingredients")
-      .select("product_id")
-      .eq("recipe_id", recipeId)
-      .not("product_id", "is", null);
-    const productIds = [...new Set((lines ?? []).map((l) => l.product_id as string))];
-    if (productIds.length === 0) return [];
-    const [{ data: sp }, { data: prods }] = await Promise.all([
-      supabase
-        .from("supplier_products")
-        .select("product_id, supplier_id, valid_from, suppliers(name)")
-        .in("product_id", productIds.slice(0, 200))
-        .is("valid_to", null)
-        .order("valid_from", { ascending: false }),
-      supabase.from("products").select("id, preferred_supplier_id").in("id", productIds.slice(0, 200)),
-    ]);
-    const pref = new Map((prods ?? []).map((p) => [p.id, p.preferred_supplier_id]));
-    const rows = (sp ?? []) as unknown as {
-      product_id: string;
-      supplier_id: string;
-      suppliers: { name: string } | null;
-    }[];
-    const names: string[] = [];
-    for (const id of productIds) {
-      const list = rows.filter((r) => r.product_id === id);
-      const pick = list.find((r) => r.supplier_id === pref.get(id)) ?? list[0];
-      const n = pick?.suppliers?.name;
-      if (n && !names.includes(n)) names.push(n);
-    }
-    return names;
   }
 
   const unitsById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
@@ -2623,14 +2585,9 @@ export function RecipeForm({
                           : null
                       }
                       supplierLabel={
-                        !row.refId
-                          ? null
-                          : row.type === "ingrediënt"
-                            ? productPrices.get(row.refId)?.supplierName ?? null
-                            : (() => {
-                                const n = halfproductCosts.get(row.refId)?.supplierNames ?? [];
-                                return n.length === 0 ? null : n.length <= 2 ? n.join(", ") : `${n.slice(0, 2).join(", ")} +${n.length - 2}`;
-                              })()
+                        row.type === "ingrediënt" && row.refId
+                          ? productPrices.get(row.refId)?.supplierName ?? null
+                          : null
                       }
                       isProvisional={
                         row.type === "ingrediënt" && row.refId
@@ -3608,7 +3565,7 @@ function IngredientLine({
           {isLinked && supplierLabel && (
             <span
               className="shrink-0 truncate text-xs text-muted"
-              title={row.type === "halfproduct" ? "Leverancier(s) van de ingrediënten in dit halfproduct" : "Leverancier"}
+              title="Leverancier"
             >
               · {supplierLabel}
             </span>
