@@ -209,6 +209,22 @@ export default function MenuDetailPage({
     await updateLine(lineId, { section_id: sectionId });
   }
 
+  async function deleteMenu() {
+    if (!menu) return;
+    if (
+      !window.confirm(
+        `"${menu.name}" verwijderen? De samenstelling en de nacalculatie van dit menu worden ook verwijderd. Gerechten, halfproducten en ingrediënten blijven bestaan.`,
+      )
+    )
+      return;
+    const { error } = await createClient().from("event_menus").delete().eq("id", menu.id);
+    if (error) {
+      window.alert("Verwijderen mislukt: " + error.message);
+      return;
+    }
+    router.push("/menus");
+  }
+
   async function deleteLine(lineId: string) {
     const supabase = createClient();
     await supabase.from("event_menu_lines").delete().eq("id", lineId);
@@ -416,6 +432,12 @@ export default function MenuDetailPage({
                   Bewaren als sjabloon — voor een evenement vul je dan alleen datum en
                   aantal personen in.
                 </label>
+                <div className="border-t border-border pt-3 sm:col-span-2">
+                  <Button variant="danger" size="sm" onClick={() => void deleteMenu()}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Menu verwijderen
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
