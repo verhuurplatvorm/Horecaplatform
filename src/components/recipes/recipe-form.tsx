@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAmount, largerUnitHint } from "@/lib/units/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useReturnNavigation, withReturnTo } from "@/lib/use-return-navigation";
@@ -2047,6 +2048,9 @@ export function RecipeForm({
                       </select>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {largerUnitHint(yieldQuantity, baseUnitName) && (
+                        <span className="text-xs text-muted">= {largerUnitHint(yieldQuantity, baseUnitName)}</span>
+                      )}
                     </div>
                     {!baseUnitId && (
                       <p className="text-xs text-copper">Kies in welke eenheid de opbrengst is (kilo, liter, porties).</p>
@@ -2333,7 +2337,7 @@ export function RecipeForm({
                     {yieldIsCount ? (
                       <>
                         <p className="tabular text-sm font-medium">
-                          {measureRef ? `≈ ${fmt(measureRef.total)} ${measureRef.unitName}` : "—"}
+                          {measureRef ? `≈ ${formatAmount(measureRef.total, measureRef.unitName, 3)}` : "—"}
                         </p>
                         <p className="text-xs text-muted">
                           {measureRef && endQty > 0
@@ -2347,7 +2351,7 @@ export function RecipeForm({
                       <>
                         <p className="tabular text-sm font-medium">
                           {yieldIsApproximate ? "≈ " : ""}
-                          {fmt(begin)} {unitLabel}
+                          {formatAmount(begin, unitLabel, 3)}
                         </p>
                         {yieldIsApproximate && (
                           <p className="text-xs text-muted">
@@ -2443,6 +2447,9 @@ export function RecipeForm({
                           ))}
                       </select>
                     </div>
+                    {largerUnitHint(yieldQuantity, baseUnitName) && (
+                      <p className="text-xs font-medium text-foreground">= {largerUnitHint(yieldQuantity, baseUnitName)}</p>
+                    )}
                     <p className="text-xs text-muted">
                       Vul je dit in, dan rekent het verlies-% direct mee. Dit is de opbrengst die in de receptuur en de kostprijs per {unitLabel} wordt gebruikt.
                     </p>

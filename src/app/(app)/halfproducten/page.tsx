@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAmount } from "@/lib/units/format";
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
@@ -1000,7 +1001,7 @@ export default function HalfproductenPage() {
                         </select>
                       </td>
                       <td className="px-2 py-3 tabular text-muted">
-                        {r.yield_quantity ?? "—"} {r.unitName ?? ""}
+                        {formatAmount(r.yield_quantity, r.unitName)}
                       </td>
                       {canViewFinancial && (
                         <>

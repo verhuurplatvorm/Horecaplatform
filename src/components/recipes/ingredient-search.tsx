@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAmount } from "@/lib/units/format";
 import { useEffect, useRef, useState } from "react";
 import { Check, Package, Search, SoupIcon, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
@@ -67,7 +68,7 @@ function formatUnitPrice(pricePerBase: number | null, baseUnit: string | null): 
 function formatQuantity(row: SearchRow): string {
   if (row.kind === "halfproduct") {
     return row.yield_quantity
-      ? `opbrengst ${row.yield_quantity} ${row.yield_unit ?? ""}`.trim()
+      ? `opbrengst ${formatAmount(row.yield_quantity, row.yield_unit)}`
       : "—";
   }
   if (row.packaging_description) return row.packaging_description;
