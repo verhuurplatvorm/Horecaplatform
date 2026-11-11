@@ -78,12 +78,37 @@ export function StickerLabel({
   className?: string;
 }) {
   const f = findFormat(format);
+  // Grotere stickers krijgen naar verhouding grotere letters.
+  const k = Math.min(
+    1.8,
+    Math.max(1, Math.min(f.heightMm / 30, f.widthMm / 60)),
+  );
+  const pt = (n: number) => `${(n * k).toFixed(1)}pt`;
   const small = f.heightMm <= 32;
-  const base = small ? 7 : 9;
+  const name = `${TITLE_PREFIX[data.type]}${data.productName}`;
+  // Titel zo groot mogelijk, kleiner bij lange namen.
+  const titleSize = name.length <= 14 ? 15 : name.length <= 22 ? 13 : 11;
+  const time = data.productionTime ? ` ${data.productionTime.slice(0, 5)}` : "";
   const extra = [data.batchNumber && `Batch ${data.batchNumber}`, data.quantity]
     .filter(Boolean)
     .join(" · ");
-  const time = data.productionTime ? ` ${data.productionTime.slice(0, 5)}` : "";
+
+  /** Klein label + grote vette datum op één regel. */
+  const dateLine = (
+    label: string,
+    date: string | null | undefined,
+    size: number,
+  ) => (
+    <p className="whitespace-nowrap" style={{ lineHeight: 1.1 }}>
+      <span style={{ fontSize: pt(8) }}>{label} </span>
+      <span className="font-extrabold" style={{ fontSize: pt(size) }}>
+        {formatDateNL(date)}
+      </span>
+      {time && label !== "THT" && label !== "Te gebruiken tot" && (
+        <span style={{ fontSize: pt(8) }}>{time}</span>
+      )}
+    </p>
+  );
 
   return (
     <div
@@ -91,52 +116,52 @@ export function StickerLabel({
       style={{
         width: `${f.widthMm}mm`,
         height: `${f.heightMm}mm`,
-        padding: small ? "1.5mm 2mm" : "3mm",
-        fontSize: `${base}pt`,
-        lineHeight: 1.2,
+        padding: small ? "1.2mm 2mm" : "3mm",
+        fontSize: pt(8),
+        lineHeight: 1.15,
         fontFamily: "Arial, Helvetica, sans-serif",
+        gap: "0.4mm",
       }}
     >
       <p
         className="line-clamp-2 font-extrabold uppercase"
-        style={{
-          fontSize: `${base + (small ? 3 : 5)}pt`,
-          lineHeight: 1.05,
-          marginBottom: "0.8mm",
-        }}
+        style={{ fontSize: pt(titleSize), lineHeight: 1.0 }}
       >
-        {TITLE_PREFIX[data.type]}
-        {data.productName}
+        {name}
       </p>
       {data.type === "diepvries" ? (
         <>
-          <p>
-            Ingevroren: {formatDateNL(data.productionDate)}
-            {time}
+          {dateLine("Ingevroren", data.productionDate, 10)}
+          {dateLine("THT", data.expiryDate, 15)}
+          <p className="truncate">
+            Bewaren bij: {data.storageTemp || "-18 °C of kouder"}
           </p>
-          <p className="font-extrabold" style={{ fontSize: `${base + 2}pt` }}>
-            THT: {formatDateNL(data.expiryDate)}
-          </p>
-          <p>Bewaren bij: {data.storageTemp || "-18 °C of kouder"}</p>
+        </>
+      ) : data.type === "vers" ? (
+        <>
+          {dateLine("Productiedatum", data.productionDate, 10)}
+          {dateLine("Te gebruiken tot", data.expiryDate, 14)}
+          {data.storageTemp && (
+            <p className="truncate">Bewaren bij: {data.storageTemp}</p>
+          )}
         </>
       ) : (
         <>
-          <p>
-            Productiedatum: {formatDateNL(data.productionDate)}
-            {time}
-          </p>
-          {data.type === "vers" && (
-            <p className="font-extrabold" style={{ fontSize: `${base + 2}pt` }}>
-              Te gebruiken tot: {formatDateNL(data.expiryDate)}
-            </p>
+          {dateLine("Productiedatum", data.productionDate, 15)}
+          {data.storageTemp && (
+            <p className="truncate">Bewaren bij: {data.storageTemp}</p>
           )}
-          {data.storageTemp && <p>Bewaren bij: {data.storageTemp}</p>}
         </>
       )}
       {extra && <p className="truncate">{extra}</p>}
       {data.note && <p className="truncate italic">{data.note}</p>}
-      <p className="truncate">Medewerker: {data.employeeName}</p>
-      <p className="truncate font-semibold">{data.companyName}</p>
+      <p className="truncate">
+        Medewerker: <span className="font-semibold">{data.employeeName}</span>
+        {small ? (
+          <span className="font-bold"> · {data.companyName}</span>
+        ) : null}
+      </p>
+      {!small && <p className="truncate font-bold">{data.companyName}</p>}
     </div>
   );
 }
