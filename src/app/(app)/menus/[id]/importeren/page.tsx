@@ -79,6 +79,10 @@ export default function MenuImportPage({
   const [error, setError] = useState<string | null>(null);
   const [totalsForGroup, setTotalsForGroup] = useState(false);
   const [meta, setMeta] = useState<SheetMeta | null>(null);
+  // Hoeveelheid p.p. zoals het item in een eerder menu stond (bv. 60 g Vitello p.p.).
+  const [lastUsage, setLastUsage] = useState<
+    Map<string, { qty: number; unitId: string | null }>
+  >(new Map());
   const [applyMeta, setApplyMeta] = useState(true);
 
   useEffect(() => {
@@ -112,6 +116,35 @@ export default function MenuImportPage({
       : undefined;
     if (fromSheet) return fromSheet;
     return baseUnits.get(itemId) ?? portionUnitId;
+  }
+
+  async function fetchLastUsage(ids: string[]) {
+    const out = new Map<string, { qty: number; unitId: string | null }>();
+    if (ids.length === 0) return out;
+    const supabase = createClient();
+    const sel = "recipe_id, product_id, quantity_per_person, unit_id, menu_id";
+    const [a, b] = await Promise.all([
+      supabase
+        .from("event_menu_lines")
+        .select(sel)
+        .in("recipe_id", ids.slice(0, 300))
+        .neq("menu_id", id)
+        .gt("quantity_per_person", 0)
+        .limit(2000),
+      supabase
+        .from("event_menu_lines")
+        .select(sel)
+        .in("product_id", ids.slice(0, 300))
+        .neq("menu_id", id)
+        .gt("quantity_per_person", 0)
+        .limit(2000),
+    ]);
+    for (const l of [...(a.data ?? []), ...(b.data ?? [])]) {
+      const key = (l.recipe_id ?? l.product_id) as string;
+      if (!out.has(key))
+        out.set(key, { qty: Number(l.quantity_per_person), unitId: l.unit_id });
+    }
+    return out;
   }
 
   async function review(parsed: ImportRow[]) {
@@ -182,6 +215,10 @@ export default function MenuImportPage({
       bu.set(x.id, x.base_unit_id);
     setBaseUnits(bu);
 
+    // Eerdere menu's: hoeveel p.p. werd er van dit item gebruikt?
+    const usage = await fetchLastUsage([...recipeIds, ...productIds]);
+    setLastUsage(usage);
+
     setRows(
       parsed.map((r, i) => {
         const best = per[i][0];
@@ -200,10 +237,20 @@ export default function MenuImportPage({
           candidates: per[i],
           choice,
           confidence: sure ? "zeker" : likely ? "waarschijnlijk" : null,
-          qty: r.quantity != null ? String(r.quantity) : asPortion ? "1" : "",
-          unitId: asPortion
-            ? portionUnitId
-            : sheetUnitId || bu.get(itemId) || portionUnitId,
+          qty:
+            r.quantity != null
+              ? String(r.quantity)
+              : usage.get(itemId)
+                ? String(usage.get(itemId)!.qty)
+                : asPortion
+                  ? "1"
+                  : "",
+          unitId:
+            r.quantity == null && usage.get(itemId)?.unitId
+              ? usage.get(itemId)!.unitId!
+              : asPortion
+                ? portionUnitId
+                : sheetUnitId || bu.get(itemId) || portionUnitId,
           isFixed: false,
         };
       }),
@@ -380,6 +427,7 @@ export default function MenuImportPage({
             r.choice === "nieuw"
               ? "nieuw uit sheet — recept nog invullen"
               : null,
+            raw > 0 ? null : "hoeveelheid p.p. nog invullen",
           ]
             .filter(Boolean)
             .join(" · ") || null,
@@ -397,6 +445,13 @@ export default function MenuImportPage({
     }
     router.push(`/menus/${id}`);
   }
+
+  const missingQty = rows
+    ? rows.filter(
+        (r) =>
+          r.choice !== "overslaan" && !(Number(r.qty.replace(",", ".")) > 0),
+      ).length
+    : 0;
 
   const counts = rows
     ? {
@@ -619,10 +674,17 @@ export default function MenuImportPage({
                             value={r.choice}
                             onChange={(e) => {
                               const choice = e.target.value;
+                              const used = lastUsage.get(
+                                choice.split(":")[1] ?? "",
+                              );
                               update(r.key, {
                                 choice,
                                 confidence: null,
-                                unitId: defaultUnit(choice, r.unit),
+                                unitId:
+                                  used?.unitId ?? defaultUnit(choice, r.unit),
+                                ...(used && r.quantity == null
+                                  ? { qty: String(used.qty) }
+                                  : {}),
                               });
                             }}
                             className={cn(
@@ -645,7 +707,8 @@ export default function MenuImportPage({
                                 </option>
                               )}
                             <option value="nieuw">
-                              + Nieuw gerecht aanmaken (concept, map Partijgerechten)
+                              + Nieuw gerecht aanmaken (concept, map
+                              Partijgerechten)
                             </option>
                             <option value="overslaan">Overslaan</option>
                           </select>
@@ -654,6 +717,18 @@ export default function MenuImportPage({
                               placeholder="ander item zoeken…"
                               onPick={(h) => {
                                 const choice = choiceKey(h);
+                                void fetchLastUsage([h.id]).then((u) => {
+                                  const used = u.get(h.id);
+                                  if (!used) return;
+                                  setLastUsage((m) =>
+                                    new Map(m).set(h.id, used),
+                                  );
+                                  if (r.quantity == null)
+                                    update(r.key, {
+                                      qty: String(used.qty),
+                                      unitId: used.unitId ?? portionUnitId,
+                                    });
+                                });
                                 setBaseUnits((m) =>
                                   new Map(m).set(h.id, h.baseUnitId),
                                 );
@@ -728,17 +803,7 @@ export default function MenuImportPage({
                 </table>
               </div>
               <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
-                <Button
-                  onClick={() => void save()}
-                  disabled={
-                    !!busy ||
-                    rows.some(
-                      (r) =>
-                        r.choice !== "overslaan" &&
-                        !(Number(r.qty.replace(",", ".")) > 0),
-                    )
-                  }
-                >
+                <Button onClick={() => void save()} disabled={!!busy}>
                   Toevoegen aan menu (
                   {rows.filter((r) => r.choice !== "overslaan").length})
                 </Button>
@@ -751,11 +816,19 @@ export default function MenuImportPage({
                 >
                   Ander bestand
                 </Button>
-                <span className="text-xs text-muted">
-                  Een gerecht telt per portie (eenheid portie/stuk). Nieuwe
-                  gerechten worden als concept aangemaakt; vul daarna het recept
-                  in.
-                </span>
+                {missingQty > 0 ? (
+                  <span className="text-sm text-copper">
+                    {missingQty} regel(s) zonder hoeveelheid per persoon (rood
+                    omrand). Je kunt ze nu invullen, of later in het menu — tot
+                    dan tellen ze met 0 mee.
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted">
+                    Een gerecht telt per portie (eenheid portie/stuk). Nieuwe
+                    gerechten worden als concept aangemaakt; vul daarna het
+                    recept in.
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
