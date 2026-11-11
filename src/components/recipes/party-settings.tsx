@@ -10,6 +10,7 @@ import {
   formatDistribution,
   personsPerContainer,
   planParty,
+  recipePerContainer,
 } from "@/lib/party/party-calc";
 
 export type PartySettingsValue = {
@@ -67,14 +68,29 @@ export function PartySettings({
   const custom =
     portion > 0 &&
     !PORTION_PRESETS.includes(portion as (typeof PORTION_PRESETS)[number]);
+  const vorm = containerInfo(value.container);
+
+  // Controles op onlogische invoer (meestal een eenheid-vergissing).
+  const totalInCapUnit =
+    totalWeight > 0 && totalWeightUnitKey
+      ? ({ g: 1, kg: 1000, ml: 1, l: 1000 }[totalWeightUnitKey as "g"] ?? 0) *
+        totalWeight
+      : 0;
+  const perRecipe =
+    capUnitKey !== "stuk" ? recipePerContainer(capacity, totalInCapUnit) : 1;
+  const costPerContainer = totalCost * perRecipe;
   const plan = planParty({
     guests: Number(guests) || 0,
     portion,
     capacity,
     participationPct: Number(pct) || 0,
     fullContainers: value.full,
+    perContainer: perRecipe,
   });
-  const vorm = containerInfo(value.container);
+  let capacityWarning: string | null = null;
+  if (capacity > 0 && portion > 0 && capacity < portion) {
+    capacityWarning = `Hoofdproduct per ${vorm.label.toLowerCase()} (${num(capacity)} ${capUnitKey}) is kleiner dan één portie. Vul het in ${capUnit?.name ?? "gram"} in, bijv. 2400 voor 2,4 kg.`;
+  }
 
   // Kosten per kg / liter op basis van het totaalgewicht van één vorm.
   let perKiloLabel: string | null = null;
@@ -147,7 +163,9 @@ export function PartySettings({
               className="input w-24!"
             >
               {units
-                .filter((u) => ["g", "kg", "ml", "l", "stuk"].includes(u.key))
+                // Altijd in de kleine eenheid, zodat de portie p.p. ook in
+                // gram/ml/stuks is (geen 60 kilo per persoon).
+                .filter((u) => ["g", "ml", "stuk"].includes(u.key))
                 .map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
@@ -155,6 +173,16 @@ export function PartySettings({
                 ))}
             </select>
           </div>
+          {capacity >= 1000 && (capUnitKey === "g" || capUnitKey === "ml") && (
+            <p className="mt-1 text-xs text-muted">
+              = {num(capacity / 1000)} {capUnitKey === "g" ? "kg" : "liter"}
+            </p>
+          )}
+          {capacityWarning && (
+            <p className="mt-1 rounded bg-copper/10 px-2 py-1 text-xs text-copper">
+              {capacityWarning}
+            </p>
+          )}
           {capacityAuto ? (
             <p className="mt-1 text-xs text-muted">
               Automatisch = totaalgewicht. Pas aan als de garnering niet
@@ -235,8 +263,15 @@ export function PartySettings({
         <div>
           <span className={label}>Kosten per {vorm.label.toLowerCase()}</span>
           <p className="tabular text-base font-semibold">
-            {totalCost > 0 ? euro(totalCost) : "—"}
+            {totalCost > 0 ? euro(costPerContainer) : "—"}
           </p>
+          {perRecipe > 1 && (
+            <p className="text-xs text-muted">
+              = recept × {num(perRecipe)} (recept {num(totalInCapUnit)}{" "}
+              {capUnitKey}, {vorm.label.toLowerCase()} {num(capacity)}{" "}
+              {capUnitKey})
+            </p>
+          )}
         </div>
         <div>
           <span className={label}>Per {perKiloLabel ?? "kg / liter"}</span>
@@ -248,7 +283,7 @@ export function PartySettings({
           <span className={label}>Per standaardportie</span>
           <p className="tabular text-base font-semibold">
             {perContainer && totalCost > 0
-              ? euro(totalCost / perContainer)
+              ? euro(costPerContainer / perContainer)
               : "—"}
           </p>
         </div>
@@ -316,7 +351,8 @@ export function PartySettings({
               </p>
               {totalCost > 0 && plan.difference > 0 && (
                 <p className="text-xs text-muted">
-                  waarvan over {euro((totalCost * plan.difference) / capacity)}
+                  waarvan over{" "}
+                  {euro((costPerContainer * plan.difference) / capacity)}
                 </p>
               )}
             </div>

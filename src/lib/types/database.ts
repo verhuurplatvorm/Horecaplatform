@@ -344,6 +344,8 @@ export type EventMenuPartyPlanRow = {
   cost_per_container: number | null;
   total_cost: number | null;
   overproduction_cost: number | null;
+  per_container: number;
+  recipe_factor: number;
 };
 
 export type RecipeRevision = {

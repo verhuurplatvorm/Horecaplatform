@@ -50,6 +50,19 @@ export type PartyPlan = {
 };
 
 /**
+ * Hoe vaak het recept in één vorm gaat: max(1, hoofdproduct per vorm /
+ * totaalgewicht recept). Recept 1.000 g, schaal 3.000 g → 3. Gelijk aan
+ * public.event_line_plan (migratie 0124). Beide in gram/ml.
+ */
+export function recipePerContainer(
+  capacityBase: number,
+  recipeYieldBase: number,
+): number {
+  if (!(capacityBase > 0) || !(recipeYieldBase > 0)) return 1;
+  return Math.max(1, capacityBase / recipeYieldBase);
+}
+
+/**
  * benodigd = portie p.p. × gasten × deelname% / 100
  * vormen   = naar boven afgerond(benodigd / capaciteit)
  * A volle vormen: geproduceerd = vormen × capaciteit, recept × vormen
@@ -61,10 +74,13 @@ export function planParty(opts: {
   capacity: number;
   participationPct?: number;
   fullContainers?: boolean;
+  /** Recept per vorm (zie recipePerContainer), standaard 1 */
+  perContainer?: number;
 }): PartyPlan | null {
   const { guests, portion, capacity } = opts;
   const pct = opts.participationPct ?? 100;
   const full = opts.fullContainers ?? true;
+  const per = opts.perContainer ?? 1;
   if (!(capacity > 0) || !(portion >= 0) || !(guests >= 0)) return null;
   const needed = (portion * guests * pct) / 100;
   const containersExact = needed / capacity;
@@ -95,7 +111,7 @@ export function planParty(opts: {
     produced,
     lastContainer,
     difference: produced - needed,
-    recipeFactor: full ? containers : containersExact,
+    recipeFactor: (full ? containers : containersExact) * per,
     distribution,
   };
 }

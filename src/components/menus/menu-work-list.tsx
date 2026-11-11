@@ -30,6 +30,8 @@ export interface PartyPlanRow {
   cost_per_container: number | null;
   total_cost: number | null;
   overproduction_cost: number | null;
+  per_container: number;
+  recipe_factor: number;
 }
 
 export function partyDistribution(p: PartyPlanRow): number[] {
@@ -131,7 +133,7 @@ export function MenuWorkList({
         if (!l.recipe_id) continue;
         const plan = planByLine.get(l.id);
         if (plan) {
-          const f = plan.full_containers ? plan.containers : plan.containers_exact;
+          const f = Number(plan.recipe_factor);
           partyFactor.set(l.recipe_id, (partyFactor.get(l.recipe_id) ?? 0) + f);
           continue;
         }

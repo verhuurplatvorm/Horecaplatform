@@ -15,6 +15,7 @@ import {
   formatDistribution,
   personsPerContainer,
   planParty,
+  recipePerContainer,
 } from "@/lib/party/party-calc";
 
 interface Row {
@@ -57,14 +58,21 @@ export default function PartijgerechtenPage() {
         supabase
           .from("recipes")
           .select(
-            "id, name, party_container, party_capacity, party_capacity_unit_id, party_portion, party_full_containers",
+            "id, name, party_container, party_capacity, party_capacity_unit_id, party_portion, party_full_containers, yield_quantity, base_unit_id",
           )
           .eq("recipe_kind", "gerecht")
           .eq("category", PARTY_FOLDER)
           .neq("status", "vervallen")
           .order("name"),
-        supabase.from("units").select("id, key"),
+        supabase.from("units").select("id, key, dimension, factor_to_base"),
       ]);
+      const unitById = new Map((units ?? []).map((u) => [u.id as string, u]));
+      const toBase = (qty: unknown, unitId: string | null | undefined) => {
+        const u = unitId ? unitById.get(unitId) : undefined;
+        if (!u || (u.dimension !== "gewicht" && u.dimension !== "inhoud"))
+          return 0;
+        return Number(qty ?? 0) * Number(u.factor_to_base);
+      };
       const unitKey = new Map(
         (units ?? []).map((u) => [u.id as string, u.key as string]),
       );
@@ -94,7 +102,14 @@ export default function PartijgerechtenPage() {
                 ? Number(r.party_portion)
                 : null,
             full: r.party_full_containers ?? true,
-            cost,
+            cost:
+              cost === null
+                ? null
+                : cost *
+                  recipePerContainer(
+                    toBase(r.party_capacity, r.party_capacity_unit_id),
+                    toBase(r.yield_quantity, r.base_unit_id),
+                  ),
           } satisfies Row;
         }),
       );

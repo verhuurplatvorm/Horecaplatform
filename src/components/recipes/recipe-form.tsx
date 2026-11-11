@@ -718,6 +718,15 @@ export function RecipeForm({
     return known.length > 0 ? known.reduce((sum, l) => sum + (l.value as number), 0) : null;
   }, [yieldLines]);
   const yieldIsApproximate = yieldLines.some((l) => l.approx);
+  // Waarschuwing bij een totaalgewicht dat niet past bij de ingrediënten
+  // (bv. 1,2 gram ingevuld terwijl 1,2 kilo bedoeld was).
+  const yieldMismatch = (() => {
+    const y = Number(String(yieldQuantity).replace(",", "."));
+    const sum = computedYieldFromIngredients;
+    if (!(y > 0) || sum === null || !(sum > 0)) return false;
+    const ratio = y / sum;
+    return ratio < 0.2 || ratio > 5;
+  })();
 
   // Regels die echt niet in de som kunnen (onvolledig of stuks zonder opgegeven gram/ml).
   const yieldSkippedCount = yieldLines.filter((l) => l.value === null).length;
@@ -2093,7 +2102,10 @@ export function RecipeForm({
                     />
                     <select
                       value={baseUnitId}
-                      onChange={(e) => setBaseUnitId(e.target.value)}
+                      onChange={(e) => {
+                        changeYieldUnit(e.target.value);
+                        setBaseUnitId(e.target.value);
+                      }}
                       className="input w-28!"
                     >
                       <option value="">Eenheid…</option>
@@ -2108,13 +2120,23 @@ export function RecipeForm({
                     {computedYieldFromIngredients !== null && computedYieldFromIngredients > 0 && (
                       <button
                         type="button"
-                        onClick={() => setYieldQuantity(String(Math.round(computedYieldFromIngredients)))}
+                        onClick={() =>
+                          setYieldQuantity(String(Math.round(computedYieldFromIngredients * 1000) / 1000))
+                        }
                         className="whitespace-nowrap text-xs text-teal underline"
                       >
-                        = som ingrediënten ({formatAmount(computedYieldFromIngredients, baseUnitName)})
+                        = som ingrediënten (
+                        {(Math.round(computedYieldFromIngredients * 1000) / 1000).toLocaleString("nl-NL")}{" "}
+                        {baseUnitName})
                       </button>
                     )}
                   </div>
+                  {yieldMismatch && (
+                    <p className="mt-1 rounded bg-copper/10 px-2 py-1 text-xs text-copper">
+                      Let op: totaalgewicht is {formatAmount(yieldQuantityNum, baseUnitName)}, de ingrediënten
+                      samen {formatAmount(computedYieldFromIngredients, baseUnitName)}. Klopt de eenheid?
+                    </p>
+                  )}
                   <p className="mt-1 text-xs text-muted">
                     Menu&apos;s rekenen dit gerecht per gram: kostprijs per gram = kostprijs ÷ totaalgewicht.
                   </p>

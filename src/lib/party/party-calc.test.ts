@@ -58,3 +58,19 @@ test("0 gasten = 0 schalen; ongeldige capaciteit = null", () => {
   assert.equal(planParty({ guests: 10, portion: 60, capacity: 0 }), null);
   assert.equal(personsPerContainer(1200, 60), 20);
 });
+
+import { recipePerContainer } from "./party-calc";
+
+test("recept per vorm: 1 kg recept, schaal 3 kg = × 3; kleinere vorm = × 1", () => {
+  assert.equal(recipePerContainer(3000, 1000), 3);
+  assert.equal(recipePerContainer(1200, 1500), 1);
+  assert.equal(recipePerContainer(3000, 0), 1);
+  const p = planParty({
+    guests: 170,
+    portion: 60,
+    capacity: 3000,
+    perContainer: 3,
+  })!;
+  assert.equal(p.containers, 4);
+  assert.equal(p.recipeFactor, 12);
+});
