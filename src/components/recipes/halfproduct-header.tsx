@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { PageActionsSlot } from "@/components/layout/page-actions";
 import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
+import { CopyHalfproductToDish } from "@/components/recipes/copy-halfproduct-to-dish"; // TIJDELIJK
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, Download } from "lucide-react";
@@ -199,6 +200,7 @@ export function HalfproductHeader({
         <div className="flex flex-wrap items-center gap-1.5">
           <PageActionsSlot name="header" />
           <StickerQuickButton recipeId={recipeId} className="h-auto! px-2.5! py-1.5!" />
+          <CopyHalfproductToDish recipeId={recipeId} name={name} />
           <button
             type="button"
             onClick={duplicate}
