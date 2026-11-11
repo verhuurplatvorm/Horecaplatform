@@ -12,13 +12,18 @@ import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
+  hasHeaderRow,
   parseGrid,
   parseText,
   unitKeyFor,
   type ImportRow,
 } from "@/lib/event-menus/sheet-import";
-import { LIKELY_MATCH_THRESHOLD } from "@/lib/menu-import/dish-matching";
 import type { EventMenu, Unit } from "@/lib/types/database";
+
+// Buffetsheets noemen gerechten vaak anders dan in het systeem ("Duo van
+// zalm en tonijn" ↔ "Schaal Duo Tonijn en Zalm HS"): vanaf 0,5 voorstellen,
+// altijd gemarkeerd als "waarschijnlijk — controleren".
+const LIKELY_MATCH_THRESHOLD = 0.5;
 
 type Kind = "gerecht" | "halfproduct" | "ingrediënt";
 
@@ -30,6 +35,13 @@ interface Candidate {
   status: string | null;
   score: number;
   exact: boolean;
+}
+
+interface SheetMeta {
+  name: string | null;
+  date: string | null;
+  guests: number | null;
+  food_price_per_person: number | null;
 }
 
 interface ReviewRow extends ImportRow {
@@ -66,6 +78,8 @@ export default function MenuImportPage({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [totalsForGroup, setTotalsForGroup] = useState(false);
+  const [meta, setMeta] = useState<SheetMeta | null>(null);
+  const [applyMeta, setApplyMeta] = useState(true);
 
   useEffect(() => {
     const supabase = createClient();
@@ -197,36 +211,56 @@ export default function MenuImportPage({
     setBusy(null);
   }
 
+  async function extractViaClaude(body: FormData) {
+    setBusy("Sheet uitlezen… (kan een minuut duren)");
+    const res = await fetch("/api/event-menus/extract-pdf", {
+      method: "POST",
+      body,
+    });
+    const json = (await res.json()) as {
+      rows?: ImportRow[];
+      meta?: SheetMeta;
+      error?: string;
+    };
+    if (!res.ok || !json.rows)
+      throw new Error(json.error ?? "Uitlezen mislukt.");
+    setMeta(json.meta ?? null);
+    await review(json.rows);
+  }
+
   async function readFile(file: File) {
     setError(null);
+    setMeta(null);
     const name = file.name.toLowerCase();
     try {
+      const fd = new FormData();
       if (name.endsWith(".pdf")) {
-        setBusy("PDF uitlezen… (kan een minuut duren)");
-        const fd = new FormData();
         fd.append("file", file);
-        const res = await fetch("/api/event-menus/extract-pdf", {
-          method: "POST",
-          body: fd,
-        });
-        const json = (await res.json()) as {
-          rows?: ImportRow[];
-          error?: string;
-        };
-        if (!res.ok || !json.rows)
-          throw new Error(json.error ?? "Uitlezen mislukt.");
-        await review(json.rows);
+        await extractViaClaude(fd);
         return;
       }
       setBusy("Sheet lezen…");
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const grid = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
-        header: 1,
-        blankrows: false,
-        defval: null,
-      });
-      await review(parseGrid(grid));
+      const first = XLSX.utils.sheet_to_json<(string | number | null)[]>(
+        wb.Sheets[wb.SheetNames[0]],
+        {
+          header: 1,
+          blankrows: false,
+          defval: null,
+        },
+      );
+      // Simpele lijst met kopregel (Gerecht / Aantal / …): hier lezen.
+      if (hasHeaderRow(first)) {
+        await review(parseGrid(first));
+        return;
+      }
+      // Evenementsheet/draaiboek: Claude haalt het eten eruit.
+      const text = wb.SheetNames.map(
+        (n) =>
+          `### ${n}\n${XLSX.utils.sheet_to_csv(wb.Sheets[n], { FS: "\t", blankrows: false })}`,
+      ).join("\n\n");
+      fd.append("text", text);
+      await extractViaClaude(fd);
     } catch (e) {
       setBusy(null);
       setError(e instanceof Error ? e.message : "Kan dit bestand niet lezen.");
@@ -244,7 +278,18 @@ export default function MenuImportPage({
     setBusy("Opslaan…");
     setError(null);
     const supabase = createClient();
-    const persons = Math.max(1, menu.person_count || 1);
+    let persons = Math.max(1, menu.person_count || 1);
+    if (meta && applyMeta) {
+      const patch: Partial<EventMenu> = {};
+      if (meta.guests) patch.person_count = meta.guests;
+      if (meta.date) patch.service_date = meta.date;
+      if (meta.food_price_per_person)
+        patch.sales_price_per_person = meta.food_price_per_person;
+      if (Object.keys(patch).length > 0) {
+        await supabase.from("event_menus").update(patch).eq("id", id);
+        if (patch.person_count) persons = patch.person_count;
+      }
+    }
 
     // Onderdelen hergebruiken of aanmaken.
     const { data: existingSecs } = await supabase
@@ -329,7 +374,14 @@ export default function MenuImportPage({
         unit_id: r.unitId || null,
         is_fixed: r.isFixed,
         note:
-          r.choice === "nieuw" ? "Nieuw uit sheet — recept nog invullen" : null,
+          [
+            r.note,
+            r.choice === "nieuw"
+              ? "nieuw uit sheet — recept nog invullen"
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || null,
         sort_order: sort,
       });
       if (err) failed++;
@@ -423,6 +475,57 @@ export default function MenuImportPage({
           </p>
         )}
 
+        {rows &&
+          meta &&
+          (meta.guests || meta.date || meta.food_price_per_person) && (
+            <label className="flex flex-wrap items-center gap-2 rounded-lg border border-teal/40 bg-teal/5 px-4 py-3 text-sm">
+              <input
+                type="checkbox"
+                checked={applyMeta}
+                onChange={(e) => setApplyMeta(e.target.checked)}
+              />
+              <span>
+                Van de sheet overnemen in het menu:
+                {meta.name && (
+                  <>
+                    {" "}
+                    <strong>{meta.name}</strong> ·
+                  </>
+                )}
+                {meta.date && (
+                  <>
+                    {" "}
+                    datum{" "}
+                    <strong>
+                      {meta.date.split("-").reverse().join("-")}
+                    </strong>{" "}
+                    ·
+                  </>
+                )}
+                {meta.guests && (
+                  <>
+                    {" "}
+                    <strong>{meta.guests} personen</strong>
+                    {menu && meta.guests !== menu.person_count
+                      ? ` (nu ${menu.person_count})`
+                      : ""}{" "}
+                    ·
+                  </>
+                )}
+                {meta.food_price_per_person && (
+                  <>
+                    {" "}
+                    verkoopprijs eten{" "}
+                    <strong>
+                      € {meta.food_price_per_person.toFixed(2)}
+                    </strong>{" "}
+                    p.p.
+                  </>
+                )}
+              </span>
+            </label>
+          )}
+
         {rows && counts && (
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
@@ -492,6 +595,11 @@ export default function MenuImportPage({
                         </td>
                         <td className="px-2 py-1.5">
                           <span className="font-medium">{r.name}</span>
+                          {r.note && (
+                            <span className="block text-xs text-muted">
+                              {r.note}
+                            </span>
+                          )}
                           {r.confidence && (
                             <span
                               className={cn(
@@ -633,7 +741,13 @@ export default function MenuImportPage({
                   Toevoegen aan menu (
                   {rows.filter((r) => r.choice !== "overslaan").length})
                 </Button>
-                <Button variant="secondary" onClick={() => setRows(null)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setRows(null);
+                    setMeta(null);
+                  }}
+                >
                   Ander bestand
                 </Button>
                 <span className="text-xs text-muted">

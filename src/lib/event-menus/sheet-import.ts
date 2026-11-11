@@ -12,6 +12,7 @@ export interface ImportRow {
   name: string;
   quantity: number | null;
   unit: string | null;
+  note?: string | null;
 }
 
 type Cell = string | number | boolean | null | undefined;
@@ -207,4 +208,9 @@ export function parseText(text: string): ImportRow[] {
       l.includes("\t") ? l.split("\t") : l.includes(";") ? l.split(";") : [l],
     );
   return parseGrid(grid);
+}
+
+/** Heeft de sheet een kopregel (Gerecht/Naam/Omschrijving…)? Dan is het een simpele lijst. */
+export function hasHeaderRow(grid: Cell[][]): boolean {
+  return grid.slice(0, 10).some((r) => r.some((c) => NAME_HEADER.test(str(c))));
 }

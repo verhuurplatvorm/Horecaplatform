@@ -165,12 +165,15 @@ export async function extractMenuFromPdf(
       description: d.description ?? null,
       price: typeof d.price === "number" ? d.price : null,
       category: MENU_CATEGORIES.includes(d.category) ? d.category : "Overig",
-      section: typeof d.section === "string" && d.section.trim() ? d.section.trim() : null,
+      section:
+        typeof d.section === "string" && d.section.trim()
+          ? d.section.trim()
+          : null,
     }));
 }
 
 /** Leest een SSE-stream van de Messages API en voegt de tekst samen. */
-async function readClaudeStream(
+export async function readClaudeStream(
   body: ReadableStream<Uint8Array>,
 ): Promise<{
   text: string;
@@ -221,7 +224,7 @@ async function readClaudeStream(
 }
 
 /** Knipt eventuele tekst vóór de eerste "{" weg. */
-function extractJsonObject(text: string): string {
+export function extractJsonObject(text: string): string {
   const first = text.indexOf("{");
   return first > 0 ? text.slice(first) : text;
 }
