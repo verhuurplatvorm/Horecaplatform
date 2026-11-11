@@ -26,6 +26,7 @@ import {
   Printer,
   Tags,
   Timer,
+  ClipboardList,
 } from "lucide-react";
 
 export interface NavItem {
@@ -68,6 +69,12 @@ export const NAV_TABS: NavTab[] = [
         href: "/recepturen",
         label: "Gerechten",
         icon: BookOpen,
+        moduleKey: "recepturen",
+      },
+      {
+        href: "/keukenlijsten",
+        label: "Keukenlijsten",
+        icon: ClipboardList,
         moduleKey: "recepturen",
       },
       {

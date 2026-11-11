@@ -187,6 +187,8 @@ export function RecipeForm({
   const [recipeSynonyms, setRecipeSynonyms] = useState(
     (initialRecipe?.synonyms ?? []).join(", ")
   );
+  const [stationId, setStationId] = useState(initialRecipe?.station_id ?? "");
+  const [stations, setStations] = useState<{ id: string; name: string }[]>([]);
   const [storageMethod, setStorageMethod] = useState(
     initialRecipe?.storage_method ?? ""
   );
@@ -294,6 +296,12 @@ export function RecipeForm({
       .order("dimension")
       .order("sort_order")
       .then(({ data }) => setUnits((data as Unit[]) ?? []));
+    supabase
+      .from("kitchen_stations")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("sort_order")
+      .then(({ data }) => setStations(data ?? []));
   }, []);
 
   // Bij bewerken: namen en basiseenheden van bestaande regels ophalen.
@@ -1577,6 +1585,7 @@ export function RecipeForm({
       labour_cost_per_hour: labourRate ? Number(labourRate) : null,
       production_location: productionLocation.trim() || null,
       synonyms: recipeSynonyms.split(",").map((x) => x.trim()).filter(Boolean),
+      station_id: stationId || null,
       storage_method: recipeKind === "halfproduct" ? storageMethod.trim() || null : null,
       shelf_life_days: recipeKind === "halfproduct" && shelfLifeDays ? Number(shelfLifeDays) : null,
       sales_price: recipeKind === "gerecht" && salesPrice ? Number(salesPrice) : null,
@@ -1893,6 +1902,22 @@ export function RecipeForm({
               }
               className="input"
             />
+          </Field>
+          <Field label={recipeKind === "gerecht" ? "Partie (keuken)" : "Partie die het maakt"}>
+            <select
+              value={stationId}
+              onChange={(e) => setStationId(e.target.value)}
+              className="input"
+            >
+              <option value="">
+                {recipeKind === "gerecht" ? "— geen —" : "— zelfde als het gerecht —"}
+              </option>
+              {stations.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Status">
             <select

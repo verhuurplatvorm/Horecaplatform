@@ -375,6 +375,7 @@ export type Recipe = {
   storage_method: string | null;
   shelf_life_days: number | null;
   shelf_life_rule?: string | null;
+  station_id?: string | null;
   waste_percentage: number;
   margin_free_costs: number;
   created_by: string | null;
@@ -1097,6 +1098,18 @@ export type Database = {
         Update: Partial<Department>;
         Relationships: [];
       };
+      kitchen_stations: {
+        Row: KitchenStation;
+        Insert: Partial<KitchenStation> & { name: string };
+        Update: Partial<KitchenStation>;
+        Relationships: [];
+      };
+      order_app_checks: {
+        Row: OrderAppCheck;
+        Insert: Partial<OrderAppCheck> & { company_id: string; product_id: string; status: string };
+        Update: Partial<OrderAppCheck>;
+        Relationships: [];
+      };
       sticker_freezer_categories: {
         Row: StickerFreezerCategory;
         Insert: Partial<StickerFreezerCategory> & { name: string };
@@ -1172,6 +1185,18 @@ export type Database = {
       };
     };
     Functions: {
+      kitchen_list: {
+        Args: { p_card_ids: string[]; p_portions?: Record<string, number> | null };
+        Returns: KitchenListRow[];
+      };
+      set_recipe_station: {
+        Args: { p_recipe_ids: string[]; p_station_id: string | null };
+        Returns: number;
+      };
+      set_recipe_line_station: {
+        Args: { p_line_id: string; p_station_id: string | null };
+        Returns: undefined;
+      };
       sticker_staff: {
         Args: { p_company_id: string };
         Returns: StickerStaff[];
@@ -2196,4 +2221,46 @@ export type StickerStaff = {
   full_name: string;
   has_pin: boolean;
   can_approve: boolean;
+};
+
+// ---------------------------------------------------------------------
+// Keukenlijsten (migratie 0119)
+// ---------------------------------------------------------------------
+export type KitchenStation = {
+  id: string;
+  group_id: string;
+  name: string;
+  short_name: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type OrderAppCheck = {
+  id: string;
+  company_id: string;
+  product_id: string;
+  supplier_id: string | null;
+  status: "ja" | "nee" | "onbekend";
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type KitchenListRow = {
+  dish_id: string;
+  line_id: string | null;
+  recipe_id: string;
+  path: string[];
+  depth: number;
+  kind: "product" | "halfproduct" | "ongekoppeld" | "geen_receptuur" | "lus";
+  product_id: string | null;
+  sub_recipe_id: string | null;
+  unmatched_name: string | null;
+  line_quantity: number | null;
+  line_unit: string | null;
+  station_id: string | null;
+  station_source: string | null;
+  using_station_id: string | null;
+  quantity_base: number | null;
+  problem: string | null;
 };
