@@ -11,6 +11,7 @@ import { MenuLineForm } from "@/components/menus/menu-line-form";
 import { MenuOrderList } from "@/components/menus/menu-order-list";
 import { MenuWorkList } from "@/components/menus/menu-work-list";
 import { MenuNacalculatie } from "@/components/menus/menu-nacalculatie";
+import { MenuGramDistribution } from "@/components/menus/menu-gram-distribution";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
@@ -445,6 +446,7 @@ export default function MenuDetailPage({
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Samenstelling</CardTitle>
                 <div className="flex gap-2">
+                  <MenuGramDistribution menuId={id} units={units} onDone={() => void load()} />
                   <Link href={`/menus/${id}/importeren`}>
                     <Button variant="secondary" size="sm">
                       <FileSpreadsheet className="h-3.5 w-3.5" />

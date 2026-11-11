@@ -3,7 +3,7 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { FileSpreadsheet, Upload } from "lucide-react";
+import { FileSpreadsheet, Scale, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,10 @@ import {
   type ImportRow,
 } from "@/lib/event-menus/sheet-import";
 import type { EventMenu, Unit } from "@/lib/types/database";
+import {
+  DEFAULT_TARGET_GRAMS,
+  distributeGrams,
+} from "@/lib/event-menus/distribute-grams";
 
 // Buffetsheets noemen gerechten vaak anders dan in het systeem ("Duo van
 // zalm en tonijn" ↔ "Schaal Duo Tonijn en Zalm HS"): vanaf 0,5 voorstellen,
@@ -78,6 +82,7 @@ export default function MenuImportPage({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [totalsForGroup, setTotalsForGroup] = useState(false);
+  const [gramTarget, setGramTarget] = useState(String(DEFAULT_TARGET_GRAMS));
   const [meta, setMeta] = useState<SheetMeta | null>(null);
   // Hoeveelheid p.p. zoals het item in een eerder menu stond (bv. 60 g Vitello p.p.).
   const [lastUsage, setLastUsage] = useState<
@@ -105,12 +110,16 @@ export default function MenuImportPage({
     [units],
   );
   const portionUnitId = unitByKey.get("stuk") ?? "";
+  const gramUnitId = unitByKey.get("g") ?? "";
   const companyId = menu?.company_id ?? activeCompanyIds[0] ?? null;
 
   /** Standaard eenheid voor een gekozen item. */
   function defaultUnit(choice: string, sheetUnit: string | null): string {
     const [kind, itemId] = choice.split(":");
-    if (kind === "gerecht") return portionUnitId;
+    // Nieuw partijgerecht: in grammen. Bestaand gerecht: in grammen als het
+    // een totaalgewicht heeft, anders per portie.
+    if (choice === "nieuw") return gramUnitId || portionUnitId;
+    if (kind === "gerecht") return baseUnits.get(itemId) ?? portionUnitId;
     const fromSheet = sheetUnit
       ? unitByKey.get(unitKeyFor(sheetUnit) ?? sheetUnit)
       : undefined;
@@ -227,7 +236,9 @@ export default function MenuImportPage({
           best && !best.exact && best.score >= LIKELY_MATCH_THRESHOLD;
         const choice = best && (sure || likely) ? choiceKey(best) : "nieuw";
         const [kind, itemId] = choice.split(":");
-        const asPortion = kind === "gerecht" || choice === "nieuw";
+        const asPortion = kind === "gerecht" && !bu.get(itemId);
+        const asGramDish =
+          choice === "nieuw" || (kind === "gerecht" && Boolean(bu.get(itemId)));
         const sheetUnitId = r.unit
           ? unitByKey.get(unitKeyFor(r.unit) ?? r.unit)
           : undefined;
@@ -248,9 +259,12 @@ export default function MenuImportPage({
           unitId:
             r.quantity == null && usage.get(itemId)?.unitId
               ? usage.get(itemId)!.unitId!
-              : asPortion
-                ? portionUnitId
-                : sheetUnitId || bu.get(itemId) || portionUnitId,
+              : asGramDish
+                ? (choice === "nieuw" ? gramUnitId : bu.get(itemId)) ||
+                  portionUnitId
+                : asPortion
+                  ? portionUnitId
+                  : sheetUnitId || bu.get(itemId) || portionUnitId,
           isFixed: false,
         };
       }),
@@ -392,6 +406,8 @@ export default function MenuImportPage({
             name: r.name,
             recipe_kind: "gerecht" as const,
             category: "Partijgerechten",
+            // Partijgerechten in grammen (totaalgewicht volgt bij het recept).
+            base_unit_id: gramUnitId || null,
             status: "concept" as const,
             created_by: profile.user?.id ?? null,
           })
@@ -611,6 +627,56 @@ export default function MenuImportPage({
                 De aantallen in de sheet zijn totaal voor de hele groep (dan
                 wordt gedeeld door {menu?.person_count ?? "?"} personen)
               </label>
+              <div className="flex flex-wrap items-center gap-2 px-4 text-sm">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const target = Math.max(0, Number(gramTarget) || 0);
+                    const active = rows.map((r) => ({
+                      name: r.name,
+                      section: r.section,
+                      isFixed: r.isFixed || r.choice === "overslaan",
+                    }));
+                    const grams = distributeGrams(active, target);
+                    setTotalsForGroup(false);
+                    setRows(
+                      (rs) =>
+                        rs?.map((r, i) => {
+                          const q = grams[i];
+                          if (q == null) return r;
+                          const [kind, itemId] = r.choice.split(":");
+                          const ml = unitByKey.get("ml");
+                          const isMl =
+                            kind !== "gerecht" &&
+                            r.choice !== "nieuw" &&
+                            units.find((u) => u.id === baseUnits.get(itemId))
+                              ?.dimension === "inhoud";
+                          return {
+                            ...r,
+                            qty: String(q),
+                            unitId: (isMl ? ml : gramUnitId) || r.unitId,
+                          };
+                        }) ?? null,
+                    );
+                  }}
+                >
+                  <Scale className="h-3.5 w-3.5" />
+                  Verdeel in grammen
+                </Button>
+                <input
+                  type="number"
+                  min="0"
+                  step="10"
+                  value={gramTarget}
+                  onChange={(e) => setGramTarget(e.target.value)}
+                  className="input h-8! w-20! text-right"
+                />
+                <span className="text-muted">
+                  gram p.p. totaal — vega en overgeslagen regels doen niet mee;
+                  daarna per regel aanpassen.
+                </span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>

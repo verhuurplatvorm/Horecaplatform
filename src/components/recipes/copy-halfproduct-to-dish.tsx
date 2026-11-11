@@ -17,7 +17,13 @@ import { createClient } from "@/lib/supabase/client";
  * "Aantal porties": de hoeveelheden worden daardoor gedeeld (een gerecht
  * is per portie).
  */
-export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; name: string }) {
+export function CopyHalfproductToDish({
+  recipeId,
+  name,
+}: {
+  recipeId: string;
+  name: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState(name);
@@ -34,7 +40,11 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
       .select("name, is_main, is_archived, sort_order")
       .order("sort_order")
       .then(({ data }) =>
-        setFolders((data ?? []).filter((f) => !f.is_main && !f.is_archived).map((f) => f.name as string)),
+        setFolders(
+          (data ?? [])
+            .filter((f) => !f.is_main && !f.is_archived)
+            .map((f) => f.name as string),
+        ),
       );
   }, [open]);
 
@@ -43,13 +53,20 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
     setBusy(true);
     setError(null);
     const supabase = createClient();
-    const { data: original } = await supabase.from("recipes").select("*").eq("id", recipeId).single();
+    const { data: original } = await supabase
+      .from("recipes")
+      .select("*")
+      .eq("id", recipeId)
+      .single();
     if (!original) {
       setBusy(false);
       setError("Kan dit halfproduct niet lezen.");
       return;
     }
-    const { data: lines } = await supabase.from("recipe_ingredients").select("*").eq("recipe_id", recipeId);
+    const { data: lines } = await supabase
+      .from("recipe_ingredients")
+      .select("*")
+      .eq("recipe_id", recipeId);
 
     const { data: created, error: err } = await supabase
       .from("recipes")
@@ -68,6 +85,12 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
         allergen_overrides: original.allergen_overrides,
         station_id: original.station_id ?? null,
         portion_size: 1,
+        // Partijgerecht in grammen: zelfde eenheid en (per portie gedeelde) opbrengst.
+        base_unit_id: original.base_unit_id,
+        yield_quantity:
+          original.yield_quantity == null
+            ? null
+            : Math.round((Number(original.yield_quantity) / n) * 1000) / 1000,
         vat_rate: original.vat_rate,
       })
       .select("id")
@@ -78,20 +101,28 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
       return;
     }
     if (lines?.length) {
-      const { error: lineErr } = await supabase.from("recipe_ingredients").insert(
-        lines.map((l) => {
-          const { id: _id, ...rest } = l;
-          void _id;
-          return {
-            ...rest,
-            recipe_id: created.id,
-            quantity: l.quantity == null ? null : Math.round((Number(l.quantity) / n) * 10000) / 10000,
-          };
-        }),
-      );
+      const { error: lineErr } = await supabase
+        .from("recipe_ingredients")
+        .insert(
+          lines.map((l) => {
+            const { id: _id, ...rest } = l;
+            void _id;
+            return {
+              ...rest,
+              recipe_id: created.id,
+              quantity:
+                l.quantity == null
+                  ? null
+                  : Math.round((Number(l.quantity) / n) * 10000) / 10000,
+            };
+          }),
+        );
       if (lineErr) {
         setBusy(false);
-        setError("Gerecht aangemaakt, maar de ingrediënten konden niet worden gekopieerd: " + lineErr.message);
+        setError(
+          "Gerecht aangemaakt, maar de ingrediënten konden niet worden gekopieerd: " +
+            lineErr.message,
+        );
         return;
       }
     }
@@ -113,17 +144,28 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
         <Modal title="Kopiëren naar gerechten" onClose={() => setOpen(false)}>
           <div className="space-y-3 text-sm">
             <p className="text-muted">
-              Er wordt een nieuw concept-gerecht gemaakt met dezelfde ingrediënten en halfproducten. Het halfproduct
-              blijft gewoon bestaan en verandert niet.
+              Er wordt een nieuw concept-gerecht gemaakt met dezelfde
+              ingrediënten en halfproducten. Het halfproduct blijft gewoon
+              bestaan en verandert niet.
             </p>
             <label className="block">
               <span className="mb-1 block font-medium">Naam gerecht</span>
-              <input value={newName} onChange={(e) => setNewName(e.target.value)} className="input" />
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="input"
+              />
             </label>
             <label className="block">
               <span className="mb-1 block font-medium">Map in Gerechten</span>
-              <select value={folder} onChange={(e) => setFolder(e.target.value)} className="input">
-                {!folders.includes(folder) && <option value={folder}>{folder}</option>}
+              <select
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+                className="input"
+              >
+                {!folders.includes(folder) && (
+                  <option value={folder}>{folder}</option>
+                )}
                 {folders.map((f) => (
                   <option key={f} value={f}>
                     {f}
@@ -132,7 +174,9 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block font-medium">Aantal porties uit dit recept</span>
+              <span className="mb-1 block font-medium">
+                Aantal porties uit dit recept
+              </span>
               <input
                 type="number"
                 min="1"
@@ -142,8 +186,8 @@ export function CopyHalfproductToDish({ recipeId, name }: { recipeId: string; na
                 className="input w-32!"
               />
               <span className="mt-1 block text-xs text-muted">
-                Een gerecht is per portie: alle hoeveelheden worden hierdoor gedeeld. Bij 1 (bv. één schaal) blijven
-                ze gelijk.
+                Een gerecht is per portie: alle hoeveelheden worden hierdoor
+                gedeeld. Bij 1 (bv. één schaal) blijven ze gelijk.
               </span>
             </label>
             {error && <p className="text-danger">{error}</p>}

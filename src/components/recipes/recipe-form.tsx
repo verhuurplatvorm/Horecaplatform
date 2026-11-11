@@ -78,6 +78,19 @@ interface IngredientRow {
   preparation: string;
 }
 
+
+/** Map in Gerechten voor partijgerechten (standaard in grammen). */
+const PARTY_FOLDER = "Partijgerechten";
+/** Portie-eenheid die aangeeft dat een partijgerecht bewust per portie is. */
+const PORTION_CHOSEN = "portie (vast)";
+
+function startsByWeight(
+  r: { recipe_kind: string; base_unit_id: string | null; category: string | null; portion_unit: string | null } | null | undefined,
+): boolean {
+  if (!r || r.recipe_kind !== "gerecht") return false;
+  return Boolean(r.base_unit_id) || (r.category === PARTY_FOLDER && r.portion_unit !== PORTION_CHOSEN);
+}
+
 export interface RecipeFormProps {
   initialRecipe?: Recipe;
   initialIngredients?: RecipeIngredient[];
@@ -137,6 +150,11 @@ export function RecipeForm({
   const [baseUnitId, setBaseUnitId] = useState(
     initialRecipe?.base_unit_id ?? ""
   );
+  // Gerecht "in grammen" (partijgerechten: schaal carpaccio e.d.): het
+  // gerecht heeft een opbrengst in gram en wordt in menu's per gram gebruikt.
+  // Partijgerechten staan standaard in grammen, tenzij bewust "per portie"
+  // gekozen (portie-eenheid "portie (vast)").
+  const [dishByWeight, setDishByWeight] = useState(() => startsByWeight(initialRecipe));
   // Handmatig = de kok bepaalt de eindopbrengst (leidend, nooit overschreven);
   // automatisch = de opbrengst volgt de som van de ingrediënten. Een nieuw
   // halfproduct start automatisch, een bestaand houdt wat het had.
@@ -297,13 +315,23 @@ export function RecipeForm({
       .select("*")
       .order("dimension")
       .order("sort_order")
-      .then(({ data }) => setUnits((data as Unit[]) ?? []));
+      .then(({ data }) => {
+        const list = (data as Unit[]) ?? [];
+        setUnits(list);
+        // Partijgerecht in grammen zonder eenheid: standaard gram.
+        if (startsByWeight(initialRecipe) && !initialRecipe?.base_unit_id) {
+          const g = list.find((u) => u.key === "g");
+          if (g) setBaseUnitId((prev) => prev || g.id);
+        }
+      });
     supabase
       .from("kitchen_stations")
       .select("id, name")
       .eq("is_active", true)
       .order("sort_order")
       .then(({ data }) => setStations(data ?? []));
+    // Alleen bij openen; initialRecipe verandert daarna niet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Bij bewerken: namen en basiseenheden van bestaande regels ophalen.
@@ -1583,8 +1611,12 @@ export function RecipeForm({
       is_central: scopeChoice === "central",
       portion_unit: recipeKind === "gerecht" ? portionUnit.trim() || null : null,
       portion_size: recipeKind === "gerecht" ? 1 : null,
-      base_unit_id: recipeKind === "halfproduct" ? baseUnitId || null : null,
-      yield_quantity: recipeKind === "halfproduct" ? Number(yieldQuantity) || null : null,
+      base_unit_id:
+        recipeKind === "halfproduct" || (recipeKind === "gerecht" && dishByWeight) ? baseUnitId || null : null,
+      yield_quantity:
+        recipeKind === "halfproduct" || (recipeKind === "gerecht" && dishByWeight)
+          ? Number(yieldQuantity) || null
+          : null,
       // Is automatisch niet betrouwbaar te berekenen, dan is wat er staat
       // per definitie door de kok bepaald.
       yield_is_manual: recipeKind === "halfproduct" ? yieldManual || !yieldAutoReliable : true,
@@ -1961,9 +1993,76 @@ export function RecipeForm({
 
           {recipeKind === "gerecht" ? (
             <>
-              <Field label="Portie-eenheid">
-                <input value={portionUnit} onChange={(e) => setPortionUnit(e.target.value)} className="input" />
+              <Field label="Gebruik in menu's & buffetten">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDishByWeight(true);
+                      const g = units.find((u) => u.key === "g");
+                      if (g && !baseUnitId) setBaseUnitId(g.id);
+                      if (portionUnit === PORTION_CHOSEN) setPortionUnit("portie");
+                    }}
+                    className={`rounded-md border px-3 py-1.5 text-sm ${dishByWeight ? "border-teal bg-teal/10 text-teal" : "border-border text-muted"}`}
+                  >
+                    In grammen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDishByWeight(false);
+                      if (category === PARTY_FOLDER) setPortionUnit(PORTION_CHOSEN);
+                    }}
+                    className={`rounded-md border px-3 py-1.5 text-sm ${!dishByWeight ? "border-teal bg-teal/10 text-teal" : "border-border text-muted"}`}
+                  >
+                    Per portie
+                  </button>
+                </div>
               </Field>
+              {dishByWeight ? (
+                <Field label="Totaalgewicht van dit recept (opbrengst)">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={yieldQuantity}
+                      onChange={(e) => setYieldQuantity(e.target.value)}
+                      className="input w-32!"
+                    />
+                    <select
+                      value={baseUnitId}
+                      onChange={(e) => setBaseUnitId(e.target.value)}
+                      className="input w-28!"
+                    >
+                      <option value="">Eenheid…</option>
+                      {units
+                        .filter((u) => ["g", "kg", "ml", "l"].includes(u.key))
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                    </select>
+                    {computedYieldFromIngredients !== null && computedYieldFromIngredients > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setYieldQuantity(String(Math.round(computedYieldFromIngredients)))}
+                        className="text-xs text-teal underline"
+                      >
+                        = som ingrediënten ({formatAmount(computedYieldFromIngredients, baseUnitName)})
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    Menu&apos;s rekenen dit gerecht per gram: kostprijs per gram = kostprijs ÷ totaalgewicht.
+                  </p>
+                </Field>
+              ) : (
+                <Field label="Portie-eenheid">
+                  <input value={portionUnit} onChange={(e) => setPortionUnit(e.target.value)} className="input" />
+                </Field>
+              )}
               <Field label="Verkoopprijs (incl. btw)">
                 <input
                   type="number"
