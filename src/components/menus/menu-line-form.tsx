@@ -13,6 +13,9 @@ interface Hit {
   name: string;
   kind: "gerecht" | "halfproduct" | "ingrediënt";
   baseUnitId: string | null;
+  /** Partijgerecht: standaardportie p.p. in de capaciteitseenheid. */
+  partyPortion?: number | null;
+  partyUnitId?: string | null;
 }
 
 /**
@@ -124,7 +127,7 @@ export function MenuLineForm({
       const [{ data: recipes }, { data: products }] = await Promise.all([
         supabase
           .from("recipes")
-          .select("id, name, recipe_kind, base_unit_id")
+          .select("id, name, recipe_kind, base_unit_id, party_portion, party_capacity_unit_id")
           .ilike("name", `%${query.trim()}%`)
           .limit(10),
         supabase
@@ -140,6 +143,8 @@ export function MenuLineForm({
           name: r.name,
           kind: (r.recipe_kind === "halfproduct" ? "halfproduct" : "gerecht") as Hit["kind"],
           baseUnitId: r.base_unit_id,
+          partyPortion: r.party_portion ?? null,
+          partyUnitId: r.party_capacity_unit_id ?? null,
         })),
         ...(products ?? []).map((p) => ({
           id: p.id,
@@ -221,7 +226,13 @@ export function MenuLineForm({
                       key={`${h.kind}-${h.id}`}
                       onClick={() => {
                         setSelected(h);
-                        setUnitId(h.baseUnitId ?? "");
+                        // Partijgerecht: standaardportie p.p. alvast invullen.
+                        if (h.partyPortion && h.partyUnitId) {
+                          setUnitId(h.partyUnitId);
+                          setQuantity(String(h.partyPortion));
+                        } else {
+                          setUnitId(h.baseUnitId ?? "");
+                        }
                       }}
                       className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-background"
                     >

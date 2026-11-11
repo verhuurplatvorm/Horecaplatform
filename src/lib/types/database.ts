@@ -318,7 +318,33 @@ export type EventMenuLine = {
   is_fixed: boolean;
   note: string | null;
   sort_order: number;
+  participation_pct?: number;
+  full_containers?: boolean | null;
 }
+
+/** Rij uit get_event_menu_party_plan (migratie 0122). */
+export type EventMenuPartyPlanRow = {
+  line_id: string;
+  recipe_id: string;
+  recipe_name: string;
+  section_name: string;
+  container: string;
+  capacity: number;
+  capacity_unit: string | null;
+  portion: number | null;
+  quantity_per_person: number;
+  participation_pct: number;
+  needed: number;
+  containers_exact: number;
+  containers: number;
+  full_containers: boolean;
+  produced: number;
+  last_container: number;
+  difference: number;
+  cost_per_container: number | null;
+  total_cost: number | null;
+  overproduction_cost: number | null;
+};
 
 export type RecipeRevision = {
   id: string;
@@ -380,6 +406,11 @@ export type Recipe = {
   shelf_life_days: number | null;
   shelf_life_rule?: string | null;
   station_id?: string | null;
+  party_container?: string | null;
+  party_capacity?: number | null;
+  party_capacity_unit_id?: string | null;
+  party_portion?: number | null;
+  party_full_containers?: boolean;
   waste_percentage: number;
   margin_free_costs: number;
   created_by: string | null;
@@ -1212,6 +1243,10 @@ export type Database = {
       get_event_menu_actuals: {
         Args: { p_menu_id: string; p_company_id: string };
         Returns: EventMenuActualRow[];
+      };
+      get_event_menu_party_plan: {
+        Args: { p_menu_id: string; p_company_id: string };
+        Returns: EventMenuPartyPlanRow[];
       };
       kitchen_list: {
         Args: { p_card_ids: string[]; p_portions?: Record<string, number> | null };

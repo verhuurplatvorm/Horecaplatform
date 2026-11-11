@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { PageActions } from "@/components/layout/page-actions";
 import { RecipeSuggestPanel } from "@/components/recipes/recipe-suggest-panel";
 import { CopyIngredientsPicker } from "@/components/recipes/copy-ingredients-picker";
+import { PartySettings, type PartySettingsValue } from "@/components/recipes/party-settings";
 import type { RecipeSuggestion } from "@/app/api/recipes/suggest/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
@@ -97,6 +98,8 @@ export interface RecipeFormProps {
   /** Dwingt het type af (gebruikt door de losse Halfproducten-module) en
    * verbergt de Soort-keuze. */
   lockedKind?: RecipeKind;
+  /** Map (categorie) voor een nieuw recept, bijv. "Partijgerechten". */
+  initialCategory?: string;
 }
 
 const EU_ALLERGENS = [
@@ -108,6 +111,7 @@ export function RecipeForm({
   initialRecipe,
   initialIngredients = [],
   lockedKind,
+  initialCategory,
 }: RecipeFormProps) {
   const router = useRouter();
   // Terug naar waar dit recept/halfproduct vandaan geopend is — vanuit
@@ -133,7 +137,7 @@ export function RecipeForm({
   ).canViewFinancial;
   const [formTab, setFormTab] = useState<"algemeen" | "financieel" | "voeding" | "galerij" | "gebruikt" | "historie">("algemeen");
   const [name, setName] = useState(initialRecipe?.name ?? "");
-  const [category, setCategory] = useState(initialRecipe?.category ?? "");
+  const [category, setCategory] = useState(initialRecipe?.category ?? initialCategory ?? "");
   const [preparation, setPreparation] = useState(
     initialRecipe?.preparation ?? ""
   );
@@ -154,7 +158,17 @@ export function RecipeForm({
   // gerecht heeft een opbrengst in gram en wordt in menu's per gram gebruikt.
   // Partijgerechten staan standaard in grammen, tenzij bewust "per portie"
   // gekozen (portie-eenheid "portie (vast)").
-  const [dishByWeight, setDishByWeight] = useState(() => startsByWeight(initialRecipe));
+  const [dishByWeight, setDishByWeight] = useState(
+    () => startsByWeight(initialRecipe) || (!initialRecipe && initialCategory === PARTY_FOLDER)
+  );
+  // Gerechten voor Partijen: productievorm, hoofdproduct per vorm, portie p.p.
+  const [party, setParty] = useState<PartySettingsValue>(() => ({
+    container: initialRecipe?.party_container ?? "schaal",
+    capacity: initialRecipe?.party_capacity?.toString() ?? "",
+    capacityUnitId: initialRecipe?.party_capacity_unit_id ?? "",
+    portion: initialRecipe?.party_portion?.toString() ?? "",
+    full: initialRecipe?.party_full_containers ?? true,
+  }));
   // Handmatig = de kok bepaalt de eindopbrengst (leidend, nooit overschreven);
   // automatisch = de opbrengst volgt de som van de ingrediënten. Een nieuw
   // halfproduct start automatisch, een bestaand houdt wat het had.
@@ -616,6 +630,7 @@ export function RecipeForm({
     isHalfproduct: recipeKind === "halfproduct",
   });
   const baseUnitName = baseUnitId ? unitsById.get(baseUnitId)?.name ?? null : null;
+  const isPartyDish = recipeKind === "gerecht" && category.trim() === PARTY_FOLDER;
 
   // Naast de prijs per basiseenheid (ml/gram) ook de prijs per liter/kilo
   // tonen wanneer dat een zinvolle, andere eenheid is — makkelijker te
@@ -1597,6 +1612,27 @@ export function RecipeForm({
     setMultiplyOpen(false);
   }
 
+  /** Partijvelden: alleen voor gerechten in de map Partijgerechten. */
+  // Eenheden laden later in; zonder keuze is de capaciteit in gram.
+  const partyValue: PartySettingsValue = {
+    ...party,
+    capacityUnitId: party.capacityUnitId || (units.find((u) => u.key === "g")?.id ?? ""),
+  };
+
+  function partyPayload() {
+    const on = recipeKind === "gerecht" && category.trim() === PARTY_FOLDER;
+    const party = partyValue;
+    const cap = Number(party.capacity);
+    const portion = Number(party.portion);
+    return {
+      party_container: on ? party.container : null,
+      party_capacity: on && cap > 0 ? cap : null,
+      party_capacity_unit_id: on && cap > 0 ? party.capacityUnitId || null : null,
+      party_portion: on && portion > 0 ? portion : null,
+      party_full_containers: on ? party.full : true,
+    };
+  }
+
   function buildPayload(finalStatus: RecipeStatus) {
     const companyId = scopeChoice === "company" ? referenceCompanyId : null;
     return {
@@ -1629,6 +1665,7 @@ export function RecipeForm({
       production_location: productionLocation.trim() || null,
       synonyms: recipeSynonyms.split(",").map((x) => x.trim()).filter(Boolean),
       station_id: stationId || null,
+      ...partyPayload(),
       storage_method: recipeKind === "halfproduct" ? storageMethod.trim() || null : null,
       shelf_life_days: recipeKind === "halfproduct" && shelfLifeDays ? Number(shelfLifeDays) : null,
       sales_price: recipeKind === "gerecht" && salesPrice ? Number(salesPrice) : null,
@@ -2020,7 +2057,13 @@ export function RecipeForm({
                 </div>
               </Field>
               {dishByWeight ? (
-                <Field label="Totaalgewicht van dit recept (opbrengst)">
+                <Field
+                  label={
+                    isPartyDish
+                      ? "Totaalgewicht van één standaardvorm incl. garnering (opbrengst)"
+                      : "Totaalgewicht van dit recept (opbrengst)"
+                  }
+                >
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -2063,6 +2106,17 @@ export function RecipeForm({
                   <input value={portionUnit} onChange={(e) => setPortionUnit(e.target.value)} className="input" />
                 </Field>
               )}
+              {isPartyDish ? (
+                <PartySettings
+                  value={partyValue}
+                  onChange={setParty}
+                  units={units}
+                  totalCost={totalCost}
+                  totalWeight={dishByWeight ? yieldQuantityNum : 0}
+                  totalWeightUnitKey={baseUnitId ? (unitsById.get(baseUnitId)?.key ?? null) : null}
+                />
+              ) : (
+              <>
               <Field label="Verkoopprijs (incl. btw)">
                 <input
                   type="number"
@@ -2121,6 +2175,8 @@ export function RecipeForm({
                   Bij {targetFoodCostPct || "—"}% foodcost
                 </p>
               </Field>
+              </>
+              )}
             </>
           ) : (
             <>
@@ -2859,7 +2915,9 @@ export function RecipeForm({
 
           <div className="grid grid-cols-1 gap-4 border-t border-border pt-3 sm:grid-cols-3">
             <Stat label="Totale kostprijs" value={`€ ${totalCost.toFixed(4)}`} emphasis />
-            {recipeKind === "gerecht" ? (
+            {isPartyDish ? (
+              <Stat label="Kostprijs = één standaardvorm" value="Geen verkoopprijs per partijgerecht" />
+            ) : recipeKind === "gerecht" ? (
               <>
                 <div>
                   <p className="text-sm text-muted">Gewenst foodcost%</p>
@@ -2899,7 +2957,7 @@ export function RecipeForm({
               </>
             )}
           </div>
-          {recipeKind === "gerecht" && (
+          {recipeKind === "gerecht" && !isPartyDish && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Stat
                 label="Verkoopprijs (incl. btw)"

@@ -18,7 +18,14 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import Link from "next/link";
-import type { EventMenu, EventMenuLine, EventMenuSection, Unit } from "@/lib/types/database";
+import type {
+  EventMenu,
+  EventMenuLine,
+  EventMenuPartyPlanRow,
+  EventMenuSection,
+  Unit,
+} from "@/lib/types/database";
+import { containerLabel } from "@/lib/party/party-calc";
 
 const TABS = [
   { key: "algemeen", label: "Algemeen" },
@@ -63,6 +70,9 @@ export default function MenuDetailPage({
   // Per regel waar hij naartoe verwijst, om het ingrediënt, halfproduct of
   // gerecht direct te kunnen openen.
   const [lineTargets, setLineTargets] = useState<Record<string, { href: string; label: string }>>({});
+  // Deelname% per regel en de partij-planning (aantal schalen) per regel.
+  const [lineExtra, setLineExtra] = useState<Record<string, { pct: number; full: boolean | null }>>({});
+  const [partyPlan, setPartyPlan] = useState<Record<string, EventMenuPartyPlanRow>>({});
   const [tab, setTab] = useState<TabKey>("algemeen");
   const [menu, setMenu] = useState<EventMenu | null>(null);
   const [sections, setSections] = useState<EventMenuSection[]>([]);
@@ -100,8 +110,13 @@ export default function MenuDetailPage({
     // Waar elke regel naar verwijst (ingrediënt, halfproduct of gerecht).
     const { data: lineRefs } = await supabase
       .from("event_menu_lines")
-      .select("id, recipe_id, product_id")
+      .select("id, recipe_id, product_id, participation_pct, full_containers")
       .eq("menu_id", id);
+    const extra: Record<string, { pct: number; full: boolean | null }> = {};
+    for (const r of lineRefs ?? []) {
+      extra[r.id as string] = { pct: Number(r.participation_pct ?? 100), full: r.full_containers ?? null };
+    }
+    setLineExtra(extra);
     const recipeIds = [...new Set((lineRefs ?? []).map((r) => r.recipe_id).filter(Boolean))] as string[];
     const kindById = new Map<string, string>();
     if (recipeIds.length > 0) {
@@ -125,7 +140,7 @@ export default function MenuDetailPage({
     // dezelfde prijsbronnen en conversies gebruikt als de rest van het
     // platform. Hier wordt dus niets opnieuw uitgerekend.
     if (referenceCompanyId) {
-      const [{ data: breakdown }, { data: cost }] = await Promise.all([
+      const [{ data: breakdown }, { data: cost }, { data: plan }] = await Promise.all([
         supabase.rpc("get_event_menu_breakdown", {
           p_menu_id: id,
           p_company_id: referenceCompanyId,
@@ -134,7 +149,14 @@ export default function MenuDetailPage({
           p_menu_id: id,
           p_company_id: referenceCompanyId,
         }),
+        supabase.rpc("get_event_menu_party_plan", {
+          p_menu_id: id,
+          p_company_id: referenceCompanyId,
+        }),
       ]);
+      const planMap: Record<string, EventMenuPartyPlanRow> = {};
+      for (const p of (plan as EventMenuPartyPlanRow[] | null) ?? []) planMap[p.line_id] = p;
+      setPartyPlan(planMap);
       setLines((breakdown as BreakdownLine[]) ?? []);
       setTotalCost((cost as number | null) ?? null);
     } else {
@@ -601,6 +623,29 @@ export default function MenuDetailPage({
                                       }}
                                       className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-sm tabular hover:border-border focus:border-teal focus:bg-surface"
                                     />
+                                    {!l.is_fixed && (
+                                      <label
+                                        className="mt-0.5 flex items-center justify-end gap-0.5 text-xs text-muted"
+                                        title="Deelnamefactor: welk deel van de gasten neemt dit gerecht"
+                                      >
+                                        <input
+                                          key={`pct-${l.line_id}-${lineExtra[l.line_id]?.pct ?? 100}`}
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="any"
+                                          defaultValue={lineExtra[l.line_id]?.pct ?? 100}
+                                          onBlur={(e) => {
+                                            const v = Number(e.target.value);
+                                            const cur = lineExtra[l.line_id]?.pct ?? 100;
+                                            if (v >= 0 && v <= 100 && v !== cur)
+                                              updateLine(l.line_id, { participation_pct: v });
+                                          }}
+                                          className="w-12 rounded border border-transparent bg-transparent px-1 text-right tabular hover:border-border focus:border-teal focus:bg-surface"
+                                        />
+                                        % deelname
+                                      </label>
+                                    )}
                                   </td>
                                   <td className="px-4 py-2">
                                     <select
@@ -626,6 +671,32 @@ export default function MenuDetailPage({
                                     <span className="text-xs font-normal text-muted">
                                       {l.unit_name}
                                     </span>
+                                    {partyPlan[l.line_id] && (() => {
+                                      const p = partyPlan[l.line_id];
+                                      const unit = p.capacity_unit ?? "";
+                                      const diff = Number(p.difference);
+                                      return (
+                                        <div className="mt-0.5 text-xs font-normal text-teal">
+                                          → {p.containers} {containerLabel(p.container, p.containers)}
+                                          {diff > 0 && (
+                                            <span className="text-muted">
+                                              {" "}
+                                              (+{diff.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} {unit})
+                                            </span>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              updateLine(l.line_id, { full_containers: !p.full_containers })
+                                            }
+                                            className="ml-1 text-muted underline"
+                                            title="Wisselen tussen volle vormen en laatste vorm aanpassen"
+                                          >
+                                            {p.full_containers ? "vol" : "laatste aangepast"}
+                                          </button>
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                   {canViewFinancial && (
                                     <>
@@ -724,6 +795,26 @@ export default function MenuDetailPage({
                   label="Variabele kosten (ingrediënten en gerechten)"
                   value={`€ ${variableCost.toFixed(2)}`}
                 />
+                {Object.keys(partyPlan).length > 0 &&
+                  (() => {
+                    const rows = Object.values(partyPlan);
+                    const planned = rows.reduce((t, p) => t + Number(p.total_cost ?? 0), 0);
+                    const over = rows.reduce((t, p) => t + Number(p.overproduction_cost ?? 0), 0);
+                    return (
+                      <>
+                        <Row
+                          label="waarvan partijgerechten (geplande productie, per vorm)"
+                          value={`€ ${planned.toFixed(2)}`}
+                        />
+                        {over > 0 && (
+                          <Row
+                            label="waarvan overproductie door afronden op volle vormen"
+                            value={`€ ${over.toFixed(2)}`}
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                 <div className="flex items-center justify-between">
                   <span className="text-muted">
                     Vaste kosten{" "}
@@ -822,6 +913,7 @@ export default function MenuDetailPage({
             menuId={id}
             personCount={menu.person_count}
             serviceDate={menu.service_date}
+            companyId={referenceCompanyId}
           />
         )}
 
