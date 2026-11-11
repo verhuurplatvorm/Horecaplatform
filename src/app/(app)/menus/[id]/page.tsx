@@ -36,6 +36,7 @@ import type {
   Unit,
 } from "@/lib/types/database";
 import { containerLabel } from "@/lib/party/party-calc";
+import { DEFAULT_TARGET_GRAMS } from "@/lib/event-menus/distribute-grams";
 
 const TABS = [
   { key: "algemeen", label: "Algemeen" },
@@ -89,6 +90,8 @@ export default function MenuDetailPage({
   const [lines, setLines] = useState<BreakdownLine[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [units, setUnits] = useState<Unit[]>([]);
+  // Streefgewicht per persoon voor de gewichtscontrole (alleen weergave).
+  const [targetGrams, setTargetGrams] = useState<number>(DEFAULT_TARGET_GRAMS);
 
   useEffect(() => {
     const supabase = createClient();
@@ -326,6 +329,22 @@ export default function MenuDetailPage({
   // een totaal dat nog opgehaald moet worden.
   const variableCost = lines.reduce((sum, l) => sum + (l.total_cost ?? 0), 0);
 
+  // Gewicht per persoon: gram en ml (≈ gram) tellen mee, stuks niet.
+  // totaal / personen, dus deelname% en vaste regels zitten erin verwerkt.
+  const unitByName = new Map(units.map((u) => [u.name, u]));
+  const gramsPerPerson = (l: BreakdownLine): number | null => {
+    const u = l.unit_name ? unitByName.get(l.unit_name) : undefined;
+    if (!u || (u.dimension !== "gewicht" && u.dimension !== "inhoud")) return null;
+    if (!(menu.person_count > 0)) return null;
+    return (Number(l.total_quantity) * Number(u.factor_to_base)) / menu.person_count;
+  };
+  const weightPP = lines.reduce((t, l) => t + (gramsPerPerson(l) ?? 0), 0);
+  const countLines = lines.filter((l) => gramsPerPerson(l) === null).length;
+  const totalKg = (weightPP * menu.person_count) / 1000;
+  const guestsAtTarget = targetGrams > 0 ? Math.floor((weightPP * menu.person_count) / targetGrams) : null;
+  const weightDiffPct = targetGrams > 0 ? ((weightPP - targetGrams) / targetGrams) * 100 : 0;
+  const fmtG = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 0 });
+
   const costPerPerson =
     totalCost !== null && menu.person_count > 0 ? totalCost / menu.person_count : null;
   const salesExclVat = menu.sales_price_per_person
@@ -357,6 +376,61 @@ export default function MenuDetailPage({
                   </span>
                 )}
               </p>
+              {lines.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span>
+                    Gewicht p.p.{" "}
+                    <strong
+                      className={
+                        Math.abs(weightDiffPct) <= 5
+                          ? "text-teal"
+                          : weightDiffPct < 0
+                            ? "text-copper"
+                            : "text-foreground"
+                      }
+                    >
+                      {fmtG(weightPP)} g
+                    </strong>
+                  </span>
+                  <label className="flex items-center gap-1 text-muted">
+                    doel
+                    <input
+                      type="number"
+                      min="0"
+                      step="10"
+                      value={targetGrams}
+                      onChange={(e) => setTargetGrams(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-16 rounded border border-border bg-surface px-1 text-right tabular text-foreground"
+                    />
+                    g
+                    {targetGrams > 0 && (
+                      <span className={weightDiffPct < -5 ? "text-copper" : ""}>
+                        ({weightDiffPct >= 0 ? "+" : ""}
+                        {fmtG(weightPP - targetGrams)} g)
+                      </span>
+                    )}
+                  </label>
+                  <span className="text-muted">
+                    totaal <strong className="text-foreground">{totalKg.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} kg</strong>
+                  </span>
+                  {guestsAtTarget !== null && (
+                    <span className="text-muted">
+                      genoeg voor ±{" "}
+                      <strong
+                        className={guestsAtTarget < menu.person_count ? "text-copper" : "text-foreground"}
+                      >
+                        {guestsAtTarget} gasten
+                      </strong>{" "}
+                      bij {fmtG(targetGrams)} g p.p.
+                    </span>
+                  )}
+                  {countLines > 0 && (
+                    <span className="text-xs text-muted">
+                      ({countLines} regel{countLines === 1 ? "" : "s"} in stuks niet meegeteld)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <label className="flex items-center gap-2 rounded-md border border-teal bg-teal/5 px-3 py-1.5">
               <Users className="h-4 w-4 text-teal" />
@@ -579,6 +653,14 @@ export default function MenuDetailPage({
                                   <span className="text-xs font-normal text-muted">
                                     ({group.length})
                                   </span>
+                                  {(() => {
+                                    const g = group.reduce((t, l) => t + (gramsPerPerson(l) ?? 0), 0);
+                                    return g > 0 ? (
+                                      <span className="ml-1 text-xs font-normal text-muted">
+                                        · {fmtG(g)} g p.p.
+                                      </span>
+                                    ) : null;
+                                  })()}
                                 </button>
                                 {sectionName !== "Overig" && (
                                   <span className="flex items-center gap-0.5 text-muted">
