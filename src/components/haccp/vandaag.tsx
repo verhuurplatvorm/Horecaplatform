@@ -7,9 +7,8 @@ import {
   ChevronDown,
   MoreHorizontal,
   RefreshCw,
-  User,
 } from "lucide-react";
-import { StaffSwitcher } from "@/components/haccp/staff-switcher";
+import { StaffSelect } from "@/components/haccp/staff-select";
 import { NotDoneDialog } from "@/components/haccp/not-done-dialog";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { ReportProblemDialog } from "@/components/haccp/report-problem-dialog";
@@ -72,7 +71,6 @@ export function Vandaag({
     typeof window === "undefined" ? null : readStaffSession(companyId),
   );
   const [accountName, setAccountName] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
   const [filter, setFilter] = useState<string>(() => {
     if (typeof window === "undefined") return ALL;
     try {
@@ -459,17 +457,20 @@ export function Vandaag({
     <div className="mx-auto max-w-3xl p-3 pb-28 sm:p-6">
       {/* Wie werkt er + voortgang */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <button
-          onClick={() => setSwitching(true)}
-          className="flex h-12 items-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm"
-        >
-          <User className="h-5 w-5 text-muted" />
-          <span className="text-muted">Je werkt als</span>
-          <span className="font-semibold text-foreground">
-            {session?.name ?? accountName ?? "…"}
-          </span>
-          <span className="ml-1 text-teal">Wissel</span>
-        </button>
+        <div className="flex min-w-60 flex-1 items-center gap-2 sm:max-w-sm">
+          <span className="shrink-0 text-sm text-muted">Je werkt als</span>
+          <StaffSelect
+            className="flex-1"
+            companyId={companyId}
+            value={session ? { id: session.staffId, name: session.name } : null}
+            required={false}
+            placeholder={accountName ?? "— kies medewerker —"}
+            onChosen={(s) => {
+              writeStaffSession(s, companyId);
+              setSession(s);
+            }}
+          />
+        </div>
         <div className="flex items-center gap-3">
           {rows !== null && (
             <span className="text-sm text-muted">
@@ -720,19 +721,6 @@ export function Vandaag({
           Dit apparaat altijd openen op Schoonmaak vandaag (handig voor de
           keukentablet)
         </label>
-      )}
-
-      {switching && (
-        <StaffSwitcher
-          companyId={companyId}
-          accountName={accountName}
-          onClose={() => setSwitching(false)}
-          onChosen={(s) => {
-            writeStaffSession(s, companyId);
-            setSession(s);
-            setSwitching(false);
-          }}
-        />
       )}
     </div>
   );

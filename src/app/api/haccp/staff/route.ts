@@ -4,8 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * Medewerker toevoegen zonder e-mailadres, alleen voor het afmelden van
- * HACCP-taken op een gedeelde tablet (naam + pincode).
+ * Medewerker toevoegen zonder e-mailadres (alleen een naam), zodat hij in
+ * de keuzelijst "Medewerker" staat bij schoonmaak (HACCP) en stickers.
+ * Collegiale werkplek: geen pincode nodig (pincode is optioneel).
  *
  * Er wordt een gewone gebruiker aangemaakt (zodat registraties aan een
  * echte persoon gekoppeld zijn), met een niet-bestaand e-mailadres en een
@@ -29,21 +30,44 @@ export async function POST(request: Request) {
   if (!companyId || !fullName) {
     return NextResponse.json({ error: "Vul een naam in." }, { status: 400 });
   }
-  if (!/^\d{4}$/.test(pin)) {
+  // Een echte persoon, geen verzamelnaam (HACCP: wie heeft het gedaan?).
+  const generic =
+    /^(keuken|onbekend|iedereen|team|personeel|medewerker|bediening|bar|chef|kok|test|algemeen|het strand|zomers)\b/i;
+  if (fullName.length < 2 || generic.test(fullName)) {
+    return NextResponse.json(
+      {
+        error: "Vul de naam van een persoon in (geen 'Keuken' of 'Onbekend').",
+      },
+      { status: 400 },
+    );
+  }
+  if (pin && !/^\d{4}$/.test(pin)) {
     return NextResponse.json(
       { error: "Pincode moet uit 4 cijfers bestaan." },
       { status: 400 },
     );
   }
 
-  const { data: allowed } = await supabase.rpc("has_module_permission", {
-    p_company_id: companyId,
-    p_module_key: "haccp_plan",
-    p_action: "edit",
-  });
-  if (!allowed) {
+  // Iedereen die mag afmelden of stickers mag afdrukken, mag een collega
+  // toevoegen.
+  const checks = await Promise.all(
+    (
+      [
+        ["haccp", "create"],
+        ["stickers", "create"],
+        ["haccp_plan", "edit"],
+      ] as const
+    ).map(([m, a]) =>
+      supabase.rpc("has_module_permission", {
+        p_company_id: companyId,
+        p_module_key: m,
+        p_action: a,
+      }),
+    ),
+  );
+  if (!checks.some((c) => c.data === true)) {
     return NextResponse.json(
-      { error: "Alleen een beheerder kan medewerkers toevoegen." },
+      { error: "Je hebt geen recht om medewerkers toe te voegen." },
       { status: 403 },
     );
   }
@@ -70,6 +94,42 @@ export async function POST(request: Request) {
       },
       { status: 500 },
     );
+  }
+
+  // Bestaat deze naam al? Dan geen dubbele medewerker aanmaken.
+  const { data: existing } = await admin
+    .from("user_profiles")
+    .select("id, full_name, is_active")
+    .eq("group_id", me.group_id)
+    .ilike("full_name", fullName.replace(/[%_]/g, ""));
+  const same = (existing ?? []).find(
+    (u) =>
+      u.is_active &&
+      u.full_name.trim().toLowerCase() === fullName.toLowerCase(),
+  );
+  if (same) {
+    const { data: access } = await admin
+      .from("user_company_access")
+      .select("user_id")
+      .eq("user_id", same.id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (!access) {
+      const { data: kok } = await admin
+        .from("roles")
+        .select("id")
+        .eq("group_id", me.group_id)
+        .eq("key", "kok")
+        .single();
+      if (kok)
+        await admin.from("user_company_access").insert({
+          user_id: same.id,
+          company_id: companyId,
+          role_id: kok.id,
+          granted_by: user.id,
+        });
+    }
+    return NextResponse.json({ userId: same.id, existed: true });
   }
 
   const { data: role } = await admin
@@ -128,14 +188,16 @@ export async function POST(request: Request) {
   if (accessError)
     return cleanup("Toegang instellen mislukt: " + accessError.message);
 
-  // Pincode via de normale (gecontroleerde) functie, als de beheerder zelf.
-  const { error: pinError } = await supabase.rpc("haccp_set_pin", {
-    p_company_id: companyId,
-    p_user_id: newId,
-    p_pin: pin,
-  });
-  if (pinError)
-    return cleanup("Pincode instellen mislukt: " + pinError.message);
+  // Optionele pincode (wordt niet meer gevraagd, alleen voor oude schermen).
+  if (pin) {
+    const { error: pinError } = await supabase.rpc("haccp_set_pin", {
+      p_company_id: companyId,
+      p_user_id: newId,
+      p_pin: pin,
+    });
+    if (pinError)
+      return cleanup("Pincode instellen mislukt: " + pinError.message);
+  }
 
   return NextResponse.json({ userId: newId });
 }

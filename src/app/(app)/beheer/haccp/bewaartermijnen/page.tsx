@@ -415,10 +415,10 @@ export default function BewaartermijnenPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="text-sm text-muted">
-                Op een gedeeld account (tablet of keukencomputer) moet de
-                medewerker zich eerst met zijn pincode melden voordat er een
-                sticker kan worden afgedrukt. Pincodes stel je in bij HACCP →
-                Instellingen.
+                Op een gedeeld account (tablet of keukencomputer) kiest de
+                medewerker eerst zijn naam uit de keuzelijst voordat er een
+                sticker kan worden afgedrukt. Zo staat er nooit
+                &quot;Het Strand&quot; als medewerker op een sticker.
               </p>
               <div className="flex flex-wrap gap-2">
                 {profiles

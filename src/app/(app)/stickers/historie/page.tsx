@@ -517,6 +517,7 @@ function StickerDetail({
         <StaffSwitcher
           companyId={original.company_id}
           accountName={null}
+          excludeShared
           onClose={() => setSwitching(false)}
           onChosen={(s) => {
             writeStaffSession(s, original.company_id);

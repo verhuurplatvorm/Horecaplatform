@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, KeyRound, QrCode } from "lucide-react";
+import { ArrowDown, ArrowUp, QrCode } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,10 +45,7 @@ function Instellingen({ companyId }: { companyId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newDept, setNewDept] = useState("");
-  const [pinFor, setPinFor] = useState<string | null>(null);
-  const [pin, setPin] = useState("");
   const [newName, setNewName] = useState("");
-  const [newPin, setNewPin] = useState("");
   const [adding, setAdding] = useState(false);
   const [today] = useState(() => todayISO());
   const [closed, setClosed] = useState<HaccpClosedDay[]>([]);
@@ -176,7 +173,6 @@ function Instellingen({ companyId }: { companyId: string }) {
       body: JSON.stringify({
         companyId,
         fullName: newName.trim(),
-        pin: newPin,
       }),
     });
     const json = await res.json().catch(() => ({}));
@@ -185,27 +181,9 @@ function Instellingen({ companyId }: { companyId: string }) {
       setError(json.error ?? "Toevoegen mislukt.");
       return;
     }
-    setNotice(
-      `${newName.trim()} is toegevoegd en kan nu op de tablet met de pincode werken.`,
-    );
+    setNotice(`${newName.trim()} is toegevoegd en staat nu in de keuzelijst.`);
     setNewName("");
-    setNewPin("");
     await load();
-  }
-
-  async function savePin(userId: string, value: string | null) {
-    const ok = await run(
-      createClient().rpc("haccp_set_pin", {
-        p_company_id: companyId,
-        p_user_id: userId,
-        p_pin: value,
-      }),
-      value ? "Pincode opgeslagen." : "Pincode verwijderd.",
-    );
-    if (ok) {
-      setPinFor(null);
-      setPin("");
-    }
   }
 
   async function setDayClosed(day: string, isClosed: boolean, reason?: string) {
@@ -253,14 +231,13 @@ function Instellingen({ companyId }: { companyId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Pincodes medewerkers</CardTitle>
+          <CardTitle>Medewerkers</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted">
-            Op een gedeelde keukentablet kiest een medewerker zijn naam en tikt
-            zijn pincode (4 cijfers). Afmeldingen worden dan op zijn naam
-            vastgelegd. Heeft iemand geen e-mailadres, voeg hem dan hieronder
-            toe met alleen een naam en pincode.
+            Bij schoonmaak en stickers kiest de medewerker zijn naam uit de
+            keuzelijst (geen pincode). Staat iemand er niet bij, voeg hem dan
+            hieronder of direct in de keuzelijst toe.
           </p>
           <ul className="divide-y divide-border">
             {staff.map((s) => (
@@ -268,73 +245,6 @@ function Instellingen({ companyId }: { companyId: string }) {
                 <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
                   {s.full_name}
                 </span>
-                <span
-                  className={cn(
-                    "text-xs",
-                    s.has_pin ? "text-teal" : "text-muted",
-                  )}
-                >
-                  {s.has_pin ? "pincode ingesteld" : "geen pincode"}
-                </span>
-                {pinFor === s.id ? (
-                  <form
-                    className="flex items-center gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void savePin(s.id, pin);
-                    }}
-                  >
-                    <input
-                      autoFocus
-                      inputMode="numeric"
-                      pattern="[0-9]{4}"
-                      maxLength={4}
-                      className={cn(
-                        inputCls,
-                        "w-24 text-center tracking-widest",
-                      )}
-                      value={pin}
-                      onChange={(e) =>
-                        setPin(e.target.value.replace(/\D/g, ""))
-                      }
-                      placeholder="••••"
-                    />
-                    <Button type="submit" size="sm" disabled={pin.length !== 4}>
-                      Opslaan
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setPinFor(null)}
-                    >
-                      Annuleren
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setPinFor(s.id);
-                        setPin("");
-                      }}
-                    >
-                      <KeyRound className="h-4 w-4" />
-                      {s.has_pin ? "Wijzigen" : "Instellen"}
-                    </Button>
-                    {s.has_pin && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void savePin(s.id, null)}
-                      >
-                        Verwijderen
-                      </Button>
-                    )}
-                  </div>
-                )}
               </li>
             ))}
           </ul>
@@ -354,24 +264,16 @@ function Instellingen({ companyId }: { companyId: string }) {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
-            <input
-              inputMode="numeric"
-              maxLength={4}
-              className={cn(inputCls, "w-28 text-center tracking-widest")}
-              placeholder="Pincode"
-              value={newPin}
-              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
-            />
+
             <Button
               type="submit"
               variant="secondary"
-              disabled={adding || !newName.trim() || newPin.length !== 4}
+              disabled={adding || newName.trim().length < 2}
             >
               {adding ? "Toevoegen…" : "Toevoegen"}
             </Button>
             <span className="w-full text-xs text-muted">
-              Kan alleen op de tablet afmelden met naam en pincode; niet zelf
-              inloggen.
+              Komt in de keuzelijst; kan niet zelf inloggen.
             </span>
           </form>
         </CardContent>

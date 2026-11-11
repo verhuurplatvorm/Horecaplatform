@@ -14,13 +14,12 @@ import {
   CalendarDays,
   Leaf,
   TriangleAlert,
-  User,
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useCompanyScope } from "@/components/company-context";
-import { StaffSwitcher } from "@/components/haccp/staff-switcher";
+import { StaffSelect } from "@/components/haccp/staff-select";
 import {
   haccpError,
   isTabletHome,
@@ -120,7 +119,6 @@ export function StickerForm({
   const [tablet] = useState(() =>
     typeof window === "undefined" ? false : isTabletHome(),
   );
-  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,7 +177,6 @@ export function StickerForm({
   );
   const [reason, setReason] = useState("");
   const [approverId, setApproverId] = useState("");
-  const [approverPin, setApproverPin] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [preview, setPreview] = useState(false);
 
@@ -422,13 +419,6 @@ export function StickerForm({
   if (!employee) missing.push("medewerker");
   if (check?.needsReason && !reason.trim()) missing.push("onderbouwing");
   if (check?.needsApproval && !effectiveApprover) missing.push("goedkeuring");
-  if (
-    check?.needsApproval &&
-    effectiveApprover &&
-    effectiveApprover !== meId &&
-    approverPin.length !== 4
-  )
-    missing.push("pincode leidinggevende");
   const canPrint = missing.length === 0 && !check?.error && !busy;
 
   // ---------- acties ----------
@@ -455,8 +445,6 @@ export function StickerForm({
       source_label_id: activeBatch?.labelId ?? null,
       change_reason: reason.trim() || null,
       approver_id: check?.needsApproval ? effectiveApprover : null,
-      approver_pin:
-        check?.needsApproval && effectiveApprover !== meId ? approverPin : null,
       storage_temp: effectiveStorage || null,
       batch_number: labelData.batchNumber,
       quantity: quantity || null,
@@ -501,7 +489,6 @@ export function StickerForm({
     setQuantity("");
     setNote("");
     setReason("");
-    setApproverPin("");
     setCount(1);
     setPreview(false);
   }
@@ -730,42 +717,20 @@ export function StickerForm({
                 className="input"
               />
               {check.needsApproval && (
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div>
                   <select
                     value={effectiveApprover}
-                    onChange={(e) => {
-                      setApproverId(e.target.value);
-                      setApproverPin("");
-                    }}
+                    onChange={(e) => setApproverId(e.target.value)}
                     className="input"
                   >
                     <option value="">— leidinggevende —</option>
                     {approvers.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.full_name}
-                        {a.id === meId
-                          ? " (ingelogd)"
-                          : a.has_pin
-                            ? ""
-                            : " (geen pincode)"}
+                        {a.id === meId ? " (ingelogd)" : ""}
                       </option>
                     ))}
                   </select>
-                  {effectiveApprover && effectiveApprover !== meId && (
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      maxLength={4}
-                      value={approverPin}
-                      onChange={(e) =>
-                        setApproverPin(
-                          e.target.value.replace(/\D/g, "").slice(0, 4),
-                        )
-                      }
-                      placeholder="Pincode leidinggevende"
-                      className="input"
-                    />
-                  )}
                 </div>
               )}
             </div>
@@ -777,24 +742,15 @@ export function StickerForm({
               <p className="mb-1 text-sm font-medium text-foreground">
                 Medewerker <span className="text-danger">*</span>
               </p>
-              <button
-                type="button"
-                onClick={() => setSwitching(true)}
-                className={cn(
-                  "flex h-12 w-full items-center gap-2 rounded-lg border-2 px-3 text-left",
-                  employee
-                    ? "border-border bg-background text-foreground"
-                    : "border-danger bg-danger/5 text-danger",
-                )}
-              >
-                <User className="h-5 w-5 shrink-0" />
-                <span className="flex-1 truncate font-medium">
-                  {employee ? employee.name : "Kies medewerker"}
-                </span>
-                <span className="text-xs text-muted">
-                  {employee ? "wissel" : ""}
-                </span>
-              </button>
+              <StaffSelect
+                companyId={companyId}
+                excludeShared
+                value={employee}
+                onChosen={(sess) => {
+                  writeStaffSession(sess, companyId);
+                  setSession(sess);
+                }}
+              />
             </div>
             <div>
               <p className="mb-1 text-sm font-medium text-foreground">
@@ -1063,19 +1019,6 @@ export function StickerForm({
         format={printJob?.format ?? format}
         count={printJob?.count ?? 1}
       />
-
-      {switching && (
-        <StaffSwitcher
-          companyId={companyId}
-          accountName={meStaff ? meStaff.full_name : null}
-          onClose={() => setSwitching(false)}
-          onChosen={(s) => {
-            writeStaffSession(s, companyId);
-            setSession(s);
-            setSwitching(false);
-          }}
-        />
-      )}
     </div>
   );
 }
