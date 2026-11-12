@@ -72,12 +72,6 @@ export const NAV_TABS: NavTab[] = [
         moduleKey: "recepturen",
       },
       {
-        href: "/keukenlijsten",
-        label: "Keukenlijsten",
-        icon: ClipboardList,
-        moduleKey: "recepturen",
-      },
-      {
         href: "/halfproducten",
         label: "Halfproducten",
         icon: SoupIcon,
@@ -94,6 +88,12 @@ export const NAV_TABS: NavTab[] = [
         label: "Afvalregistratie",
         icon: Trash2,
         moduleKey: "afval",
+      },
+      {
+        href: "/keukenlijsten",
+        label: "Keukenlijsten",
+        icon: ClipboardList,
+        moduleKey: "recepturen",
       },
       {
         href: "/voorraad",
