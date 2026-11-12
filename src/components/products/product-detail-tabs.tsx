@@ -53,7 +53,7 @@ export function ProductDetailTabs({
       {/* Vaste kop: altijd zichtbaar, ongeacht de tab */}
       <div className="sticky top-0 z-30 -mx-6 border-b border-border bg-background px-6 pb-3 pt-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[16rem] flex-[1_1_20rem]">
             <p className="truncate text-lg font-semibold text-foreground">
               {product.custom_name?.trim() || product.name}
             </p>
