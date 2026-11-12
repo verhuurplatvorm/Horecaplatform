@@ -475,7 +475,8 @@ export default function MenuDetailPage({
             </Button>
           </div>
 
-          <nav className="mt-3 flex gap-1 overflow-x-auto">
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
+          <nav className="flex gap-1 overflow-x-auto">
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -491,6 +492,34 @@ export default function MenuDetailPage({
               </button>
             ))}
           </nav>
+          {/* Altijd zichtbaar in de vaste kop. */}
+          <div className="flex flex-wrap gap-2 pb-1">
+            <MenuGramDistribution
+              menuId={id}
+              units={units}
+              onDone={() => {
+                setTab("algemeen");
+                void load();
+              }}
+            />
+            <Link href={`/menus/${id}/importeren`}>
+              <Button variant="secondary" size="sm">
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Sheet importeren
+              </Button>
+            </Link>
+            <Button
+              size="sm"
+              onClick={() => {
+                setTab("algemeen");
+                setAddingLine(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Regel toevoegen
+            </Button>
+          </div>
+          </div>
         </div>
 
         {tab === "algemeen" && (
@@ -600,23 +629,6 @@ export default function MenuDetailPage({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Samenstelling</CardTitle>
-                <div className="flex gap-2">
-                  <MenuGramDistribution menuId={id} units={units} onDone={() => void load()} />
-                  <Link href={`/menus/${id}/importeren`}>
-                    <Button variant="secondary" size="sm">
-                      <FileSpreadsheet className="h-3.5 w-3.5" />
-                      Sheet importeren
-                    </Button>
-                  </Link>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setAddingLine(true)}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Regel toevoegen
-                  </Button>
-                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <datalist id="menu-secties">
