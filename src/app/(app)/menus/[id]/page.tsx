@@ -903,7 +903,20 @@ export default function MenuDetailPage({
                                         {l.cost_per_person !== null ? `€ ${l.cost_per_person.toFixed(2)}` : "—"}
                                       </td>
                                       <td className={`${cell} whitespace-nowrap text-right tabular font-medium`}>
-                                        {l.total_cost !== null ? `€ ${l.total_cost.toFixed(2)}` : "—"}
+                                        {l.total_cost !== null ? (
+                                          `€ ${l.total_cost.toFixed(2)}`
+                                        ) : (
+                                          <span
+                                            className="text-xs font-normal text-copper"
+                                            title={
+                                              l.line_type === "ingrediënt"
+                                                ? "Dit ingrediënt heeft geen prijs, of de eenheid past niet (bv. stuks zonder gewicht per stuk)."
+                                                : "De eenheid in het menu past niet bij het recept. Gebruik dezelfde eenheid als het recept, of vul bij het recept het gewicht van 1 stuk of het totaalgewicht in."
+                                            }
+                                          >
+                                            {l.line_type === "ingrediënt" ? "geen prijs" : "eenheid past niet"}
+                                          </span>
+                                        )}
                                       </td>
                                     </>
                                   )}
