@@ -156,7 +156,7 @@ export function StickerForm({
   const [batches, setBatches] = useState<Batch[]>([]);
 
   // ---------- invoer ----------
-  const [type, setType] = useState<StickerType | null>(null);
+  const [type, setType] = useState<StickerType | null>("productie"); // standaard: productiedatum
   const [productionDate, setProductionDate] = useState(() => todayISO());
   const [categoryId, setCategoryId] = useState<string>("");
   const [expiryManual, setExpiryManual] = useState<string | null>(null);
