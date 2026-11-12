@@ -11,6 +11,8 @@ import {
   personsPerContainer,
   planParty,
   recipePerContainer,
+  recipePerContainerPieces,
+  PORTION_PRESETS_STUK,
 } from "@/lib/party/party-calc";
 
 export type PartySettingsValue = {
@@ -62,12 +64,13 @@ export function PartySettings({
 
   const capUnit = units.find((u) => u.id === value.capacityUnitId);
   const capUnitKey = capUnit?.key ?? "g";
+  const presets: readonly number[] =
+    capUnitKey === "stuk" ? PORTION_PRESETS_STUK : PORTION_PRESETS;
   const capacity = Number(value.capacity) || 0;
   const portion = Number(value.portion) || 0;
   const perContainer = personsPerContainer(capacity, portion);
   const custom =
-    portion > 0 &&
-    !PORTION_PRESETS.includes(portion as (typeof PORTION_PRESETS)[number]);
+    portion > 0 && !(presets as readonly number[]).includes(portion);
   const vorm = containerInfo(value.container);
 
   // Controles op onlogische invoer (meestal een eenheid-vergissing).
@@ -77,7 +80,12 @@ export function PartySettings({
         totalWeight
       : 0;
   const perRecipe =
-    capUnitKey !== "stuk" ? recipePerContainer(capacity, totalInCapUnit) : 1;
+    capUnitKey === "stuk"
+      ? recipePerContainerPieces(
+          capacity,
+          totalWeightUnitKey === "stuk" ? totalWeight : 0,
+        )
+      : recipePerContainer(capacity, totalInCapUnit);
   const costPerContainer = totalCost * perRecipe;
   const plan = planParty({
     guests: Number(guests) || 0,
@@ -95,7 +103,13 @@ export function PartySettings({
   // Kosten per kg / liter op basis van het totaalgewicht van één vorm.
   let perKiloLabel: string | null = null;
   let perKilo: number | null = null;
-  if (totalCost > 0 && totalWeight > 0 && totalWeightUnitKey) {
+  if (capUnitKey === "stuk") {
+    // Per stuk: prijs per stuk i.p.v. per kilo.
+    if (totalCost > 0 && capacity > 0) {
+      perKilo = (totalCost * perRecipe) / capacity;
+      perKiloLabel = "stuk";
+    }
+  } else if (totalCost > 0 && totalWeight > 0 && totalWeightUnitKey) {
     const factor = { g: 1000, kg: 1, ml: 1000, l: 1 }[
       totalWeightUnitKey as "g"
     ];
@@ -203,7 +217,7 @@ export function PartySettings({
             Portie per persoon ({capUnit?.name ?? "gram"})
           </span>
           <div className="flex items-center gap-1">
-            {PORTION_PRESETS.map((p) => (
+            {presets.map((p) => (
               <button
                 key={p}
                 type="button"
@@ -221,7 +235,7 @@ export function PartySettings({
               onChange={(e) => set({ portion: e.target.value })}
               className={`input w-20! text-center ${custom ? "border-teal!" : ""}`}
               title="Eigen portie"
-              placeholder="eigen"
+              placeholder={capUnitKey === "stuk" ? "bv. 0,5" : "eigen"}
             />
           </div>
         </div>

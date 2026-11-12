@@ -23,6 +23,8 @@ export const PARTY_CONTAINERS = [
 export type PartyContainerKey = (typeof PARTY_CONTAINERS)[number]["key"];
 
 export const PORTION_PRESETS = [40, 50, 60, 70, 80] as const;
+/** Snelknoppen als het gerecht per stuk gaat (bv. een halve brownie p.p.). */
+export const PORTION_PRESETS_STUK = [0.5, 1, 1.5, 2, 3] as const;
 
 export function containerInfo(key: string | null | undefined) {
   return PARTY_CONTAINERS.find((c) => c.key === key) ?? PARTY_CONTAINERS[0];
@@ -60,6 +62,19 @@ export function recipePerContainer(
 ): number {
   if (!(capacityBase > 0) || !(recipeYieldBase > 0)) return 1;
   return Math.max(1, capacityBase / recipeYieldBase);
+}
+
+/**
+ * Per stuk: recept per vorm = stuks per vorm / stuks per recept (recept
+ * zonder opbrengst in stuks = 1 stuk). 40 brownies per schaal, recept 1
+ * brownie → recept × 40. Gelijk aan event_line_plan (migratie 0125).
+ */
+export function recipePerContainerPieces(
+  capacityPieces: number,
+  recipePieces: number,
+): number {
+  if (!(capacityPieces > 0)) return 1;
+  return capacityPieces / (recipePieces > 0 ? recipePieces : 1);
 }
 
 /**

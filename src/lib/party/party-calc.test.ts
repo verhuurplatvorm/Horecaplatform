@@ -74,3 +74,19 @@ test("recept per vorm: 1 kg recept, schaal 3 kg = × 3; kleinere vorm = × 1", (
   assert.equal(p.containers, 4);
   assert.equal(p.recipeFactor, 12);
 });
+
+import { recipePerContainerPieces } from "./party-calc";
+
+test("per stuk: halve brownie p.p., 40 per schaal, recept = 1 brownie", () => {
+  const per = recipePerContainerPieces(40, 0);
+  assert.equal(per, 40);
+  const p = planParty({
+    guests: 170,
+    portion: 0.5,
+    capacity: 40,
+    perContainer: per,
+  })!;
+  assert.equal(p.needed, 85);
+  assert.equal(p.containers, 3);
+  assert.equal(p.recipeFactor, 120);
+});

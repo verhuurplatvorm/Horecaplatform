@@ -16,6 +16,7 @@ import {
   personsPerContainer,
   planParty,
   recipePerContainer,
+  recipePerContainerPieces,
 } from "@/lib/party/party-calc";
 
 interface Row {
@@ -106,10 +107,17 @@ export default function PartijgerechtenPage() {
               cost === null
                 ? null
                 : cost *
-                  recipePerContainer(
-                    toBase(r.party_capacity, r.party_capacity_unit_id),
-                    toBase(r.yield_quantity, r.base_unit_id),
-                  ),
+                  (unitKey.get(r.party_capacity_unit_id ?? "") === "stuk"
+                    ? recipePerContainerPieces(
+                        Number(r.party_capacity ?? 0),
+                        unitKey.get(r.base_unit_id ?? "") === "stuk"
+                          ? Number(r.yield_quantity ?? 0)
+                          : 0,
+                      )
+                    : recipePerContainer(
+                        toBase(r.party_capacity, r.party_capacity_unit_id),
+                        toBase(r.yield_quantity, r.base_unit_id),
+                      )),
           } satisfies Row;
         }),
       );
