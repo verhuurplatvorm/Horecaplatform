@@ -139,6 +139,12 @@ export const NAV_TABS: NavTab[] = [
         moduleKey: "stickers_beheer",
       },
       {
+        href: "/stickers/printer",
+        label: "Stickerprinter instellen",
+        icon: Printer,
+        moduleKey: "stickers_beheer",
+      },
+      {
         href: "/haccp/plan",
         label: "Schoonmaakplan",
         icon: ListChecks,
