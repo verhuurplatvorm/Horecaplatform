@@ -7,7 +7,9 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   FileSpreadsheet,
+  MessageSquarePlus,
   Plus,
   Save,
   Trash2,
@@ -48,6 +50,24 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
+/** Korte eenheid voor in de tabel: gram → g, kilogram → kg. */
+const UNIT_SHORT: Record<string, string> = {
+  gram: "g",
+  kilogram: "kg",
+  milligram: "mg",
+  milliliter: "ml",
+  centiliter: "cl",
+  deciliter: "dl",
+  liter: "l",
+  stuk: "st",
+  stuks: "st",
+};
+function unitShort(name: string | null | undefined): string {
+  if (!name) return "";
+  const key = name.trim().toLowerCase().replace(/\s*\(.*\)$/, "");
+  return UNIT_SHORT[key] ?? name;
+}
+
 interface BreakdownLine {
   line_id: string;
   section_name: string;
@@ -84,6 +104,7 @@ export default function MenuDetailPage({
   // Deelname% per regel en de partij-planning (aantal schalen) per regel.
   const [lineExtra, setLineExtra] = useState<Record<string, { pct: number; full: boolean | null }>>({});
   const [partyPlan, setPartyPlan] = useState<Record<string, EventMenuPartyPlanRow>>({});
+  const [openNotes, setOpenNotes] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<TabKey>("algemeen");
   const [menu, setMenu] = useState<EventMenu | null>(null);
   const [sections, setSections] = useState<EventMenuSection[]>([]);
@@ -608,20 +629,20 @@ export default function MenuDetailPage({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                        <th className="px-4 py-2 font-medium">Naam</th>
-                        <th className="px-4 py-2 font-medium">Onderdeel</th>
-                        <th className="px-4 py-2 font-medium">Type</th>
-                        <th className="px-4 py-2 text-right font-medium">Per persoon</th>
-                        <th className="px-4 py-2 font-medium">Eenheid</th>
-                        <th className="px-4 py-2 text-right font-medium">Totaal</th>
+                        <th className="px-2 py-2 pl-8 font-medium">Naam</th>
+                        <th className="px-2 py-2 font-medium">Onderdeel</th>
+                        <th className="px-2 py-2 text-right font-medium">Per persoon</th>
+                        <th className="px-2 py-2 text-right font-medium">Deelname</th>
+                        <th className="px-2 py-2 text-center font-medium">Vast</th>
+                        <th className="px-2 py-2 text-right font-medium">Totaal</th>
                         {canViewFinancial && (
                           <>
-                            <th className="px-4 py-2 text-right font-medium">Eenheidsprijs</th>
-                            <th className="px-4 py-2 text-right font-medium">Kostprijs p.p.</th>
-                            <th className="px-4 py-2 text-right font-medium">Totale kostprijs</th>
+                            <th className="px-2 py-2 text-right font-medium">Prijs</th>
+                            <th className="px-2 py-2 text-right font-medium">p.p.</th>
+                            <th className="px-2 py-2 text-right font-medium">Kostprijs</th>
                           </>
                         )}
-                        <th className="px-4 py-2"></th>
+                        <th className="px-2 py-2"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -706,85 +727,119 @@ export default function MenuDetailPage({
                               <td />
                             </tr>
                             {!isCollapsed &&
-                              group.map((l) => (
-                                <tr key={l.line_id} className="border-t border-border">
-                                  <td className="px-4 py-2 pl-8 font-medium">
-                                    {l.display_name}
-                                    {lineTargets[l.line_id] && (
-                                      <Link
-                                        href={lineTargets[l.line_id].href}
-                                        target="_blank"
-                                        // Het adres van dit menu meegeven, zodat "Terug" na
-                                        // opslaan of annuleren weer hier uitkomt.
-                                        onClick={(e) => {
-                                          e.currentTarget.href = withReturnTo(lineTargets[l.line_id].href);
-                                        }}
-                                        className="block text-xs font-normal text-teal hover:underline"
+                              group.map((l) => {
+                                const plan = partyPlan[l.line_id];
+                                const cell = "px-2 py-1.5 align-middle";
+                                const ghost =
+                                  "rounded border border-transparent bg-transparent px-1 py-0.5 hover:border-border focus:border-teal focus:bg-surface";
+                                const showNote = Boolean(l.note) || openNotes.has(l.line_id);
+                                return (
+                                <tr key={l.line_id} className="group border-t border-border hover:bg-background/60">
+                                  <td className={`${cell} pl-8`}>
+                                    <div className="flex min-w-[13rem] items-center gap-1.5">
+                                      <span className="font-medium">{l.display_name}</span>
+                                      <span
+                                        className="rounded bg-background px-1.5 py-px text-[10px] uppercase tracking-wide text-muted"
+                                        title={l.line_type}
                                       >
-                                        {lineTargets[l.line_id].label}
-                                      </Link>
+                                        {l.line_type === "halfproduct"
+                                          ? "HP"
+                                          : l.line_type === "gerecht"
+                                            ? "G"
+                                            : "ING"}
+                                      </span>
+                                      {lineTargets[l.line_id] && (
+                                        <Link
+                                          href={lineTargets[l.line_id].href}
+                                          target="_blank"
+                                          // Het adres van dit menu meegeven, zodat "Terug" na
+                                          // opslaan of annuleren weer hier uitkomt.
+                                          onClick={(e) => {
+                                            e.currentTarget.href = withReturnTo(lineTargets[l.line_id].href);
+                                          }}
+                                          className="text-muted hover:text-teal"
+                                          title={lineTargets[l.line_id].label}
+                                        >
+                                          <ExternalLink className="h-3.5 w-3.5" />
+                                        </Link>
+                                      )}
+                                      {!showNote && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setOpenNotes((prev) => new Set(prev).add(l.line_id))
+                                          }
+                                          className="text-muted opacity-0 hover:text-teal group-hover:opacity-100"
+                                          title="Opmerking toevoegen"
+                                        >
+                                          <MessageSquarePlus className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                    {showNote && (
+                                      <input
+                                        autoFocus={!l.note}
+                                        defaultValue={l.note ?? ""}
+                                        onBlur={(e) => {
+                                          const v = e.target.value.trim() || null;
+                                          if (v !== (l.note ?? null)) updateLine(l.line_id, { note: v });
+                                          if (!v)
+                                            setOpenNotes((prev) => {
+                                              const next = new Set(prev);
+                                              next.delete(l.line_id);
+                                              return next;
+                                            });
+                                        }}
+                                        placeholder="opmerking…"
+                                        className={`${ghost} mt-0.5 block w-full text-xs text-muted`}
+                                      />
                                     )}
-                                    <input
-                                      defaultValue={l.note ?? ""}
-                                      onBlur={(e) => {
-                                        const v = e.target.value.trim() || null;
-                                        if (v !== (l.note ?? null))
-                                          updateLine(l.line_id, { note: v });
-                                      }}
-                                      placeholder="opmerking…"
-                                      className="mt-0.5 block w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs font-normal text-muted hover:border-border focus:border-teal focus:bg-surface"
-                                    />
                                   </td>
-                                  <td className="px-4 py-2">
+                                  <td className={cell}>
                                     <input
-                                      defaultValue={
-                                        l.section_name === "Overig" ? "" : l.section_name
-                                      }
+                                      defaultValue={l.section_name === "Overig" ? "" : l.section_name}
                                       onBlur={(e) => {
                                         const v = e.target.value.trim();
-                                        const current =
-                                          l.section_name === "Overig" ? "" : l.section_name;
+                                        const current = l.section_name === "Overig" ? "" : l.section_name;
                                         if (v !== current) updateSection(l.line_id, v);
                                       }}
-                                      placeholder="bv. Koud buffet"
+                                      placeholder="onderdeel"
                                       list="menu-secties"
-                                      className="w-32 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-muted hover:border-border focus:border-teal focus:bg-surface"
+                                      className={`${ghost} w-28 text-sm text-muted`}
                                     />
                                   </td>
-                                  <td className="px-4 py-2 text-muted">
-                                    {l.line_type}
-                                    <label
-                                      className="ml-2 inline-flex cursor-pointer items-center gap-1 text-xs"
-                                      title="Vaste hoeveelheid: telt één keer voor het hele menu"
-                                    >
+                                  <td className={`${cell} whitespace-nowrap`}>
+                                    <div className="flex items-center justify-end gap-1">
                                       <input
-                                        type="checkbox"
-                                        checked={l.is_fixed}
-                                        onChange={(e) =>
-                                          updateLine(l.line_id, { is_fixed: e.target.checked })
-                                        }
+                                        type="number"
+                                        step="any"
+                                        min="0"
+                                        defaultValue={l.quantity_per_person}
+                                        onBlur={(e) => {
+                                          const v = Number(e.target.value);
+                                          if (v > 0 && v !== l.quantity_per_person)
+                                            updateLine(l.line_id, { quantity_per_person: v });
+                                        }}
+                                        className={`${ghost} w-16 border-border! text-right text-sm tabular`}
                                       />
-                                      vast
-                                    </label>
-                                  </td>
-                                  <td className="px-4 py-2 text-right">
-                                    <input
-                                      type="number"
-                                      step="any"
-                                      min="0"
-                                      defaultValue={l.quantity_per_person}
-                                      onBlur={(e) => {
-                                        const v = Number(e.target.value);
-                                        if (v > 0 && v !== l.quantity_per_person)
-                                          updateLine(l.line_id, { quantity_per_person: v });
-                                      }}
-                                      className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-sm tabular hover:border-border focus:border-teal focus:bg-surface"
-                                    />
-                                    {!l.is_fixed && (
-                                      <label
-                                        className="mt-0.5 flex items-center justify-end gap-0.5 text-xs text-muted"
-                                        title="Deelnamefactor: welk deel van de gasten neemt dit gerecht"
+                                      <select
+                                        value={units.find((u) => u.name === l.unit_name)?.id ?? ""}
+                                        onChange={(e) => updateLine(l.line_id, { unit_id: e.target.value })}
+                                        className={`${ghost} w-20 text-xs text-muted`}
                                       >
+                                        {units.map((u) => (
+                                          <option key={u.id} value={u.id}>
+                                            {u.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </td>
+                                  <td className={`${cell} whitespace-nowrap text-right`}>
+                                    {l.is_fixed ? (
+                                      <span className="text-xs text-muted">—</span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-0.5 text-xs text-muted">
                                         <input
                                           key={`pct-${l.line_id}-${lineExtra[l.line_id]?.pct ?? 100}`}
                                           type="number"
@@ -798,93 +853,79 @@ export default function MenuDetailPage({
                                             if (v >= 0 && v <= 100 && v !== cur)
                                               updateLine(l.line_id, { participation_pct: v });
                                           }}
-                                          className="w-12 rounded border border-transparent bg-transparent px-1 text-right tabular hover:border-border focus:border-teal focus:bg-surface"
+                                          title="Deelnamefactor: welk deel van de gasten neemt dit gerecht"
+                                          className={`${ghost} w-12 text-right tabular ${
+                                            (lineExtra[l.line_id]?.pct ?? 100) !== 100 ? "text-foreground" : ""
+                                          }`}
                                         />
-                                        % deelname
-                                      </label>
+                                        %
+                                      </span>
                                     )}
                                   </td>
-                                  <td className="px-4 py-2">
-                                    <select
-                                      value={
-                                        units.find((u) => u.name === l.unit_name)?.id ?? ""
-                                      }
-                                      onChange={(e) =>
-                                        updateLine(l.line_id, { unit_id: e.target.value })
-                                      }
-                                      className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-muted hover:border-border focus:border-teal focus:bg-surface"
-                                    >
-                                      {units.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                          {u.name}
-                                        </option>
-                                      ))}
-                                    </select>
+                                  <td className={`${cell} text-center`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={l.is_fixed}
+                                      onChange={(e) => updateLine(l.line_id, { is_fixed: e.target.checked })}
+                                      title="Vaste hoeveelheid: telt één keer voor het hele menu"
+                                    />
                                   </td>
-                                  <td className="px-4 py-2 text-right tabular font-medium">
-                                    {l.total_quantity.toLocaleString("nl-NL", {
-                                      maximumFractionDigits: 2,
-                                    })}{" "}
-                                    <span className="text-xs font-normal text-muted">
-                                      {l.unit_name}
-                                    </span>
-                                    {partyPlan[l.line_id] && (() => {
-                                      const p = partyPlan[l.line_id];
-                                      const unit = p.capacity_unit ?? "";
-                                      const diff = Number(p.difference);
-                                      return (
-                                        <div className="mt-0.5 text-xs font-normal text-teal">
-                                          → {p.containers} {containerLabel(p.container, p.containers)}
-                                          {diff > 0 && (
-                                            <span className="text-muted">
-                                              {" "}
-                                              (+{diff.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} {unit})
-                                            </span>
-                                          )}
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              updateLine(l.line_id, { full_containers: !p.full_containers })
-                                            }
-                                            className="ml-1 text-muted underline"
-                                            title="Wisselen tussen volle vormen en laatste vorm aanpassen"
-                                          >
-                                            {p.full_containers ? "vol" : "laatste aangepast"}
-                                          </button>
-                                        </div>
-                                      );
-                                    })()}
+                                  <td className={`${cell} whitespace-nowrap text-right tabular`}>
+                                    <span className="font-medium">
+                                      {l.total_quantity.toLocaleString("nl-NL", { maximumFractionDigits: 1 })}
+                                    </span>{" "}
+                                    <span className="text-xs text-muted">{unitShort(l.unit_name)}</span>
+                                    {plan && (
+                                      <div className="text-xs text-teal">
+                                        {plan.containers} {containerLabel(plan.container, plan.containers)}
+                                        {Number(plan.difference) > 0 && (
+                                          <span className="text-muted">
+                                            {" "}
+                                            +{Number(plan.difference).toLocaleString("nl-NL", {
+                                              maximumFractionDigits: 0,
+                                            })}
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateLine(l.line_id, { full_containers: !plan.full_containers })
+                                          }
+                                          className="ml-1 text-muted underline decoration-dotted"
+                                          title="Wisselen tussen volle vormen en laatste vorm aanpassen"
+                                        >
+                                          {plan.full_containers ? "vol" : "aangepast"}
+                                        </button>
+                                      </div>
+                                    )}
                                   </td>
                                   {canViewFinancial && (
                                     <>
-                                      <td className="px-4 py-2 text-right tabular text-muted">
+                                      <td className={`${cell} whitespace-nowrap text-right text-xs tabular text-muted`}>
                                         {l.unit_price !== null
-                                          ? `€ ${l.unit_price.toFixed(4)} / ${l.unit_price_label ?? ""}`
+                                          ? `€ ${l.unit_price.toFixed(l.unit_price < 1 ? 4 : 2)} / ${unitShort(l.unit_price_label)}`
                                           : "—"}
                                       </td>
-                                      <td className="px-4 py-2 text-right tabular">
-                                        {l.cost_per_person !== null
-                                          ? `€ ${l.cost_per_person.toFixed(2)}`
-                                          : "—"}
+                                      <td className={`${cell} whitespace-nowrap text-right tabular`}>
+                                        {l.cost_per_person !== null ? `€ ${l.cost_per_person.toFixed(2)}` : "—"}
                                       </td>
-                                      <td className="px-4 py-2 text-right tabular font-medium">
-                                        {l.total_cost !== null
-                                          ? `€ ${l.total_cost.toFixed(2)}`
-                                          : "—"}
+                                      <td className={`${cell} whitespace-nowrap text-right tabular font-medium`}>
+                                        {l.total_cost !== null ? `€ ${l.total_cost.toFixed(2)}` : "—"}
                                       </td>
                                     </>
                                   )}
-                                  <td className="px-4 py-2">
+                                  <td className={`${cell} pr-3`}>
                                     <button
                                       onClick={() => deleteLine(l.line_id)}
                                       title="Regel verwijderen"
-                                      className="text-muted hover:text-danger"
+                                      className="text-muted opacity-40 hover:text-danger group-hover:opacity-100"
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </button>
                                   </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                           </Fragment>
                         );
                       })}
