@@ -1103,6 +1103,51 @@ function productToProduct(p: ProductRow): StickerProduct {
   };
 }
 
+/** Zoekwoorden: elk woord moet in de naam voorkomen ("zalm filet" → Zalmfilet). */
+function searchWords(term: string): string[] {
+  return term
+    .toLowerCase()
+    .replace(/[%_,()]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+    .slice(0, 4);
+}
+
+/** Lager = beter: exacte naam, dan begint met, dan woord begint met, dan bevat. */
+function matchScore(name: string, term: string): number {
+  const n = name.toLowerCase();
+  const t = term.toLowerCase().trim();
+  if (n === t) return 0;
+  if (n.startsWith(t)) return 1;
+  if (n.split(/[\s\-/(]+/).some((w) => w.startsWith(t))) return 2;
+  if (n.includes(t)) return 3;
+  return 4;
+}
+
+function Highlight({ text, term }: { text: string; term: string }) {
+  const t = term.trim().toLowerCase();
+  const i = t ? text.toLowerCase().indexOf(t) : -1;
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="rounded bg-teal/20 px-0.5 text-inherit">
+        {text.slice(i, i + t.length)}
+      </mark>
+      {text.slice(i + t.length)}
+    </>
+  );
+}
+
+const KIND_BADGE: Record<string, { text: string; className: string }> = {
+  Ingrediënt: {
+    text: "Ingrediënt",
+    className: "border border-border bg-surface text-foreground",
+  },
+  Halfproduct: { text: "Halfproduct", className: "bg-teal/15 text-teal" },
+  Gerecht: { text: "Gerecht", className: "bg-copper/15 text-copper" },
+};
+
 export function ProductSearch({
   companyId,
   value,
@@ -1114,47 +1159,49 @@ export function ProductSearch({
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<StickerProduct[]>([]);
+  const [searchedFor, setSearchedFor] = useState("");
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Zoekt direct in ingrediënten en halfproducten (en gerechten) terwijl je
+  // typt. Elk woord moet voorkomen; trigram-indexen houden het snel.
   useEffect(() => {
     const term = q.trim();
-    if (term.length < 2) return;
+    const words = searchWords(term);
+    if (term.length < 2 || words.length === 0) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       const supabase = createClient();
-      const like = `%${term.replace(/[%_]/g, "")}%`;
+      let rq = supabase
+        .from("recipes")
+        .select(
+          "id, name, recipe_kind, category, shelf_life_rule, shelf_life_days, company_id",
+        )
+        .neq("status", "vervallen");
+      let pq = supabase
+        .from("products")
+        .select("id, name, custom_name, product_group")
+        .eq("is_active", true)
+        .in("item_category", ["food", "onbekend"]);
+      let cq = supabase
+        .from("products")
+        .select("id, name, custom_name, product_group")
+        .eq("is_active", true)
+        .in("item_category", ["food", "onbekend"]);
+      for (const w of words) {
+        rq = rq.ilike("name", `%${w}%`);
+        pq = pq.ilike("name", `%${w}%`);
+        cq = cq.ilike("custom_name", `%${w}%`);
+      }
       const [r, p, pc] = await Promise.all([
-        supabase
-          .from("recipes")
-          .select(
-            "id, name, recipe_kind, category, shelf_life_rule, shelf_life_days, company_id",
-          )
-          .ilike("name", like)
-          .neq("status", "vervallen")
-          .order("name")
-          .limit(20),
-        supabase
-          .from("products")
-          .select("id, name, custom_name, product_group")
-          .ilike("name", like)
-          .eq("is_active", true)
-          .in("item_category", ["food", "onbekend"])
-          .order("name")
-          .limit(12),
-        supabase
-          .from("products")
-          .select("id, name, custom_name, product_group")
-          .ilike("custom_name", like)
-          .eq("is_active", true)
-          .in("item_category", ["food", "onbekend"])
-          .order("name")
-          .limit(8),
+        rq.order("name").limit(40),
+        pq.order("name").limit(40),
+        cq.order("name").limit(20),
       ]);
       if (cancelled) return;
       const recipes = ((r.data as RecipeRow[]) ?? [])
         .filter((x) => !x.company_id || x.company_id === companyId)
-        .slice(0, 10)
         .map(recipeToProduct);
       const seen = new Set<string>();
       const products = [
@@ -1162,10 +1209,21 @@ export function ProductSearch({
         ...((pc.data as ProductRow[]) ?? []),
       ]
         .filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)))
-        .slice(0, 10)
         .map(productToProduct);
-      setResults([...recipes, ...products]);
-    }, 200);
+      // Beste treffers bovenaan; bij gelijke score ingrediënt/halfproduct
+      // voor gerecht, daarna korte namen eerst.
+      const kindOrder = (s: StickerProduct) => (s.label === "Gerecht" ? 1 : 0);
+      const merged = [...products, ...recipes].sort(
+        (a, b) =>
+          matchScore(a.name, term) - matchScore(b.name, term) ||
+          kindOrder(a) - kindOrder(b) ||
+          a.name.length - b.name.length ||
+          a.name.localeCompare(b.name, "nl"),
+      );
+      setResults(merged.slice(0, 15));
+      setSearchedFor(term);
+      setActive(0);
+    }, 120);
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -1173,6 +1231,7 @@ export function ProductSearch({
   }, [q, companyId]);
 
   if (value) {
+    const badge = KIND_BADGE[value.label];
     return (
       <div>
         <p className="mb-1 text-sm font-medium text-foreground">Product</p>
@@ -1184,7 +1243,9 @@ export function ProductSearch({
             <p className="text-xs text-muted">
               {value.kind === "vrij"
                 ? "Vrije invoer (niet in de database)"
-                : value.label}
+                : badge
+                  ? badge.text
+                  : value.label}
             </p>
           </div>
           <button
@@ -1206,6 +1267,12 @@ export function ProductSearch({
 
   const term = q.trim();
   const shown = term.length >= 2 ? results : [];
+  const searching = term.length >= 2 && searchedFor !== term;
+
+  function pick(s: StickerProduct) {
+    onChange(s);
+    setOpen(false);
+  }
 
   return (
     <div className="relative">
@@ -1217,6 +1284,7 @@ export function ProductSearch({
         <input
           ref={inputRef}
           autoFocus
+          type="search"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
@@ -1224,45 +1292,83 @@ export function ProductSearch({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && term) {
+            if (e.key === "ArrowDown" && shown.length > 0) {
+              e.preventDefault();
+              setActive((a) => Math.min(a + 1, shown.length - 1));
+            } else if (e.key === "ArrowUp" && shown.length > 0) {
+              e.preventDefault();
+              setActive((a) => Math.max(a - 1, 0));
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            } else if (e.key === "Enter" && term) {
               e.preventDefault();
               const exact = shown.find(
                 (s) => s.name.toLowerCase() === term.toLowerCase(),
               );
-              onChange(exact ?? vrij(term));
-              setOpen(false);
+              const chosen = exact ?? (searching ? undefined : shown[active]);
+              pick(chosen ?? vrij(term));
             }
           }}
-          placeholder="Zoek ingrediënt, halfproduct of gerecht — of typ een naam"
+          placeholder="Zoek ingrediënt of halfproduct, bv. zalmfilet"
           className="input h-14! pl-10! text-lg!"
+          autoComplete="off"
         />
       </div>
       {open && term.length >= 1 && (
-        <div className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-          {shown.map((s) => (
-            <button
-              key={`${s.kind}:${s.id}`}
-              type="button"
-              onClick={() => {
-                onChange(s);
-                setOpen(false);
-              }}
-              className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-surface"
-            >
-              <span className="truncate font-medium text-foreground">
-                {s.name}
-              </span>
-              <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-xs text-muted">
-                {s.label}
-              </span>
-            </button>
-          ))}
+        <div className="absolute z-20 mt-1 max-h-[26rem] w-full overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
+          {term.length < 2 && (
+            <p className="px-3 py-2.5 text-sm text-muted">
+              Typ nog een letter…
+            </p>
+          )}
+          {searching && shown.length === 0 && (
+            <p className="px-3 py-2.5 text-sm text-muted">Zoeken…</p>
+          )}
+          {!searching && term.length >= 2 && shown.length === 0 && (
+            <p className="px-3 py-2.5 text-sm text-muted">
+              Geen ingrediënt of halfproduct gevonden voor &ldquo;{term}&rdquo;.
+            </p>
+          )}
+          {shown.map((s, i) => {
+            const badge = KIND_BADGE[s.label] ?? {
+              text: s.label,
+              className: "bg-surface text-muted",
+            };
+            return (
+              <button
+                key={`${s.kind}:${s.id}`}
+                type="button"
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(s)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 px-3 py-3 text-left",
+                  i === active ? "bg-teal/10" : "hover:bg-surface",
+                )}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-base font-medium text-foreground">
+                    <Highlight text={s.name} term={term} />
+                  </span>
+                  {s.productGroup && (
+                    <span className="block truncate text-xs text-muted">
+                      {s.productGroup}
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium",
+                    badge.className,
+                  )}
+                >
+                  {badge.text}
+                </span>
+              </button>
+            );
+          })}
           <button
             type="button"
-            onClick={() => {
-              onChange(vrij(term));
-              setOpen(false);
-            }}
+            onClick={() => pick(vrij(term))}
             className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-left text-sm text-teal hover:bg-surface"
           >
             Gebruik &ldquo;{term}&rdquo; als productnaam
