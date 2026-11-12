@@ -15,8 +15,10 @@ import {
   type StickerLabelData,
 } from "@/components/stickers/sticker-label";
 
+// Eigen Chrome-profiel: start altijd als apart venster mét de printinstelling,
+// ook als gewone Chrome al open staat (anders negeert Chrome de instelling).
 const SHORTCUT_TARGET =
-  '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --kiosk-printing https://horecaplatform.vercel.app/stickers';
+  '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --user-data-dir="C:\\Culilogic\\chrome" --kiosk-printing --app=https://horecaplatform.vercel.app/stickers';
 
 /**
  * Printer instellen: per vast apparaat één keer de Argox als standaard-
@@ -114,15 +116,19 @@ export default function StickerPrinterPage() {
                 </p>
               </li>
               <li>
-                <strong>Chrome eerst helemaal sluiten</strong> (ook rechtsonder
-                bij het klokje), dan Culilogic openen via de nieuwe
-                snelkoppeling. De instelling werkt alleen als Chrome zo gestart
-                wordt.
+                <strong>Open Culilogic via de snelkoppeling</strong> en log één
+                keer in. Dit is een eigen Culilogic-venster, los van je gewone
+                Chrome; die mag gewoon open blijven. Gebruik voor stickers
+                altijd dit venster (zet de snelkoppeling eventueel op de
+                taakbalk).
               </li>
               <li>
-                <strong>Teststicker printen.</strong> Komt er een printvenster?
-                Dan is Chrome niet via de snelkoppeling gestart. Staat de
-                sticker scheef of half? Controleer het formaat bij stap 2.
+                <strong>Teststicker printen.</strong> Komt er nog een
+                printvenster? Dan is Culilogic niet via de snelkoppeling
+                geopend, of staat Chrome op deze pc in{" "}
+                <code>C:\Program Files (x86)\Google\…</code> (pas dan het eerste
+                deel aan). Staat de sticker scheef of half? Controleer het
+                formaat bij stap 2.
               </li>
             </ol>
           </CardContent>

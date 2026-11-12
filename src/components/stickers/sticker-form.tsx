@@ -197,9 +197,16 @@ export function StickerForm({
     nonce: number;
   } | null>(null);
 
+  // Duurt window.print() lang, dan stond er een printvenster open: dit
+  // apparaat is nog niet ingesteld op direct printen → hint tonen.
+  const [dialogSeen, setDialogSeen] = useState(false);
   useEffect(() => {
     if (!printJob) return;
-    const t = setTimeout(() => window.print(), 50);
+    const t = setTimeout(() => {
+      const started = Date.now();
+      window.print();
+      if (Date.now() - started > 1500) setDialogSeen(true);
+    }, 50);
     return () => clearTimeout(t);
   }, [printJob]);
 
@@ -982,6 +989,16 @@ export function StickerForm({
               >
                 <RotateCcw className="h-3.5 w-3.5" /> Opnieuw afdrukken
               </button>
+            </div>
+          )}
+
+          {dialogSeen && (
+            <div className="rounded-md bg-copper/10 px-3 py-2 text-sm text-copper">
+              Kreeg je een printvenster? Dit apparaat print nog niet direct.{" "}
+              <Link href="/stickers/printer" className="font-medium underline">
+                Stickerprinter instellen
+              </Link>{" "}
+              (eenmalig, ±5 minuten).
             </div>
           )}
 
