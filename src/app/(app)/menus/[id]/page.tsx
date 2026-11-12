@@ -7,7 +7,6 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   FileSpreadsheet,
   MessageSquarePlus,
   Plus,
@@ -379,7 +378,7 @@ export default function MenuDetailPage({
   return (
     <>
       <Topbar title="Menu's & buffetten" />
-      <main className="max-w-6xl space-y-4 p-6">
+      <main className="max-w-7xl space-y-4 p-6">
         {/* Vaste kop: naam, personen en kostprijs blijven in beeld. */}
         <div className="sticky top-0 z-30 -mx-6 border-b border-border bg-background px-6 pb-3 pt-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -720,7 +719,7 @@ export default function MenuDetailPage({
                                 </div>
                               </td>
                               {canViewFinancial && (
-                                <td className="px-4 py-2 text-right tabular font-medium">
+                                <td className="whitespace-nowrap px-2 py-2 text-right tabular font-medium">
                                   € {subtotal.toFixed(2)}
                                 </td>
                               )}
@@ -736,33 +735,8 @@ export default function MenuDetailPage({
                                 return (
                                 <tr key={l.line_id} className="group border-t border-border hover:bg-background/60">
                                   <td className={`${cell} pl-8`}>
-                                    <div className="flex min-w-[13rem] items-center gap-1.5">
+                                    <div className="flex items-center gap-1.5">
                                       <span className="font-medium">{l.display_name}</span>
-                                      <span
-                                        className="rounded bg-background px-1.5 py-px text-[10px] uppercase tracking-wide text-muted"
-                                        title={l.line_type}
-                                      >
-                                        {l.line_type === "halfproduct"
-                                          ? "HP"
-                                          : l.line_type === "gerecht"
-                                            ? "G"
-                                            : "ING"}
-                                      </span>
-                                      {lineTargets[l.line_id] && (
-                                        <Link
-                                          href={lineTargets[l.line_id].href}
-                                          target="_blank"
-                                          // Het adres van dit menu meegeven, zodat "Terug" na
-                                          // opslaan of annuleren weer hier uitkomt.
-                                          onClick={(e) => {
-                                            e.currentTarget.href = withReturnTo(lineTargets[l.line_id].href);
-                                          }}
-                                          className="text-muted hover:text-teal"
-                                          title={lineTargets[l.line_id].label}
-                                        >
-                                          <ExternalLink className="h-3.5 w-3.5" />
-                                        </Link>
-                                      )}
                                       {!showNote && (
                                         <button
                                           type="button"
@@ -776,6 +750,20 @@ export default function MenuDetailPage({
                                         </button>
                                       )}
                                     </div>
+                                    {lineTargets[l.line_id] && (
+                                      <Link
+                                        href={lineTargets[l.line_id].href}
+                                        target="_blank"
+                                        // Het adres van dit menu meegeven, zodat "Terug" na
+                                        // opslaan of annuleren weer hier uitkomt.
+                                        onClick={(e) => {
+                                          e.currentTarget.href = withReturnTo(lineTargets[l.line_id].href);
+                                        }}
+                                        className="block text-xs text-teal hover:underline"
+                                      >
+                                        {lineTargets[l.line_id].label}
+                                      </Link>
+                                    )}
                                     {showNote && (
                                       <input
                                         autoFocus={!l.note}
@@ -805,7 +793,7 @@ export default function MenuDetailPage({
                                       }}
                                       placeholder="onderdeel"
                                       list="menu-secties"
-                                      className={`${ghost} w-28 text-sm text-muted`}
+                                      className={`${ghost} w-24 text-sm text-muted`}
                                     />
                                   </td>
                                   <td className={`${cell} whitespace-nowrap`}>
@@ -820,12 +808,12 @@ export default function MenuDetailPage({
                                           if (v > 0 && v !== l.quantity_per_person)
                                             updateLine(l.line_id, { quantity_per_person: v });
                                         }}
-                                        className={`${ghost} w-16 border-border! text-right text-sm tabular`}
+                                        className={`${ghost} w-14 border-border! text-right text-sm tabular`}
                                       />
                                       <select
                                         value={units.find((u) => u.name === l.unit_name)?.id ?? ""}
                                         onChange={(e) => updateLine(l.line_id, { unit_id: e.target.value })}
-                                        className={`${ghost} w-20 text-xs text-muted`}
+                                        className={`${ghost} w-[4.5rem] text-xs text-muted`}
                                       >
                                         {units.map((u) => (
                                           <option key={u.id} value={u.id}>
@@ -854,7 +842,7 @@ export default function MenuDetailPage({
                                               updateLine(l.line_id, { participation_pct: v });
                                           }}
                                           title="Deelnamefactor: welk deel van de gasten neemt dit gerecht"
-                                          className={`${ghost} w-12 text-right tabular ${
+                                          className={`${ghost} w-11 text-right tabular ${
                                             (lineExtra[l.line_id]?.pct ?? 100) !== 100 ? "text-foreground" : ""
                                           }`}
                                         />
@@ -876,7 +864,7 @@ export default function MenuDetailPage({
                                     </span>{" "}
                                     <span className="text-xs text-muted">{unitShort(l.unit_name)}</span>
                                     {plan && (
-                                      <div className="text-xs text-teal">
+                                      <div className="whitespace-normal text-xs text-teal">
                                         {plan.containers} {containerLabel(plan.container, plan.containers)}
                                         {Number(plan.difference) > 0 && (
                                           <span className="text-muted">
@@ -902,9 +890,14 @@ export default function MenuDetailPage({
                                   {canViewFinancial && (
                                     <>
                                       <td className={`${cell} whitespace-nowrap text-right text-xs tabular text-muted`}>
-                                        {l.unit_price !== null
-                                          ? `€ ${l.unit_price.toFixed(l.unit_price < 1 ? 4 : 2)} / ${unitShort(l.unit_price_label)}`
-                                          : "—"}
+                                        {l.unit_price !== null ? (
+                                          <>
+                                            € {l.unit_price.toFixed(l.unit_price < 1 ? 4 : 2)}
+                                            <div className="text-[11px]">per {unitShort(l.unit_price_label)}</div>
+                                          </>
+                                        ) : (
+                                          "—"
+                                        )}
                                       </td>
                                       <td className={`${cell} whitespace-nowrap text-right tabular`}>
                                         {l.cost_per_person !== null ? `€ ${l.cost_per_person.toFixed(2)}` : "—"}
