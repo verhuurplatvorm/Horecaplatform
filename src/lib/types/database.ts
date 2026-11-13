@@ -1147,6 +1147,12 @@ export type Database = {
         Update: Partial<KitchenStation>;
         Relationships: [];
       };
+      recent_items: {
+        Row: RecentItemRow;
+        Insert: Partial<RecentItemRow> & { item_type: "recipe" | "product"; item_id: string };
+        Update: Partial<RecentItemRow>;
+        Relationships: [];
+      };
       order_app_checks: {
         Row: OrderAppCheck;
         Insert: Partial<OrderAppCheck> & { company_id: string; product_id: string; status: string };
@@ -2299,6 +2305,14 @@ export type KitchenStation = {
   sort_order: number;
   is_active: boolean;
   created_at: string;
+};
+
+/** Laatst geopende items per gebruiker (migratie 0128). */
+export type RecentItemRow = {
+  user_id: string;
+  item_type: "recipe" | "product";
+  item_id: string;
+  opened_at: string;
 };
 
 export type OrderAppCheck = {
