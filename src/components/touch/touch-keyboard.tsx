@@ -131,7 +131,7 @@ export function TouchArea({ children }: { children: ReactNode }) {
     try {
       const v = window.localStorage.getItem(STORAGE_KEY);
       on =
-        v === null ? window.matchMedia("(pointer: coarse)").matches : v === "1";
+        v === null ? window.matchMedia("(any-pointer: coarse)").matches : v === "1";
     } catch {
       on = false;
     }
