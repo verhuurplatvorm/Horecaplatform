@@ -919,6 +919,13 @@ export default function NieuweStickerPage({
             size: ${formatInfo.widthMm}mm ${formatInfo.heightMm}mm;
             margin: 0;
           }
+          html,
+          body {
+            height: ${formatInfo.heightMm}mm !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+          }
           body * {
             visibility: hidden;
           }

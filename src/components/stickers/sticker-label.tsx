@@ -231,11 +231,31 @@ export function StickerPrintArea({
         .sticker-print-area { position: fixed; left: -10000px; top: 0; pointer-events: none; }
         @media print {
           @page { size: ${f.widthMm}mm ${f.heightMm}mm; margin: 0; }
-          html, body { background: #fff !important; }
-          body * { visibility: hidden; }
-          .sticker-print-area, .sticker-print-area * { visibility: visible; }
-          .sticker-print-area { position: absolute !important; left: 0 !important; top: 0 !important; }
-          .sticker-print-page { break-after: page; page-break-after: always; }
+          /* Alles behalve de stickers echt weghalen (display:none). Met
+             alleen visibility:hidden houdt de pagina zijn lengte en print de
+             labelprinter lege stickers mee voor elke "pagina" van de app. */
+          html, body {
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+          }
+          body > *:not(.sticker-print-area) { display: none !important; }
+          .sticker-print-area {
+            position: static !important;
+            left: auto !important;
+            top: auto !important;
+          }
+          .sticker-print-page {
+            width: ${f.widthMm}mm;
+            height: ${f.heightMm}mm;
+            overflow: hidden;
+            break-after: page;
+            page-break-after: always;
+            break-inside: avoid;
+          }
           .sticker-print-page:last-child { break-after: auto; page-break-after: auto; }
         }
       `}</style>
