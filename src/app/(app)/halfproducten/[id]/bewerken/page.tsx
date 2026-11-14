@@ -9,6 +9,8 @@ import {
 import { UsedInOverview } from "@/components/recipes/used-in-overview";
 import { HalfproductHeader } from "@/components/recipes/halfproduct-header";
 import { createClient } from "@/lib/supabase/server";
+import { isOperator } from "@/lib/auth/operator";
+import { RecipeReadOnly } from "@/components/operator/recipe-read-only";
 import type { Recipe, RecipeIngredient } from "@/lib/types/database";
 
 export default async function BewerkHalfproductPage({
@@ -48,6 +50,31 @@ export default async function BewerkHalfproductPage({
       .eq("id", recipe.halfproduct_folder_id)
       .maybeSingle();
     folderName = folder?.name ?? null;
+  }
+
+  // Operator: alleen bekijken + productiehulp (schalen, registreren,
+  // sticker), zonder kostprijzen en zonder bewerkscherm.
+  if (await isOperator(supabase)) {
+    return (
+      <>
+        <Topbar title={recipe.name} />
+        <main className="space-y-4 p-4 md:p-6">
+          <RecipeReadOnly
+            recipe={recipe as Recipe}
+            ingredients={(ingredients as RecipeIngredient[]) ?? []}
+          />
+          <HalfproductIngredientenModule
+            recipeId={id}
+            standardYield={recipe.yield_quantity}
+            unitName={unitName}
+            hideCosts
+          />
+          <div id="producties" className="scroll-mt-20">
+            <ProductiesGeschiedenis recipeId={id} unitName={unitName} hideCosts />
+          </div>
+        </main>
+      </>
+    );
   }
 
   return (

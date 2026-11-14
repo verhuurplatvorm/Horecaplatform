@@ -6,6 +6,7 @@ import { MobileNavProvider } from "@/components/layout/mobile-nav-context";
 import { PageActionsProvider } from "@/components/layout/page-actions";
 import { TouchArea } from "@/components/touch/touch-keyboard";
 import { RecentBar } from "@/components/layout/recent-bar";
+import { OperatorGuard } from "@/components/operator/operator-guard";
 
 export default function AppLayout({
   children,
@@ -22,6 +23,7 @@ export default function AppLayout({
           <div className="flex min-h-screen flex-col bg-background">
             <TopTabBar />
             <RecentBar />
+            <OperatorGuard />
             <div className="flex flex-1">
               <Sidebar />
               <div className="min-w-0 flex-1">{children}</div>

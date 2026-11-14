@@ -14,6 +14,8 @@ export interface ModulePermission {
 interface PermissionsContextValue {
   loading: boolean;
   isGroupAdmin: boolean;
+  /** Operator: vereenvoudigd keukenscherm, alleen bekijken (zie roles.operator_view). */
+  isOperator: boolean;
   /** Groepsbeheerders zien/mogen alles — deze functie geeft voor hen altijd volledige rechten terug. */
   can: (moduleKey: string | null) => ModulePermission;
 }
@@ -37,6 +39,7 @@ const NO_ACCESS: ModulePermission = {
 const PermissionsContext = createContext<PermissionsContextValue>({
   loading: true,
   isGroupAdmin: false,
+  isOperator: false,
   can: () => FULL_ACCESS,
 });
 
@@ -47,6 +50,7 @@ export function usePermissions() {
 export function PermissionsProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isGroupAdmin, setIsGroupAdmin] = useState(false);
+  const [isOperator, setIsOperator] = useState(false);
   const [byModule, setByModule] = useState<Map<string, ModulePermission>>(new Map());
 
   useEffect(() => {
@@ -91,10 +95,13 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         return;
       }
 
-      const { data: permissions } = await supabase
-        .from("role_permissions")
-        .select("module_key, can_view, can_create, can_edit, can_delete, can_view_financial")
-        .in("role_id", roleIds);
+      const [{ data: permissions }, { data: operator }] = await Promise.all([
+        supabase
+          .from("role_permissions")
+          .select("module_key, can_view, can_create, can_edit, can_delete, can_view_financial")
+          .in("role_id", roleIds),
+        supabase.rpc("current_user_is_operator"),
+      ]);
 
       if (cancelled) return;
 
@@ -110,6 +117,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         });
       }
       setByModule(map);
+      setIsOperator(operator === true);
       setLoading(false);
     }
     run();
@@ -122,12 +130,13 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     () => ({
       loading,
       isGroupAdmin,
+      isOperator,
       can: (moduleKey: string | null) => {
         if (isGroupAdmin || moduleKey === null) return FULL_ACCESS;
         return byModule.get(moduleKey) ?? NO_ACCESS;
       },
     }),
-    [loading, isGroupAdmin, byModule]
+    [loading, isGroupAdmin, isOperator, byModule]
   );
 
   return <PermissionsContext.Provider value={value}>{children}</PermissionsContext.Provider>;

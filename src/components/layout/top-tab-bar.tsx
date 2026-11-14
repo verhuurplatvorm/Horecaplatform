@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV_TABS, findTabForPath } from "@/lib/nav-structure";
+import { NAV_TABS, OPERATOR_TABS, findTabForPath } from "@/lib/nav-structure";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { useMobileNav } from "@/components/layout/mobile-nav-context";
 
@@ -18,11 +18,13 @@ import { useMobileNav } from "@/components/layout/mobile-nav-context";
  */
 export function TopTabBar() {
   const pathname = usePathname() ?? "";
-  const { can, loading } = usePermissions();
+  const { can, loading, isOperator } = usePermissions();
+  // Operator: vereenvoudigd menu.
+  const tabsSource = isOperator ? OPERATOR_TABS : NAV_TABS;
   const { toggle } = useMobileNav();
-  const activeTab = findTabForPath(pathname);
+  const activeTab = findTabForPath(pathname, tabsSource);
 
-  const visibleTabs = NAV_TABS.filter((tab) =>
+  const visibleTabs = tabsSource.filter((tab) =>
     tab.items.some((item) => can(item.moduleKey).canView)
   );
 

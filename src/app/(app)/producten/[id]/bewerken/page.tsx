@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { Topbar } from "@/components/layout/topbar";
 import { ProductDetailTabs } from "@/components/products/product-detail-tabs";
 import { createClient } from "@/lib/supabase/server";
+import { isOperator } from "@/lib/auth/operator";
+import { ProductReadOnly } from "@/components/operator/product-read-only";
 import type { Product, ProductPackaging } from "@/lib/types/database";
 
 export default async function BewerkProductPage({
@@ -78,6 +80,23 @@ export default async function BewerkProductPage({
     ]);
     prevId = prev?.id ?? null;
     nextId = next?.id ?? null;
+  }
+
+  // Operator: alleen bekijken, geen prijzen of bewerkvelden.
+  if (await isOperator(supabase)) {
+    return (
+      <>
+        <Topbar title={product.custom_name?.trim() || product.name} />
+        <main className="p-4 md:p-6">
+          <ProductReadOnly
+            product={product as Product}
+            packagings={(packagings as ProductPackaging[]) ?? []}
+            baseUnitName={baseUnitName}
+            supplierName={supplierName}
+          />
+        </main>
+      </>
+    );
   }
 
   return (

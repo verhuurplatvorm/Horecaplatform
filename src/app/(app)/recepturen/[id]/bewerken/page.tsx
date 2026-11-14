@@ -4,6 +4,8 @@ import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
 import { RecipeForm } from "@/components/recipes/recipe-form";
 import { RecipeMenuPlacements } from "@/components/recipes/recipe-menu-placements";
 import { createClient } from "@/lib/supabase/server";
+import { isOperator } from "@/lib/auth/operator";
+import { RecipeReadOnly } from "@/components/operator/recipe-read-only";
 import type { Recipe, RecipeIngredient } from "@/lib/types/database";
 
 export default async function BewerkReceptuurPage({
@@ -26,6 +28,21 @@ export default async function BewerkReceptuurPage({
   if (!recipe) notFound();
   if (recipe.recipe_kind === "halfproduct") {
     redirect(`/halfproducten/${id}/bewerken`);
+  }
+
+  // Operator: alleen bekijken, geen bewerkscherm.
+  if (await isOperator(supabase)) {
+    return (
+      <>
+        <Topbar title={recipe.name} />
+        <main className="p-4 md:p-6">
+          <RecipeReadOnly
+            recipe={recipe as Recipe}
+            ingredients={(ingredients as RecipeIngredient[]) ?? []}
+          />
+        </main>
+      </>
+    );
   }
 
   return (

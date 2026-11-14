@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Search,
   Package,
   Truck,
   BookOpen,
@@ -263,9 +264,9 @@ export const NAV_TABS: NavTab[] = [
 ];
 
 /** Zoekt bij een pad het bijbehorende tabblad (voor het markeren van de actieve tab en het bepalen van de zij-navigatie). */
-export function findTabForPath(pathname: string): NavTab | null {
+export function findTabForPath(pathname: string, tabs: NavTab[] = NAV_TABS): NavTab | null {
   let best: { tab: NavTab; len: number } | null = null;
-  for (const tab of NAV_TABS) {
+  for (const tab of tabs) {
     for (const item of tab.items) {
       if (
         pathname.startsWith(item.href) &&
@@ -278,5 +279,26 @@ export function findTabForPath(pathname: string): NavTab | null {
   if (best) return best.tab;
   // Pagina's die niet in het menu staan (bv. /haccp/rapport): tabblad op basis van het eerste deel van het pad.
   const first = pathname.split("/")[1];
-  return NAV_TABS.find((tab) => tab.homeHref?.split("/")[1] === first) ?? null;
+  return tabs.find((tab) => tab.homeHref?.split("/")[1] === first) ?? null;
 }
+
+/**
+ * Vereenvoudigd menu voor de Operator (keukenmedewerker, alleen bekijken):
+ * startscherm met zoeken, stickers, keukenlijsten, producties en afval,
+ * plus het HACCP-onderdeel volgens de rolrechten.
+ */
+export const OPERATOR_TABS: NavTab[] = (() => {
+  const keuken = NAV_TABS.find((t) => t.key === "keuken");
+  const haccp = NAV_TABS.find((t) => t.key === "haccp");
+  const pick = (href: string) => keuken?.items.find((i) => i.href === href);
+  const items = [
+    { href: "/operator", label: "Zoeken & bekijken", icon: Search, moduleKey: null },
+    pick("/stickers"),
+    pick("/keukenlijsten"),
+    pick("/voorraad"),
+    pick("/afval"),
+  ].filter((i): i is NonNullable<typeof i> => Boolean(i));
+  const tabs: NavTab[] = [{ ...(keuken as NavTab), homeHref: "/operator", items }];
+  if (haccp) tabs.push(haccp);
+  return tabs;
+})();

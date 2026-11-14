@@ -13,6 +13,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useCompanyScope } from "@/components/company-context";
+import { usePermissions } from "@/components/permissions/permissions-context";
 import {
   NO_STATION,
   aggregateHalfproducts,
@@ -96,6 +97,9 @@ export function KitchenLists({ companyId }: { companyId: string }) {
   const { companies } = useCompanyScope();
   const company = companies.find((c) => c.id === companyId);
   const companyName = company?.trade_name || company?.name || "";
+  // Operator: alleen bekijken en afdrukken; partie en voorkeursleverancier
+  // niet wijzigen (database weigert dat ook).
+  const { isOperator: readOnly } = usePermissions();
 
   // ---------- keuzes ----------
   const [cards, setCards] = useState<MenuCard[]>([]);
@@ -853,8 +857,8 @@ export function KitchenLists({ companyId }: { companyId: string }) {
         </div>
       )}
 
-      {/* -------- partie-indeling -------- */}
-      {rows && dishIds.length > 0 && (
+      {/* -------- partie-indeling (niet voor operators: alleen bekijken) -------- */}
+      {rows && dishIds.length > 0 && !readOnly && (
         <div className="rounded-xl border border-border bg-surface print:hidden">
           <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
             <button
@@ -933,6 +937,7 @@ export function KitchenLists({ companyId }: { companyId: string }) {
                                 onChange={(e) =>
                                   void setStation([d], e.target.value || null)
                                 }
+                                disabled={readOnly}
                                 className="input h-8! w-44!"
                               >
                                 <option value="">— geen —</option>
@@ -984,6 +989,7 @@ export function KitchenLists({ companyId }: { companyId: string }) {
                                         </td>
                                         <td className="py-0.5">
                                           <select
+                                            disabled={readOnly}
                                             value={
                                               x.station_source === "regel"
                                                 ? (x.station_id ?? "")
@@ -1161,6 +1167,7 @@ export function KitchenLists({ companyId }: { companyId: string }) {
                               {supplierIds.length > 1 ? (
                                 <>
                                   <select
+                                    disabled={readOnly}
                                     value={
                                       products.get(x.agg.productId)
                                         ?.preferred_supplier_id ?? ""
@@ -1305,6 +1312,7 @@ export function KitchenLists({ companyId }: { companyId: string }) {
                             <td className="whitespace-nowrap">
                               <span className="print:hidden">
                                 <select
+                                  disabled={readOnly}
                                   value={r?.station_id ?? ""}
                                   onChange={(e) =>
                                     void setStation(

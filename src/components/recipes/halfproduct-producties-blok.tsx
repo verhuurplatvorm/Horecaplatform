@@ -40,10 +40,13 @@ export function HalfproductIngredientenModule({
   recipeId,
   standardYield,
   unitName,
+  hideCosts = false,
 }: {
   recipeId: string;
   standardYield: number | null;
   unitName: string | null;
+  /** Operator: geen kostprijzen tonen. */
+  hideCosts?: boolean;
 }) {
   const { activeCompanyIds } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
@@ -311,7 +314,7 @@ export function HalfproductIngredientenModule({
               <th className="px-2 py-3 font-medium">Ingrediënt</th>
               <th className="px-2 py-3 font-medium">Hoeveelheid</th>
               <th className="px-2 py-3 font-medium">Eenheid</th>
-              <th className="px-2 py-3 font-medium">Kostprijs</th>
+              {!hideCosts && <th className="px-2 py-3 font-medium">Kostprijs</th>}
             </tr>
           </thead>
           <tbody>
@@ -359,9 +362,11 @@ export function HalfproductIngredientenModule({
                     )}
                 </td>
                 <td className="px-2 py-3 text-muted">{line.unit_name ?? "—"}</td>
-                <td className="px-2 py-3 tabular text-muted">
-                  {line.line_cost !== null ? `€ ${(line.line_cost * effectiveScale).toFixed(4)}` : "—"}
-                </td>
+                {!hideCosts && (
+                  <td className="px-2 py-3 tabular text-muted">
+                    {line.line_cost !== null ? `€ ${(line.line_cost * effectiveScale).toFixed(4)}` : "—"}
+                  </td>
+                )}
               </tr>
             ))}
             {breakdown.length === 0 && (
@@ -397,11 +402,15 @@ export function HalfproductIngredientenModule({
                   nog niet ingesteld — vul de bruikbare hoeveelheid in bij het halfproduct
                 </span>
               )}
-              <span className="mx-2 text-muted">·</span>
-              <span className="text-muted">Totale kostprijs:&nbsp;</span>
-              <span className="font-semibold text-foreground">€ {totalScaledCost.toFixed(2)}</span>
-              {effectiveScale !== 1 && (
-                <span className="ml-1 text-muted">(×{effectiveScale.toFixed(2)})</span>
+              {!hideCosts && (
+                <>
+                  <span className="mx-2 text-muted">·</span>
+                  <span className="text-muted">Totale kostprijs:&nbsp;</span>
+                  <span className="font-semibold text-foreground">€ {totalScaledCost.toFixed(2)}</span>
+                  {effectiveScale !== 1 && (
+                    <span className="ml-1 text-muted">(×{effectiveScale.toFixed(2)})</span>
+                  )}
+                </>
               )}
             </div>
             <Link href={canRegister ? stickerHref : "#"} aria-disabled={!canRegister}>
@@ -434,9 +443,11 @@ export function HalfproductIngredientenModule({
 export function ProductiesGeschiedenis({
   recipeId,
   unitName,
+  hideCosts = false,
 }: {
   recipeId: string;
   unitName: string | null;
+  hideCosts?: boolean;
 }) {
   const { activeCompanyIds } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
@@ -534,7 +545,7 @@ export function ProductiesGeschiedenis({
               <th className="px-5 py-3 font-medium">Batchnummer</th>
               <th className="px-5 py-3 font-medium">Productiedatum</th>
               <th className="px-5 py-3 font-medium">Hoeveelheid</th>
-              <th className="px-5 py-3 font-medium">Kostprijs</th>
+              {!hideCosts && <th className="px-5 py-3 font-medium">Kostprijs</th>}
               <th className="px-5 py-3 font-medium">Producent</th>
               <th className="px-5 py-3 font-medium"></th>
             </tr>
@@ -549,9 +560,11 @@ export function ProductiesGeschiedenis({
                 <td className="px-5 py-3 tabular">
                   {movement.quantity_change} {unitName ?? ""}
                 </td>
-                <td className="px-5 py-3 tabular text-muted">
-                  {cost !== null ? `€ ${cost.toFixed(2)}` : "—"}
-                </td>
+                {!hideCosts && (
+                  <td className="px-5 py-3 tabular text-muted">
+                    {cost !== null ? `€ ${cost.toFixed(2)}` : "—"}
+                  </td>
+                )}
                 <td className="px-5 py-3 text-muted">{producedBy ?? "—"}</td>
                 <td className="px-5 py-3">
                   <Link href={`/halfproducten/${recipeId}/sticker/nieuw?movementId=${movement.id}`}>

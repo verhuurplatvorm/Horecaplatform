@@ -1772,6 +1772,10 @@ export type Database = {
         Args: { p_sales_product_id: string; p_company_id: string };
         Returns: number;
       };
+      current_user_is_operator: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       calculate_recipe_allergens: {
         Args: { p_recipe_id: string; p_depth?: number };
         Returns: { bevat: string[]; sporen: string[] };

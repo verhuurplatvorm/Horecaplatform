@@ -32,6 +32,7 @@ const OPEN_PATTERNS: { re: RegExp; type: "recipe" | "product" }[] = [
 ];
 // Keuken- en inkooppagina's waar de balk zichtbaar is.
 const SHOW_ON = [
+  "/operator",
   "/recepturen",
   "/halfproducten",
   "/producten",

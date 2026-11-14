@@ -4,17 +4,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV_TABS, findTabForPath } from "@/lib/nav-structure";
+import { NAV_TABS, OPERATOR_TABS, findTabForPath } from "@/lib/nav-structure";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { useMobileNav } from "@/components/layout/mobile-nav-context";
 
 export function Sidebar() {
   const pathname = usePathname() ?? "";
-  const { can, loading } = usePermissions();
+  const { can, loading, isOperator } = usePermissions();
+  // Operator: vereenvoudigd menu.
+  const tabsSource = isOperator ? OPERATOR_TABS : NAV_TABS;
   const { open, close } = useMobileNav();
 
-  const activeTab = findTabForPath(pathname);
-  const visibleTabs = NAV_TABS.filter((tab) =>
+  const activeTab = findTabForPath(pathname, tabsSource);
+  const visibleTabs = tabsSource.filter((tab) =>
     tab.items.some((item) => can(item.moduleKey).canView)
   );
   const currentTab = activeTab ?? visibleTabs[0];
@@ -51,6 +53,7 @@ export function Sidebar() {
             <X className="h-4 w-4" />
           </button>
         </div>
+        {!isOperator && (
         <Link
           href="/dashboard"
           className={cn(
@@ -63,6 +66,7 @@ export function Sidebar() {
           <LayoutDashboard className="h-4 w-4" />
           Dashboard
         </Link>
+        )}
 
         {!loading && currentTab && (
           <>
