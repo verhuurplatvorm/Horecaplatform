@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { NAV_TABS, OPERATOR_TABS, findTabForPath } from "@/lib/nav-structure";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { useMobileNav } from "@/components/layout/mobile-nav-context";
+import { LogoutButton } from "@/components/layout/logout-button";
 
 /**
  * Volledige-breedte tabbalk bovenaan het scherm voor de vijf
@@ -39,6 +40,7 @@ export function TopTabBar() {
           <Menu className="h-5 w-5" />
         </button>
         <span className="text-sm font-semibold text-foreground">Culilogic</span>
+        <LogoutButton />
       </div>
     );
   }
@@ -78,6 +80,7 @@ export function TopTabBar() {
           );
         })}
       </nav>
+      <LogoutButton />
     </div>
   );
 }
