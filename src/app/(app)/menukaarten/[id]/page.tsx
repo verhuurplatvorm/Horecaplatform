@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchRecipeCosts } from "@/lib/recipes/costs";
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -122,19 +123,19 @@ export default function MenukaartWorkspacePage({
 
       const compId =
         (cardData as MenuCard | null)?.company_id ?? referenceCompanyId;
-      const withCost = await Promise.all(
-        rawItems.map(async (i) => {
-          let cost: number | null = null;
-          if (compId) {
-            const { data } = await supabase.rpc("calculate_recipe_cost", {
-              p_recipe_id: i.recipe_id,
-              p_company_id: compId,
-            });
-            cost = data ?? null;
-          }
-          return { ...i, recipe: recipeMap.get(i.recipe_id), cost };
-        }),
-      );
+      // Alle kostprijzen in één aanvraag (voorheen één per gerecht).
+      const costs = compId
+        ? await fetchRecipeCosts(
+            supabase,
+            compId,
+            rawItems.map((i) => i.recipe_id),
+          )
+        : new Map<string, number | null>();
+      const withCost = rawItems.map((i) => ({
+        ...i,
+        recipe: recipeMap.get(i.recipe_id),
+        cost: costs.get(i.recipe_id) ?? null,
+      }));
 
       if (!cancelled) {
         setItems(withCost);

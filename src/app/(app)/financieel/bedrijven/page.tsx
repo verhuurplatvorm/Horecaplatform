@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchRecipeCosts } from "@/lib/recipes/costs";
 import { useEffect, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
@@ -77,13 +78,12 @@ export default function FinancieelBedrijvenPage() {
 
       const results = await Promise.all(
         companies.map(async (company) => {
-          const costs = await Promise.all(
-            recipes.map((r) =>
-              supabase
-                .rpc("calculate_recipe_cost", { p_recipe_id: r.id, p_company_id: company.id })
-                .then(({ data }) => data as number | null)
-            )
+          const costMap = await fetchRecipeCosts(
+            supabase,
+            company.id,
+            recipes.map((r) => r.id),
           );
+          const costs = recipes.map((r) => costMap.get(r.id) ?? null);
 
           let costSum = 0;
           let costCount = 0;

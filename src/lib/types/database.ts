@@ -1764,6 +1764,10 @@ export type Database = {
         Args: { p_recipe_id: string; p_company_id: string; p_depth?: number };
         Returns: number;
       };
+      calculate_recipe_costs: {
+        Args: { p_company_id: string; p_recipe_ids: string[] };
+        Returns: { recipe_id: string; cost: number | null }[];
+      };
       calculate_sales_product_cost: {
         Args: { p_sales_product_id: string; p_company_id: string };
         Returns: number;

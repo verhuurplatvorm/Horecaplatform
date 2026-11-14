@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchRecipeCosts } from "@/lib/recipes/costs";
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useRef, useState } from "react";
@@ -329,15 +330,16 @@ export default function RecepturenPage() {
         return;
       }
 
-      const withCost = await Promise.all(
-        data.map(async (recipe) => {
-          const { data: cost } = await supabase.rpc("calculate_recipe_cost", {
-            p_recipe_id: recipe.id,
-            p_company_id: referenceCompanyId,
-          });
-          return { ...recipe, costPrice: cost ?? null };
-        }),
+      // Alle kostprijzen in één aanvraag (voorheen één per gerecht).
+      const costs = await fetchRecipeCosts(
+        supabase,
+        referenceCompanyId,
+        data.map((r) => r.id),
       );
+      const withCost = data.map((recipe) => ({
+        ...recipe,
+        costPrice: costs.get(recipe.id) ?? null,
+      }));
 
       if (!cancelled) {
         setRecipes(withCost);

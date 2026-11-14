@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchRecipeCosts } from "@/lib/recipes/costs";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
@@ -77,16 +78,17 @@ export default function PartijgerechtenPage() {
       const unitKey = new Map(
         (units ?? []).map((u) => [u.id as string, u.key as string]),
       );
+      const costs =
+        canViewFinancial && companyId
+          ? await fetchRecipeCosts(
+              supabase,
+              companyId,
+              (recipes ?? []).map((r) => r.id as string),
+            )
+          : new Map<string, number | null>();
       const list = await Promise.all(
         (recipes ?? []).map(async (r) => {
-          let cost: number | null = null;
-          if (canViewFinancial && companyId) {
-            const { data } = await supabase.rpc("calculate_recipe_cost", {
-              p_recipe_id: r.id,
-              p_company_id: companyId,
-            });
-            cost = (data as number | null) ?? null;
-          }
+          const cost: number | null = costs.get(r.id as string) ?? null;
           return {
             id: r.id as string,
             name: r.name as string,

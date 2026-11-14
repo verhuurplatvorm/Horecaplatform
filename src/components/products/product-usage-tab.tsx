@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchRecipeCosts } from "@/lib/recipes/costs";
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
@@ -63,6 +64,27 @@ export function ProductUsageTab({ productId }: { productId: string }) {
       const recipeById = new Map((recipes ?? []).map((r) => [r.id, r]));
       const unitById = new Map((units ?? []).map((u) => [u.id, u.name]));
 
+      // Kostprijzen in één keer en regelkosten parallel (voorheen één voor één).
+      const financial = canViewFinancial && referenceCompanyId;
+      const [costs, breakdowns] = financial
+        ? await Promise.all([
+            fetchRecipeCosts(supabase, referenceCompanyId, recipeIds),
+            Promise.all(
+              recipeIds.map((rid) =>
+                supabase
+                  .rpc("get_recipe_cost_breakdown", {
+                    p_recipe_id: rid,
+                    p_company_id: referenceCompanyId,
+                  })
+                  .then(({ data }) => [rid, data] as const),
+              ),
+            ),
+          ])
+        : [new Map<string, number | null>(), [] as const];
+      const breakdownById = new Map(
+        breakdowns as readonly (readonly [string, unknown])[],
+      );
+
       const out: UsageRow[] = [];
       for (const line of lines) {
         const r = recipeById.get(line.recipe_id);
@@ -70,20 +92,14 @@ export function ProductUsageTab({ productId }: { productId: string }) {
 
         let lineCost: number | null = null;
         let recipeCost: number | null = null;
-        if (canViewFinancial && referenceCompanyId) {
-          const [{ data: breakdown }, { data: total }] = await Promise.all([
-            supabase.rpc("get_recipe_cost_breakdown", {
-              p_recipe_id: line.recipe_id,
-              p_company_id: referenceCompanyId,
-            }),
-            supabase.rpc("calculate_recipe_cost", {
-              p_recipe_id: line.recipe_id,
-              p_company_id: referenceCompanyId,
-            }),
-          ]);
-          recipeCost = (total as number | null) ?? null;
-          const match = (breakdown as { product_id: string | null; line_cost: number | null }[] | null)
-            ?.find((b) => b.product_id === productId);
+        if (financial) {
+          recipeCost = costs.get(line.recipe_id) ?? null;
+          const match = (
+            breakdownById.get(line.recipe_id) as
+              | { product_id: string | null; line_cost: number | null }[]
+              | null
+              | undefined
+          )?.find((b) => b.product_id === productId);
           lineCost = match?.line_cost ?? null;
         }
 
