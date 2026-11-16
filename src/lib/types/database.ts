@@ -1252,6 +1252,14 @@ export type Database = {
         Args: { p_menu_id: string; p_company_id: string };
         Returns: EventMenuActualRow[];
       };
+      get_event_menu_order_needs: {
+        Args: { p_menu_id: string };
+        Returns: {
+          halfproduct_id: string | null;
+          product_id: string | null;
+          quantity_in_base: number;
+        }[];
+      };
       get_event_menu_production: {
         Args: { p_menu_id: string };
         Returns: { recipe_id: string; quantity: number; unit_id: string | null }[];
