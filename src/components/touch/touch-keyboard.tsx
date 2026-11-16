@@ -121,6 +121,10 @@ export function TouchArea({ children }: { children: ReactNode }) {
   const [shift, setShift] = useState(false);
   const [numeric, setNumeric] = useState(false);
   const areaRef = useRef<HTMLDivElement>(null);
+  // Werkelijke hoogte van het toetsenbord, zodat de ruimte eronder en het
+  // meeschuiven precies kloppen (verschilt tussen letters en cijfers).
+  const kbRef = useRef<HTMLDivElement>(null);
+  const [kbHeight, setKbHeight] = useState(0);
   // Getalvelden (type=number) accepteren geen tussenstand als "-" of "3,";
   // daarom typen we in een buffer en zetten alleen geldige getallen door.
   const [buffer, setBuffer] = useState("");
@@ -165,10 +169,6 @@ export function TouchArea({ children }: { children: ReactNode }) {
       setNumeric(isNumeric(el));
       setBuffer(el.value);
       setShift(false);
-      setTimeout(
-        () => el.scrollIntoView({ block: "center", behavior: "smooth" }),
-        50,
-      );
     }
     function onFocusOut() {
       setTimeout(() => {
@@ -184,6 +184,53 @@ export function TouchArea({ children }: { children: ReactNode }) {
       document.removeEventListener("focusout", onFocusOut);
     };
   }, [enabled]);
+
+  // Hoogte van het toetsenbord bijhouden.
+  useEffect(() => {
+    const node = kbRef.current;
+    if (!node) return;
+    const ro = new ResizeObserver(() => setKbHeight(node.offsetHeight));
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [target, numeric]);
+
+  // Veld naar boven schuiven, zodat wat eronder komt (zoekresultaten,
+  // keuzelijsten) in de ruimte tussen veld en toetsenbord zichtbaar is.
+  // Vaste/sticky balken bovenaan worden overgeslagen. Velden in een
+  // pop-up (vaste laag) schuiven alleen net genoeg om zichtbaar te zijn.
+  useEffect(() => {
+    if (!target || !kbHeight) return;
+    const el = target;
+    const t = window.setTimeout(() => {
+      let inFixedLayer = false;
+      for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+        if (getComputedStyle(n).position === "fixed") {
+          inFixedLayer = true;
+          break;
+        }
+      }
+      if (inFixedLayer) {
+        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      let topBars = 0;
+      const x = Math.min(Math.max(rect.left + 4, 1), window.innerWidth - 1);
+      for (const n of document.elementsFromPoint(x, 2)) {
+        const pos = getComputedStyle(n).position;
+        if (pos === "sticky" || pos === "fixed") {
+          topBars = Math.max(topBars, n.getBoundingClientRect().bottom);
+        }
+      }
+      const visibleBottom = window.innerHeight - kbHeight;
+      const wantTop = topBars + 12;
+      // Alleen schuiven als het veld niet al bovenin het vrije deel staat.
+      if (rect.top > wantTop + 40 || rect.bottom > visibleBottom - 8 || rect.top < topBars) {
+        window.scrollBy({ top: rect.top - wantTop, behavior: "smooth" });
+      }
+    }, 30);
+    return () => window.clearTimeout(t);
+  }, [target, kbHeight]);
 
   // Uitgezet: oorspronkelijke inputmode terug.
   useEffect(() => {
@@ -242,7 +289,7 @@ export function TouchArea({ children }: { children: ReactNode }) {
   }
 
   const keyClass =
-    "flex h-14 min-w-0 flex-1 select-none items-center justify-center rounded-lg border border-border bg-surface text-lg font-medium shadow-sm active:bg-teal/15";
+    `flex ${numeric ? "h-14" : "h-12"} min-w-0 flex-1 select-none items-center justify-center rounded-lg border border-border bg-surface text-lg font-medium shadow-sm active:bg-teal/15`;
   // Toetsen mogen de focus niet van het veld afpakken.
   const hold = (e: React.PointerEvent | React.MouseEvent) => e.preventDefault();
 
@@ -250,6 +297,7 @@ export function TouchArea({ children }: { children: ReactNode }) {
     enabled && target
       ? createPortal(
           <div
+            ref={kbRef}
             className="fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background/95 p-2 shadow-2xl backdrop-blur print:hidden"
             onPointerDown={hold}
             onMouseDown={hold}
@@ -350,9 +398,17 @@ export function TouchArea({ children }: { children: ReactNode }) {
         `}</style>
       )}
       {children}
-      {/* Ruimte zodat het toetsenbord niets afdekt. */}
+      {/* Ruimte zodat het toetsenbord niets afdekt én er genoeg te
+          schuiven valt om het veld bovenin te krijgen, ook op korte pagina's. */}
       {enabled && target && (
-        <div style={{ height: numeric ? 300 : 360 }} aria-hidden />
+        <div
+          style={{
+            height:
+              (kbHeight || (numeric ? 300 : 360)) +
+              Math.round(window.innerHeight / 2),
+          }}
+          aria-hidden
+        />
       )}
       <button
         type="button"
