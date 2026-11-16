@@ -7,7 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
-import type { ProductionLabel, StockMovement, UserProfile } from "@/lib/types/database";
+import { StaffSelect } from "@/components/haccp/staff-select";
+import {
+  readStaffSession,
+  writeStaffSession,
+  type StaffSession,
+} from "@/lib/haccp/cleaning";
+import type { ProductionLabel, StockMovement } from "@/lib/types/database";
 
 interface ProductionRow {
   movement: StockMovement;
@@ -76,8 +82,15 @@ export function HalfproductIngredientenModule({
   const [scaleIngredientSortOrder, setScaleIngredientSortOrder] = useState<string>("");
   const [availableAmount, setAvailableAmount] = useState("");
 
-  const [producedByUserId, setProducedByUserId] = useState("");
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  // Producent = de medewerker, gekozen zoals bij "Sticker afdrukken":
+  // keuzelijst met collega's + "nieuwe medewerker toevoegen". Gedeelde
+  // keukenaccounts (bv. "Het Strand") staan er bewust niet in. De keuze
+  // geldt 12 uur op dit apparaat (zelfde medewerkersessie als stickers).
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(() =>
+    typeof window === "undefined" || !referenceCompanyId
+      ? null
+      : readStaffSession(referenceCompanyId)
+  );
   const [breakdown, setBreakdown] = useState<BreakdownLine[]>([]);
 
   const scaleIngredientLine =
@@ -117,16 +130,6 @@ export function HalfproductIngredientenModule({
     standardYield && scale !== null ? (scale * standardYield) / displayFactor : null;
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("is_active", true)
-      .order("full_name")
-      .then(({ data }) => setUsers((data as UserProfile[]) ?? []));
-  }, []);
-
-  useEffect(() => {
     if (!referenceCompanyId) return;
     let cancelled = false;
     const supabase = createClient();
@@ -148,13 +151,13 @@ export function HalfproductIngredientenModule({
     [breakdown, effectiveScale]
   );
 
-  const producedByName = users.find((u) => u.id === producedByUserId)?.full_name ?? "";
+  const producedByName = staffSession?.name ?? "";
 
   const stickerHref = `/halfproducten/${recipeId}/sticker/nieuw?quantity=${quantity}&producedBy=${encodeURIComponent(
     producedByName
   )}`;
 
-  const canRegister = Boolean(Number(quantity)) && Boolean(producedByUserId);
+  const canRegister = Boolean(Number(quantity)) && Boolean(staffSession);
 
   return (
     <Card>
@@ -204,20 +207,20 @@ export function HalfproductIngredientenModule({
             <label className="mb-1 block text-sm font-medium text-foreground">
               Producent <span className="text-danger">*</span>
             </label>
-            <select
-              required
-              value={producedByUserId}
-              onChange={(e) => setProducedByUserId(e.target.value)}
-              className="input"
-            >
-              <option value="">Kies producent…</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name}
-                </option>
-              ))}
-            </select>
-            {!producedByUserId && (
+            {referenceCompanyId ? (
+              <StaffSelect
+                companyId={referenceCompanyId}
+                excludeShared
+                value={staffSession ? { id: staffSession.staffId, name: staffSession.name } : null}
+                onChosen={(sess) => {
+                  writeStaffSession(sess, referenceCompanyId);
+                  setStaffSession(sess);
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted">Kies eerst een bedrijf rechtsboven.</p>
+            )}
+            {!staffSession && (
               <p className="mt-1 flex items-center gap-1 text-xs text-copper">
                 <TriangleAlert className="h-3.5 w-3.5" />
                 Verplicht voordat je kunt registreren of een sticker afdrukken.
