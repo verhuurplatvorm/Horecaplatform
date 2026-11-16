@@ -85,7 +85,7 @@ export default function ActueleIngredientenPage() {
           vanzelf de kaart.
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative max-w-sm flex-1">
+          <div className="relative min-w-64 max-w-md flex-[1_1_20rem]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <input
               value={query}
