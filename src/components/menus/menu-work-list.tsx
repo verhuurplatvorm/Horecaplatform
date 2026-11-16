@@ -41,6 +41,8 @@ export function partyDistribution(p: PartyPlanRow): number[] {
 }
 
 interface WorkItem {
+  /** recept + eenheid: lukt omrekenen niet, dan kan een recept twee regels hebben */
+  key: string;
   recipeId: string;
   name: string;
   quantity: number;
@@ -81,11 +83,6 @@ export function MenuWorkList({
       setLoading(true);
       const supabase = createClient();
 
-      const { data: lines } = await supabase
-        .from("event_menu_lines")
-        .select("id, recipe_id, quantity_per_person, unit_id, is_fixed, participation_pct")
-        .eq("menu_id", menuId)
-        .not("recipe_id", "is", null);
       // Partijgerechten: aantal vormen en verdeling komen uit de database.
       const { data: planData } = companyId
         ? await supabase.rpc("get_event_menu_party_plan", {
@@ -102,9 +99,17 @@ export function MenuWorkList({
         difference: Number(p.difference),
         containers_exact: Number(p.containers_exact),
       }));
-      const planByLine = new Map(plans.map((p) => [p.line_id, p]));
       if (!cancelled) setParty(plans);
-      if (!lines || lines.length === 0) {
+
+      // Wat er gemaakt moet worden, inclusief alle halfproducten, rekent de
+      // database uit (get_event_menu_production, migratie 0135). Die rekent
+      // elke hoeveelheid om naar de eenheid van het recept: 40 ml ijs p.p.
+      // wordt dus bollen, niet "6.800 stuk".
+      const { data: work } = await supabase.rpc("get_event_menu_production", {
+        p_menu_id: menuId,
+      });
+      const rows = work ?? [];
+      if (rows.length === 0) {
         if (!cancelled) {
           setItems([]);
           setLoading(false);
@@ -112,83 +117,27 @@ export function MenuWorkList({
         return;
       }
 
-      const recipeIds = [...new Set(lines.map((l) => l.recipe_id).filter(Boolean))] as string[];
+      const recipeIds = [...new Set(rows.map((r) => r.recipe_id))];
       const [{ data: recipes }, { data: units }] = await Promise.all([
         supabase
           .from("recipes")
-          .select(
-            "id, name, recipe_kind, yield_quantity, base_unit_id, preparation, production_location"
-          )
+          .select("id, name, recipe_kind, preparation, production_location")
           .in("id", recipeIds),
         supabase.from("units").select("id, name"),
       ]);
       const unitName = new Map((units ?? []).map((u) => [u.id, u.name]));
       const recipeById = new Map((recipes ?? []).map((r) => [r.id, r]));
 
-      // Benodigde hoeveelheid per recept optellen. Partijgerechten staan
-      // apart (per vorm); hun halfproducten gaan wél mee in deze lijst.
-      const needed = new Map<string, number>();
-      const partyFactor = new Map<string, number>();
-      for (const l of lines) {
-        if (!l.recipe_id) continue;
-        const plan = planByLine.get(l.id);
-        if (plan) {
-          const f = Number(plan.recipe_factor);
-          partyFactor.set(l.recipe_id, (partyFactor.get(l.recipe_id) ?? 0) + f);
-          continue;
-        }
-        const pct = l.is_fixed ? 100 : Number(l.participation_pct ?? 100);
-        const qty = (l.quantity_per_person * (l.is_fixed ? 1 : personCount) * pct) / 100;
-        needed.set(l.recipe_id, (needed.get(l.recipe_id) ?? 0) + qty);
-      }
-
-      // Halfproducten die deze gerechten nodig hebben, erbij.
-      const subNeeded = new Map<string, number>();
-      const factors: [string, number][] = [];
-      for (const [recipeId, qty] of needed) {
-        const r = recipeById.get(recipeId);
-        if (!r?.yield_quantity || r.yield_quantity <= 0) continue;
-        factors.push([recipeId, qty / r.yield_quantity]);
-      }
-      for (const [recipeId, f] of partyFactor) factors.push([recipeId, f]);
-      for (const [recipeId, factor] of factors) {
-        const { data: subs } = await supabase
-          .from("recipe_ingredients")
-          .select("sub_recipe_id, quantity")
-          .eq("recipe_id", recipeId)
-          .not("sub_recipe_id", "is", null);
-        for (const s of subs ?? []) {
-          if (!s.sub_recipe_id) continue;
-          subNeeded.set(
-            s.sub_recipe_id,
-            (subNeeded.get(s.sub_recipe_id) ?? 0) + s.quantity * factor
-          );
-        }
-      }
-
-      const subIds = [...subNeeded.keys()].filter((id) => !recipeById.has(id));
-      if (subIds.length) {
-        const { data: subRecipes } = await supabase
-          .from("recipes")
-          .select(
-            "id, name, recipe_kind, yield_quantity, base_unit_id, preparation, production_location"
-          )
-          .in("id", subIds);
-        for (const r of subRecipes ?? []) recipeById.set(r.id, r);
-      }
-
-      const all = new Map<string, number>(needed);
-      for (const [id, qty] of subNeeded) all.set(id, (all.get(id) ?? 0) + qty);
-
       const out: WorkItem[] = [];
-      for (const [id, qty] of all) {
-        const r = recipeById.get(id);
+      for (const row of rows) {
+        const r = recipeById.get(row.recipe_id);
         if (!r) continue;
         out.push({
-          recipeId: id,
+          key: `${row.recipe_id}:${row.unit_id ?? ""}`,
+          recipeId: row.recipe_id,
           name: r.name,
-          quantity: qty,
-          unitName: r.base_unit_id ? unitName.get(r.base_unit_id) ?? null : null,
+          quantity: Number(row.quantity),
+          unitName: row.unit_id ? unitName.get(row.unit_id) ?? null : null,
           location: r.production_location?.trim() || "Niet ingedeeld",
           preparation: r.preparation,
           isHalfproduct: r.recipe_kind === "halfproduct",
@@ -294,20 +243,20 @@ export function MenuWorkList({
               <p className="border-y border-border bg-background px-5 py-2 text-sm font-medium">
                 {location}
                 <span className="ml-2 text-xs font-normal text-muted">
-                  {list.filter((i) => done.has(i.recipeId)).length}/{list.length} gereed
+                  {list.filter((i) => done.has(i.key)).length}/{list.length} gereed
                 </span>
               </p>
               <ul className="divide-y divide-border">
                 {list.map((i) => (
-                  <li key={i.recipeId} className="flex items-start gap-3 px-5 py-2.5">
+                  <li key={i.key} className="flex items-start gap-3 px-5 py-2.5">
                     <input
                       type="checkbox"
-                      checked={done.has(i.recipeId)}
+                      checked={done.has(i.key)}
                       onChange={() =>
                         setDone((prev) => {
                           const next = new Set(prev);
-                          if (next.has(i.recipeId)) next.delete(i.recipeId);
-                          else next.add(i.recipeId);
+                          if (next.has(i.key)) next.delete(i.key);
+                          else next.add(i.key);
                           return next;
                         })
                       }
@@ -317,7 +266,7 @@ export function MenuWorkList({
                       <p
                         className={cn(
                           "font-medium",
-                          done.has(i.recipeId) && "text-muted line-through"
+                          done.has(i.key) && "text-muted line-through"
                         )}
                       >
                         {i.name}
