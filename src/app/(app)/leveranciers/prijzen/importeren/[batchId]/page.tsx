@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CircleAlert, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, CircleAlert, FileText, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -488,6 +488,11 @@ export default function ImportReviewPage({
                   {batch.total_incl_vat !== null ? `€ ${batch.total_incl_vat.toFixed(2)}` : "—"}
                 </p>
               </div>
+              {batch.original_file_path && (
+                <div className="col-span-2 sm:col-span-4">
+                  <InvoiceFileButton path={batch.original_file_path} />
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1261,5 +1266,42 @@ function SupplierInvoiceNotes({ supplierId }: { supplierId: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+
+/**
+ * Opent de originele factuur (pdf/afbeelding) in een nieuw tabblad, zodat je
+ * regels kunt naleggen — bv. of een prijs per kg is en de regel 3 kg betreft.
+ * Via een tijdelijke link (10 minuten) uit de afgeschermde opslag "facturen".
+ */
+function InvoiceFileButton({ path }: { path: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function open() {
+    // Venster direct openen (binnen de klik), anders blokkeert de browser het.
+    const win = window.open("", "_blank");
+    setBusy(true);
+    setError(null);
+    const { data, error: err } = await createClient()
+      .storage.from("facturen")
+      .createSignedUrl(path, 600);
+    setBusy(false);
+    if (err || !data?.signedUrl) {
+      win?.close();
+      setError("Factuur openen lukt niet: het bestand is niet gevonden.");
+      return;
+    }
+    if (win) win.location.href = data.signedUrl;
+    else window.location.href = data.signedUrl;
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <Button type="button" variant="secondary" onClick={open} disabled={busy}>
+        <FileText className="h-4 w-4" />
+        {busy ? "Openen…" : "Factuur bekijken"}
+      </Button>
+      {error && <span className="text-xs text-danger">{error}</span>}
+    </div>
   );
 }
