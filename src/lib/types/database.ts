@@ -1147,6 +1147,12 @@ export type Database = {
         Update: Partial<KitchenStation>;
         Relationships: [];
       };
+      event_menu_work_done: {
+        Row: EventMenuWorkDone;
+        Insert: Partial<EventMenuWorkDone> & { menu_id: string; item_key: string };
+        Update: Partial<EventMenuWorkDone>;
+        Relationships: [];
+      };
       recent_items: {
         Row: RecentItemRow;
         Insert: Partial<RecentItemRow> & { item_type: "recipe" | "product"; item_id: string };
@@ -2328,6 +2334,13 @@ export type KitchenStation = {
 };
 
 /** Laatst geopende items per gebruiker (migratie 0128). */
+export type EventMenuWorkDone = {
+  menu_id: string;
+  item_key: string;
+  done_by: string | null;
+  done_at: string;
+};
+
 export type RecentItemRow = {
   user_id: string;
   item_type: "recipe" | "product";

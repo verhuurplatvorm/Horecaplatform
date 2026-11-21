@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Printer } from "lucide-react";
+import { Printer, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -57,9 +57,10 @@ interface WorkItem {
  * hoeveel. Klapt gerechten door naar de halfproducten die ze nodig
  * hebben, zodat de keuken één lijst heeft.
  *
- * Afvinken gebeurt lokaal in de browser: het is een werklijst voor de
- * dag, geen administratie. Een productie die je echt wilt vastleggen
- * registreer je op het halfproduct zelf — daar hoort ook de sticker bij.
+ * Afvinken wordt per menu bewaard (tabel event_menu_work_done, migratie
+ * 0139), zodat de stand na verversen blijft en elk scherm in de keuken
+ * hetzelfde ziet. Een productie die je echt wilt vastleggen registreer je
+ * op het halfproduct zelf — daar hoort ook de sticker bij.
  */
 export function MenuWorkList({
   menuId,
@@ -76,6 +77,78 @@ export function MenuWorkList({
   const [party, setParty] = useState<PartyPlanRow[]>([]);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [saveError, setSaveError] = useState(false);
+
+  // Afgevinkte regels ophalen: bij openen en als je terugkomt op het
+  // tabblad (een ander scherm kan intussen hebben afgevinkt).
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDone() {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("event_menu_work_done")
+        .select("item_key")
+        .eq("menu_id", menuId);
+      if (!cancelled && !error) setDone(new Set((data ?? []).map((r) => r.item_key)));
+    }
+    loadDone();
+    const onFocus = () => {
+      if (document.visibilityState === "visible") loadDone();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [menuId]);
+
+  async function toggle(key: string) {
+    const wasDone = done.has(key);
+    setDone((prev) => {
+      const next = new Set(prev);
+      if (wasDone) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    const supabase = createClient();
+    const { error } = wasDone
+      ? await supabase
+          .from("event_menu_work_done")
+          .delete()
+          .eq("menu_id", menuId)
+          .eq("item_key", key)
+      : await supabase
+          .from("event_menu_work_done")
+          .upsert({ menu_id: menuId, item_key: key }, { onConflict: "menu_id,item_key" });
+    if (error) {
+      // Terugdraaien, zodat het scherm niet iets anders laat zien dan er bewaard is.
+      setSaveError(true);
+      setDone((prev) => {
+        const next = new Set(prev);
+        if (wasDone) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+    } else {
+      setSaveError(false);
+    }
+  }
+
+  async function clearAll() {
+    if (done.size === 0) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("event_menu_work_done")
+      .delete()
+      .eq("menu_id", menuId);
+    if (error) setSaveError(true);
+    else {
+      setSaveError(false);
+      setDone(new Set());
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -173,13 +246,26 @@ export function MenuWorkList({
           )}
         </CardTitle>
         {(items.length > 0 || party.length > 0) && (
-          <Button variant="secondary" size="sm" onClick={() => window.print()}>
-            <Printer className="h-3.5 w-3.5" />
-            Printen
-          </Button>
+          <div className="flex items-center gap-2 print:hidden">
+            {done.size > 0 && (
+              <Button variant="secondary" size="sm" onClick={clearAll}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                Vinkjes wissen
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5" />
+              Printen
+            </Button>
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-4 p-0">
+        {saveError && (
+          <p className="px-5 text-sm text-danger">
+            Vinkje kon niet worden opgeslagen. Controleer de verbinding en probeer het opnieuw.
+          </p>
+        )}
         {party.length > 0 && (
           <div>
             <p className="border-y border-border bg-background px-5 py-2 text-sm font-medium">
@@ -194,14 +280,7 @@ export function MenuWorkList({
                     <input
                       type="checkbox"
                       checked={done.has(p.line_id)}
-                      onChange={() =>
-                        setDone((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(p.line_id)) next.delete(p.line_id);
-                          else next.add(p.line_id);
-                          return next;
-                        })
-                      }
+                      onChange={() => toggle(p.line_id)}
                       className="mt-1"
                     />
                     <div className="min-w-0 flex-1">
@@ -252,14 +331,7 @@ export function MenuWorkList({
                     <input
                       type="checkbox"
                       checked={done.has(i.key)}
-                      onChange={() =>
-                        setDone((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(i.key)) next.delete(i.key);
-                          else next.add(i.key);
-                          return next;
-                        })
-                      }
+                      onChange={() => toggle(i.key)}
                       className="mt-1"
                     />
                     <div className="min-w-0 flex-1">
