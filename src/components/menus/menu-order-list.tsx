@@ -116,10 +116,13 @@ export function MenuOrderList({
       const { data } = await supabase.rpc("get_event_menu_order_needs", {
         p_menu_id: menuId,
       });
-      const list = ((data ?? []) as Need[]).map((n) => ({
-        ...n,
-        quantity_in_base: Number(n.quantity_in_base),
-      }));
+      // Niet-gekozen opties komen met hoeveelheid 0 terug: niet bestellen.
+      const list = ((data ?? []) as Need[])
+        .map((n) => ({
+          ...n,
+          quantity_in_base: Number(n.quantity_in_base),
+        }))
+        .filter((n) => n.quantity_in_base > 0);
       if (cancelled) return;
       if (list.length === 0) {
         setOutOfStock(readOutOfStock(menuId));

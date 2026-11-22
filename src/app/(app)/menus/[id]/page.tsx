@@ -23,6 +23,8 @@ import { MenuOrderList } from "@/components/menus/menu-order-list";
 import { MenuWorkList } from "@/components/menus/menu-work-list";
 import { PartyPlanSummary } from "@/components/menus/party-plan-summary";
 import { MenuNacalculatie } from "@/components/menus/menu-nacalculatie";
+import { MenuCharges } from "@/components/menus/menu-charges";
+import { foodcostPct as calcFoodcostPct, menuSales } from "@/lib/menus/sales";
 import { MenuGramDistribution } from "@/components/menus/menu-gram-distribution";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
@@ -39,6 +41,7 @@ import type {
   EventMenuPartyPlanRow,
   EventMenuSection,
   Unit,
+  EventMenuCharge,
 } from "@/lib/types/database";
 import { containerLabel } from "@/lib/party/party-calc";
 import { DEFAULT_TARGET_GRAMS } from "@/lib/event-menus/distribute-grams";
@@ -111,6 +114,9 @@ export default function MenuDetailPage({
   const [tab, setTab] = useState<TabKey>("algemeen");
   const [menu, setMenu] = useState<EventMenu | null>(null);
   const [sections, setSections] = useState<EventMenuSection[]>([]);
+  const [charges, setCharges] = useState<EventMenuCharge[]>([]);
+  const [copyForm, setCopyForm] = useState<{ name: string; persons: string; date: string } | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
   const [lines, setLines] = useState<BreakdownLine[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [units, setUnits] = useState<Unit[]>([]);
@@ -134,10 +140,12 @@ export default function MenuDetailPage({
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: m }, { data: secs }] = await Promise.all([
+    const [{ data: m }, { data: secs }, { data: chs }] = await Promise.all([
       supabase.from("event_menus").select("*").eq("id", id).single(),
       supabase.from("event_menu_sections").select("*").eq("menu_id", id).order("sort_order"),
+      supabase.from("event_menu_charges").select("*").eq("menu_id", id).order("sort_order"),
     ]);
+    setCharges((chs as EventMenuCharge[]) ?? []);
     if (!m) {
       setLoading(false);
       return;
@@ -374,15 +382,52 @@ export default function MenuDetailPage({
 
   const costPerPerson =
     totalCost !== null && menu.person_count > 0 ? totalCost / menu.person_count : null;
-  const salesExclVat = menu.sales_price_per_person
-    ? menu.sales_price_per_person / (1 + menu.vat_rate / 100)
-    : null;
+  // Verkoop: basis × max(gasten, minimum) + gekozen opties; toeslagen apart.
+  const sales = menuSales({
+    personCount: menu.person_count,
+    minPersons: menu.min_persons ?? null,
+    pricePerPerson: menu.sales_price_per_person,
+    vatRate: menu.vat_rate,
+    sections: sections.map((sec) => ({
+      name: sec.name,
+      option_price_pp: sec.option_price_pp ?? null,
+      is_selected: sec.is_selected ?? true,
+    })),
+    charges,
+  });
+  // Eten-omzet excl. btw per gast (basis incl. minimum + opties).
+  const salesExclVat = sales.hasSales ? sales.foodExclPerGuest : null;
   // Kostprijs onvolledig: alleen bekende kosten, geen foodcost of marge.
   const costIncomplete = costStatus?.isComplete === false;
-  const foodcostPct =
-    !costIncomplete && costPerPerson !== null && salesExclVat && salesExclVat > 0
-      ? (costPerPerson / salesExclVat) * 100
-      : null;
+  const foodcostPct = !costIncomplete ? calcFoodcostPct(totalCost, sales.foodExcl) : null;
+  const sectionByName = (name: string) =>
+    sections.find((sec) => sec.name.trim().toLowerCase() === name.trim().toLowerCase()) ?? null;
+
+  async function saveSection(sectionId: string, patch: Partial<EventMenuSection>) {
+    setSections((prev) => prev.map((x) => (x.id === sectionId ? { ...x, ...patch } : x)));
+    const { error } = await createClient().from("event_menu_sections").update(patch).eq("id", sectionId);
+    if (error) window.alert("Opslaan mislukt: " + error.message);
+    // Gekozen/niet gekozen verandert kostprijs, werklijst en bestellijst.
+    if (patch.is_selected !== undefined) void load();
+  }
+
+  async function createFromTemplate() {
+    if (!copyForm || !menu) return;
+    const persons = Number(copyForm.persons);
+    if (!(persons > 0)) return window.alert("Vul het aantal gasten in.");
+    setCopyBusy(true);
+    const { data, error } = await createClient().rpc("event_menu_copy", {
+      p_source_id: menu.id,
+      p_name: copyForm.name,
+      p_person_count: persons,
+      p_service_date: copyForm.date || null,
+      p_company_id: menu.company_id,
+      p_as_template: false,
+    });
+    setCopyBusy(false);
+    if (error || !data) return window.alert("Aanmaken mislukt: " + (error?.message ?? ""));
+    router.push(`/menus/${data as string}`);
+  }
 
   return (
     <>
@@ -627,6 +672,64 @@ export default function MenuDetailPage({
                   Bewaren als sjabloon — voor een evenement vul je dan alleen datum en
                   aantal personen in.
                 </label>
+                <div className="rounded-md border border-teal/30 bg-teal/5 p-3 sm:col-span-2">
+                  {copyForm === null ? (
+                    <Button
+                      variant={menu.is_template ? "primary" : "secondary"}
+                      size="sm"
+                      onClick={() =>
+                        setCopyForm({
+                          name: menu.is_template ? `${menu.name} – ` : `${menu.name} (kopie)`,
+                          persons: String(menu.person_count || ""),
+                          date: "",
+                        })
+                      }
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {menu.is_template ? "Nieuwe boeking van dit sjabloon" : "Kopie maken"}
+                    </Button>
+                  ) : (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="flex min-w-56 flex-1 flex-col text-xs text-muted">
+                        Naam boeking
+                        <input
+                          autoFocus
+                          value={copyForm.name}
+                          onChange={(e) => setCopyForm({ ...copyForm, name: e.target.value })}
+                          className="input mt-1"
+                        />
+                      </label>
+                      <label className="flex w-24 flex-col text-xs text-muted">
+                        Gasten
+                        <input
+                          type="number"
+                          min={1}
+                          value={copyForm.persons}
+                          onChange={(e) => setCopyForm({ ...copyForm, persons: e.target.value })}
+                          className="input mt-1 text-right"
+                        />
+                      </label>
+                      <label className="flex flex-col text-xs text-muted">
+                        Datum
+                        <input
+                          type="date"
+                          value={copyForm.date}
+                          onChange={(e) => setCopyForm({ ...copyForm, date: e.target.value })}
+                          className="input mt-1"
+                        />
+                      </label>
+                      <Button size="sm" disabled={copyBusy} onClick={() => void createFromTemplate()}>
+                        {copyBusy ? "Aanmaken…" : "Aanmaken"}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setCopyForm(null)}>
+                        Annuleren
+                      </Button>
+                    </div>
+                  )}
+                  <p className="mt-1 text-xs text-muted">
+                    Kopieert onderdelen, regels, opties en toeslagen; het origineel blijft ongewijzigd.
+                  </p>
+                </div>
                 <div className="border-t border-border pt-3 sm:col-span-2">
                   <Button variant="danger" size="sm" onClick={() => void deleteMenu()}>
                     <Trash2 className="h-3.5 w-3.5" />
@@ -738,6 +841,60 @@ export default function MenuDetailPage({
                                     </button>
                                   </span>
                                 )}
+                                {(() => {
+                                  const sec = sectionByName(sectionName);
+                                  if (!sec) return null;
+                                  const isOption = sec.option_price_pp !== null && sec.option_price_pp !== undefined;
+                                  if (!isOption) {
+                                    return canViewFinancial ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void saveSection(sec.id, { option_price_pp: 0, is_selected: true })}
+                                        className="ml-2 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-teal/10 hover:text-teal"
+                                        title="Maak dit onderdeel een optie met een eigen verkoopprijs per persoon"
+                                      >
+                                        als optie
+                                      </button>
+                                    ) : null;
+                                  }
+                                  return (
+                                    <span className="ml-2 flex items-center gap-2 rounded-full bg-copper/10 px-2 py-0.5 text-xs text-copper">
+                                      <label className="flex items-center gap-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={sec.is_selected ?? true}
+                                          onChange={(e) => void saveSection(sec.id, { is_selected: e.target.checked })}
+                                        />
+                                        optie {sec.is_selected === false ? "niet gekozen" : "gekozen"}
+                                      </label>
+                                      {canViewFinancial && (
+                                        <>
+                                          €
+                                          <input
+                                            key={`opt-${sec.id}-${sec.option_price_pp}`}
+                                            type="number"
+                                            step="0.01"
+                                            defaultValue={sec.option_price_pp ?? 0}
+                                            onBlur={(e) => {
+                                              const v = Number(e.target.value) || 0;
+                                              if (v !== sec.option_price_pp) void saveSection(sec.id, { option_price_pp: v });
+                                            }}
+                                            className="w-16 rounded border border-copper/30 bg-surface px-1 text-right tabular"
+                                          />
+                                          p.p.
+                                          <button
+                                            type="button"
+                                            onClick={() => void saveSection(sec.id, { option_price_pp: null, is_selected: true })}
+                                            className="underline decoration-dotted"
+                                            title="Geen optie meer: hoort bij de basisprijs"
+                                          >
+                                            geen optie
+                                          </button>
+                                        </>
+                                      )}
+                                    </span>
+                                  );
+                                })()}
                                 </div>
                               </td>
                               {canViewFinancial && (
@@ -1020,7 +1177,7 @@ export default function MenuDetailPage({
 
             {/* Partijgerechten: netto nodig, wat de keuken maakt, wat overblijft en de kosten. */}
             <PartyPlanSummary
-              rows={Object.values(partyPlan)}
+              rows={Object.values(partyPlan).filter((p) => Number(p.needed) > 0)}
               personCount={menu.person_count}
               canViewFinancial={canViewFinancial}
               salesPricePerPerson={menu.sales_price_per_person}
@@ -1111,6 +1268,42 @@ export default function MenuDetailPage({
                     className="w-28 rounded border border-border bg-surface px-2 py-1 text-right text-sm tabular"
                   />
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted">
+                    Minimaal aantal personen{" "}
+                    <span className="text-xs">(&quot;prijs t/m 25 personen&quot; — leeg = geen minimum)</span>
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={menu.min_persons ?? ""}
+                    onChange={(e) =>
+                      setMenu({ ...menu, min_persons: e.target.value ? Number(e.target.value) : null })
+                    }
+                    onBlur={(e) => saveMenu({ min_persons: e.target.value ? Number(e.target.value) : null })}
+                    className="w-28 rounded border border-border bg-surface px-2 py-1 text-right text-sm tabular"
+                  />
+                </div>
+                {sales.hasSales && (
+                  <div className="space-y-1 rounded-md bg-background p-3">
+                    <Row
+                      label={
+                        sales.minimumApplies
+                          ? `Basis: ${sales.billedPersons} personen (minimum) × € ${(menu.sales_price_per_person ?? 0).toFixed(2)}`
+                          : `Basis: ${sales.billedPersons} × € ${(menu.sales_price_per_person ?? 0).toFixed(2)}`
+                      }
+                      value={`€ ${sales.baseIncl.toFixed(2)}`}
+                    />
+                    {sales.options.map((o) => (
+                      <Row
+                        key={o.name}
+                        label={`Optie ${o.name}${o.selected ? "" : " (niet gekozen)"}`}
+                        value={o.selected ? `€ ${o.incl.toFixed(2)}` : "—"}
+                      />
+                    ))}
+                    <Row label="Omzet eten incl. btw" value={`€ ${sales.foodIncl.toFixed(2)}`} strong />
+                  </div>
+                )}
                 {foodcostPct !== null && (
                   <>
                     <Row
@@ -1123,8 +1316,8 @@ export default function MenuDetailPage({
                       value={`€ ${((salesExclVat ?? 0) - (costPerPerson ?? 0)).toFixed(2)}`}
                     />
                     <Row
-                      label="Omzet totaal (excl. btw)"
-                      value={`€ ${((salesExclVat ?? 0) * menu.person_count).toFixed(2)}`}
+                      label="Omzet eten (excl. btw)"
+                      value={`€ ${sales.foodExcl.toFixed(2)}`}
                     />
                     <Row
                       label="Brutowinst totaal"
@@ -1139,6 +1332,23 @@ export default function MenuDetailPage({
                     inkoopprijs en omrekening hebben.
                   </p>
                 )}
+                <div className="space-y-2 border-t border-border pt-3">
+                  <p className="font-medium">Toeslagen (buiten de foodcost)</p>
+                  <MenuCharges
+                    menuId={id}
+                    charges={charges}
+                    personCount={menu.person_count}
+                    onChanged={setCharges}
+                  />
+                  {(sales.chargesIncl > 0 || sales.hasSales) && (
+                    <div className="space-y-1 rounded-md bg-background p-3">
+                      <Row label="Omzet eten incl. btw" value={`€ ${sales.foodIncl.toFixed(2)}`} />
+                      <Row label="Toeslagen incl. btw" value={`€ ${sales.chargesIncl.toFixed(2)}`} />
+                      <Row label="Totaal voor de klant incl. btw" value={`€ ${sales.totalIncl.toFixed(2)}`} strong />
+                      <Row label="Totaal excl. btw" value={`€ ${sales.totalExcl.toFixed(2)}`} />
+                    </div>
+                  )}
+                </div>
                 {costPerPerson !== null && !costIncomplete && (
                   <div className="space-y-1 rounded-md bg-teal/5 p-3">
                     {menu.fixed_costs > 0 && (

@@ -230,7 +230,8 @@ export function MenuWorkList({
         containers_exact: Number(p.containers_exact),
         per_container: Number(p.per_container),
         recipe_factor: Number(p.recipe_factor),
-      }));
+      })).filter((p) => p.needed > 0); // niet-gekozen opties weglaten
+
       if (!cancelled) setParty(plans);
 
       // Laatste praktijkaanpassing per partijregel, als geheugensteun.
@@ -254,7 +255,8 @@ export function MenuWorkList({
       const { data: work } = await supabase.rpc("get_event_menu_production", {
         p_menu_id: menuId,
       });
-      const rows = work ?? [];
+      // Niet-gekozen opties komen met hoeveelheid 0 terug: niet tonen.
+      const rows = (work ?? []).filter((w) => Number(w.quantity) > 0);
       if (rows.length === 0) {
         if (!cancelled) {
           setItems([]);

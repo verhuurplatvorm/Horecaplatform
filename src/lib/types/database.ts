@@ -305,6 +305,8 @@ export type EventMenu = {
   sales_price_per_person: number | null;
   vat_rate: number;
   is_template: boolean;
+  /** Verkoop rekent met minimaal dit aantal personen. */
+  min_persons?: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -319,6 +321,23 @@ export type EventMenuSection = {
   menu_id: string;
   name: string;
   sort_order: number;
+  /** Gevuld = optie met eigen verkoopprijs p.p. (incl. btw). */
+  option_price_pp?: number | null;
+  /** Optie gekozen (niet gekozen telt nergens mee). */
+  is_selected?: boolean;
+}
+
+export type EventMenuCharge = {
+  id: string;
+  menu_id: string;
+  name: string;
+  kind: "per_persoon" | "vast" | "staffel";
+  amount: number;
+  tiers: { tot: number | null; bedrag: number }[];
+  vat_rate: number;
+  is_selected: boolean;
+  sort_order: number;
+  created_at: string;
 }
 
 export type EventMenuLine = {
@@ -986,6 +1005,12 @@ export type Database = {
         Update: Partial<EventMenu>;
         Relationships: [];
       };
+      event_menu_charges: {
+        Row: EventMenuCharge;
+        Insert: Partial<EventMenuCharge> & { menu_id: string; name: string };
+        Update: Partial<EventMenuCharge>;
+        Relationships: [];
+      };
       event_menu_sections: {
         Row: EventMenuSection;
         Insert: Partial<EventMenuSection>;
@@ -1353,6 +1378,17 @@ export type Database = {
       haccp_today: {
         Args: { p_company_id: string };
         Returns: HaccpTodayRow[];
+      };
+      event_menu_copy: {
+        Args: {
+          p_source_id: string;
+          p_name: string;
+          p_person_count: number;
+          p_service_date?: string | null;
+          p_company_id?: string | null;
+          p_as_template?: boolean;
+        };
+        Returns: string;
       };
       haccp_board: {
         Args: { p_company_id: string };

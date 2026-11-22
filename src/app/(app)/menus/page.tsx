@@ -17,6 +17,8 @@ import type { EventMenu, EventMenuFolder } from "@/lib/types/database";
 import { fetchEventMenuCostStatus } from "@/lib/recipes/costs";
 import type { CostStatus } from "@/lib/costing/status";
 import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
+import { foodcostPct as calcFoodcostPct, menuSales } from "@/lib/menus/sales";
+import type { EventMenuCharge } from "@/lib/types/database";
 
 /** "Actueel" = menu's zonder map (standaard in beeld). */
 const ACTUEEL = "__actueel__";
@@ -26,6 +28,8 @@ interface MenuRow extends EventMenu {
   companyName: string | null;
   totalCost: number | null;
   costStatus: CostStatus | null;
+  /** Eten-omzet excl. btw (basis × max(gasten, minimum) + gekozen opties). */
+  foodExcl: number;
 }
 
 /**
@@ -53,11 +57,14 @@ export default function MenusPage() {
     let cancelled = false;
     async function run() {
       const supabase = createClient();
-      const [{ data: menus }, { data: companies }, { data: folderRows }] = await Promise.all([
-        supabase.from("event_menus").select("*").order("service_date", { ascending: false }),
-        supabase.from("companies").select("id, name"),
-        supabase.from("event_menu_folders").select("*").order("sort_order").order("name"),
-      ]);
+      const [{ data: menus }, { data: companies }, { data: folderRows }, { data: secRows }, { data: chRows }] =
+        await Promise.all([
+          supabase.from("event_menus").select("*").order("service_date", { ascending: false }),
+          supabase.from("companies").select("id, name"),
+          supabase.from("event_menu_folders").select("*").order("sort_order").order("name"),
+          supabase.from("event_menu_sections").select("menu_id, name, option_price_pp, is_selected").limit(10000),
+          supabase.from("event_menu_charges").select("*").limit(10000),
+        ]);
       if (!cancelled) setFolders((folderRows as EventMenuFolder[]) ?? []);
       if (cancelled || !menus) {
         setLoading(false);
@@ -80,11 +87,22 @@ export default function MenusPage() {
             totalCost = (data as number | null) ?? null;
             costStatus = status;
           }
+          const sales = menuSales({
+            personCount: m.person_count,
+            minPersons: m.min_persons ?? null,
+            pricePerPerson: m.sales_price_per_person,
+            vatRate: m.vat_rate,
+            sections: (secRows ?? [])
+              .filter((x) => x.menu_id === m.id)
+              .map((x) => ({ name: x.name, option_price_pp: x.option_price_pp ?? null, is_selected: x.is_selected ?? true })),
+            charges: ((chRows as EventMenuCharge[]) ?? []).filter((c) => c.menu_id === m.id),
+          });
           return {
             ...m,
             companyName: m.company_id ? companyName.get(m.company_id) ?? null : null,
             totalCost,
             costStatus,
+            foodExcl: sales.foodExcl,
           };
         })
       );
@@ -104,12 +122,10 @@ export default function MenusPage() {
 
   const incomplete = (r: MenuRow) => r.costStatus?.isComplete === false;
 
-  const foodcost = (r: MenuRow) => {
-    const cpp = costPerPerson(r);
-    if (incomplete(r) || cpp === null || !r.sales_price_per_person) return null;
-    const exclVat = r.sales_price_per_person / (1 + r.vat_rate / 100);
-    return exclVat > 0 ? (cpp / exclVat) * 100 : null;
-  };
+  // Zelfde rekenregel als op het menu zelf (minimum personen + gekozen opties).
+  const foodcost = (r: MenuRow) => (incomplete(r) ? null : calcFoodcostPct(r.totalCost, r.foodExcl));
+  const margin = (r: MenuRow) =>
+    incomplete(r) || r.totalCost === null || !(r.foodExcl > 0) ? null : r.foodExcl - r.totalCost;
 
   const folderName = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
   const q = query.trim().toLowerCase();
@@ -416,22 +432,10 @@ export default function MenusPage() {
                     label: "Brutomarge",
                     width: 110,
                     align: "right" as const,
-                    value: (r: MenuRow) => {
-                      const cpp = costPerPerson(r);
-                      if (incomplete(r) || cpp === null || !r.sales_price_per_person) return null;
-                      return (
-                        (r.sales_price_per_person / (1 + r.vat_rate / 100) - cpp) *
-                        r.person_count
-                      );
-                    },
+                    value: (r: MenuRow) => margin(r),
                     render: (r: MenuRow) => {
-                      const cpp = costPerPerson(r);
-                      if (incomplete(r)) return "—";
-                      if (cpp === null || !r.sales_price_per_person) return "—";
-                      const m =
-                        (r.sales_price_per_person / (1 + r.vat_rate / 100) - cpp) *
-                        r.person_count;
-                      return `€ ${m.toFixed(2)}`;
+                      const m = margin(r);
+                      return m === null ? "—" : `€ ${m.toFixed(2)}`;
                     },
                   },
                 ]
