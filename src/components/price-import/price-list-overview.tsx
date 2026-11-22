@@ -31,6 +31,10 @@ interface Change {
   diff: number | null;
   diff_pct: number | null;
   change_kind: Kind;
+  /** Regel is doorgevoerd (migratie 0144). */
+  applied: boolean;
+  /** Alarm van deze prijs is afgehandeld (geaccepteerd). */
+  acknowledged: boolean;
 }
 
 const KINDS: { key: Kind; label: string }[] = [
@@ -67,6 +71,7 @@ export function PriceListOverview({
   const [accepted, setAccepted] = useState<string | null>(acceptedAt);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [localReload, setLocalReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +98,7 @@ export function PriceListOverview({
     return () => {
       cancelled = true;
     };
-  }, [batchId, supplierId, reloadToken]);
+  }, [batchId, supplierId, reloadToken, localReload]);
 
   const counts = useMemo(() => {
     const c: Record<Kind, number> = { hoger: 0, lager: 0, gelijk: 0, nieuw: 0 };
@@ -137,10 +142,14 @@ export function PriceListOverview({
       return;
     }
     setAccepted(new Date().toISOString());
+    setLocalReload((n) => n + 1);
   }
 
   if (changes === null) return null;
-  const applied = changes.length > 0;
+  // Accepteren kan pas als er prijzen zijn doorgevoerd. Staan er doorgevoerde
+  // prijzen nog open (bv. eerder te vroeg geaccepteerd), dan komt de knop terug.
+  const applied = changes.some((c) => c.applied);
+  const openCount = changes.filter((c) => c.applied && !c.acknowledged && c.change_kind !== "gelijk").length;
   const changed = counts.hoger + counts.lager;
 
   return (
@@ -203,7 +212,8 @@ export function PriceListOverview({
 
         {!applied ? (
           <p className="text-sm text-muted">
-            Voer eerst de prijzen door; daarna zie je hier wat er hoger, lager, gelijk of nieuw is.
+            Voer eerst de prijzen door; daarna zie je hier wat er hoger, lager of nieuw is en kun je
+            de lijst accepteren als nieuwe standaard.
           </p>
         ) : (
           <>
@@ -274,7 +284,7 @@ export function PriceListOverview({
               </table>
             </div>
 
-            {accepted ? (
+            {accepted && openCount === 0 ? (
               <p className="flex items-start gap-2 rounded-md bg-success/10 p-3 text-sm text-success">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>

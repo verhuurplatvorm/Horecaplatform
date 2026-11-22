@@ -1487,6 +1487,8 @@ export type Database = {
           diff_pct: number | null;
           change_kind: "hoger" | "lager" | "gelijk" | "nieuw";
           valid_from: string | null;
+          applied: boolean;
+          acknowledged: boolean;
         }[];
       };
       agreed_price_deviations: {
