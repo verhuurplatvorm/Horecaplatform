@@ -437,7 +437,7 @@ export function RecipeForm({
           .single(),
         supabase
           .from("price_change_history")
-          .select("old_price_per_base_unit, new_price_per_base_unit, is_acknowledged")
+          .select("old_price_per_base_unit, new_price_per_base_unit")
           .eq("product_id", productId)
           .eq("company_id", referenceCompanyId)
           .not("old_price_per_base_unit", "is", null)
@@ -460,8 +460,7 @@ export function RecipeForm({
     }[];
     const activeSupplierPrice =
       supplierRows.find((s) => s.supplier_id === product?.preferred_supplier_id) ?? supplierRows[0] ?? null;
-    // Geaccepteerde wijziging (nieuwe standaard): geen pijltje meer.
-    const latestChange = history?.[0]?.is_acknowledged ? undefined : history?.[0];
+    const latestChange = history?.[0];
     const priceDirection: "up" | "down" | null =
       latestChange?.new_price_per_base_unit != null && latestChange?.old_price_per_base_unit != null
         ? latestChange.new_price_per_base_unit > latestChange.old_price_per_base_unit

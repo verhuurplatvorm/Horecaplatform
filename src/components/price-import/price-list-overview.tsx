@@ -9,9 +9,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * Overzicht van een ingevoerde prijslijst: wat is hoger, lager, gelijk of
- * nieuw (price_import_batch_changes, migratie 0142). Met "Accepteren als
- * nieuwe standaard" blijven de wijzigingen in de prijshistorie staan, maar
- * geven ze nergens meer een waarschuwing (accept_price_import_batch).
+ * nieuw (price_import_batch_changes, migratie 0142). Elke wijziging geeft een
+ * prijsalarm. "Accepteren als nieuwe standaard" handelt die alarmen af
+ * (accept_price_import_batch); de ontwikkeling blijft zichtbaar in de
+ * historie en bij ingrediënten en recepten. Vanaf dan is de nieuwe prijs de
+ * norm: alleen een afwijking dáárvan geeft nog een alarm.
  *
  * Bij een leverancier met vaste prijzen hoort er een geldigheidsperiode bij:
  * facturen in die periode moeten precies deze prijzen hebben; elke afwijking
@@ -277,8 +279,9 @@ export function PriceListOverview({
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
                   Geaccepteerd als nieuwe standaard op{" "}
-                  {new Date(accepted).toLocaleDateString("nl-NL")}. De wijzigingen staan in de
-                  prijshistorie, maar geven geen waarschuwingen meer.
+                  {new Date(accepted).toLocaleDateString("nl-NL")}. De prijsalarmen voor deze
+                  wijzigingen zijn afgehandeld; de ontwikkeling blijft zichtbaar in de historie.
+                  Vanaf nu geeft alleen een afwijking van deze prijzen nog een alarm.
                 </span>
               </p>
             ) : (
@@ -287,8 +290,9 @@ export function PriceListOverview({
                   {changed > 0
                     ? `${counts.hoger} prijzen hoger en ${counts.lager} lager. `
                     : "Geen prijswijzigingen. "}
-                  Klopt dit? Accepteer de lijst als nieuwe standaard: de wijzigingen gaan de historie
-                  in en geven daarna geen waarschuwingen meer.
+                  Elke wijziging staat als prijsalarm klaar. Klopt het? Accepteer de lijst als nieuwe
+                  standaard: de alarmen zijn dan afgehandeld en deze prijzen zijn vanaf nu de norm.
+                  Halfproducten en gerechten rekenen al met de nieuwe prijzen.
                 </p>
                 <Button onClick={accept} disabled={accepting}>
                   {accepting ? "Bezig…" : "Accepteren als nieuwe standaard"}

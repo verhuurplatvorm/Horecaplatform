@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { PriceChangeHistory } from "@/lib/types/database";
+import { AgreedPriceDeviations } from "@/components/price-import/agreed-price-deviations";
 
 interface EnrichedChange extends PriceChangeHistory {
   productName: string;
@@ -145,6 +146,8 @@ export default function PrijswijzigingenPage() {
           </select>
         </div>
 
+        <AgreedPriceDeviations />
+
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -170,9 +173,9 @@ export default function PrijswijzigingenPage() {
                       {c.is_acknowledged && (
                         <span
                           className="ml-2 rounded-full bg-success/10 px-2 py-0.5 text-xs font-normal text-success"
-                          title="Geaccepteerd als nieuwe standaard — geen waarschuwing meer"
+                          title="Afgehandeld: geaccepteerd als nieuwe standaard of alarm weggehaald"
                         >
-                          nieuwe standaard
+                          afgehandeld
                         </span>
                       )}
                     </td>

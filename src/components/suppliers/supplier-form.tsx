@@ -309,8 +309,8 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
                 <span>
                   <span className="font-medium">Dagprijzen</span>
                   <span className="block text-xs text-muted">
-                    Prijzen wisselen; een andere prijs op de factuur is normaal en geeft geen
-                    waarschuwing.
+                    Prijzen wisselen per levering. Een prijswijziging geeft een prijsalarm vanaf de
+                    alarmgrens (%), zodat je de ontwikkeling ziet.
                   </span>
                 </span>
               </label>
@@ -324,8 +324,8 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
                 <span>
                   <span className="font-medium">Vaste prijzen</span>
                   <span className="block text-xs text-muted">
-                    De prijslijst geldt voor een periode. Elke afwijking op een factuur wordt
-                    gemeld en niet automatisch doorgevoerd.
+                    Afgesproken prijzen voor een periode. Elke afwijking (ook een kleine) geeft een
+                    prijsalarm en wordt niet automatisch doorgevoerd.
                   </span>
                 </span>
               </label>

@@ -1489,6 +1489,25 @@ export type Database = {
           valid_from: string | null;
         }[];
       };
+      agreed_price_deviations: {
+        Args: { p_days?: number; p_company_ids?: string[] | null };
+        Returns: {
+          row_id: string;
+          batch_id: string;
+          invoice_number: string | null;
+          invoice_date: string;
+          supplier_name: string;
+          product_id: string | null;
+          product_name: string | null;
+          description: string | null;
+          invoice_price: number;
+          ref_price: number;
+          ref_source: "contract" | "prijslijst";
+          diff_pct: number | null;
+          impact: number | null;
+          reasons: string[];
+        }[];
+      };
       accept_price_import_batch: {
         Args: { p_batch_id: string };
         Returns: number;
