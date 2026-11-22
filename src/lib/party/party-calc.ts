@@ -157,3 +157,77 @@ export function personsPerContainer(
   if (!(capacity > 0) || !(portion > 0)) return null;
   return capacity / portion;
 }
+
+// ---------------------------------------------------------------------------
+// Weergave van een partijregel uit de database (get_event_menu_party_plan).
+// Rekent niets opnieuw uit: alle getallen komen uit dezelfde schaalberekening
+// (event_line_plan) die ook werklijst, bestellijst en kostprijs gebruiken.
+
+/** 4,2 kg · 600 g (kg/l onder 1 als g/ml) · 12 stuks. */
+export function formatPartyAmount(value: number, unit: string | null | undefined): string {
+  const u = unit ?? "";
+  const nl = (n: number, digits = 1) => n.toLocaleString("nl-NL", { maximumFractionDigits: digits });
+  if (u === "kg" && Math.abs(value) < 1 && value !== 0) return `${nl(value * 1000, 0)} g`;
+  if (u === "l" && Math.abs(value) < 1 && value !== 0) return `${nl(value * 1000, 0)} ml`;
+  if (u === "stuk") return `${nl(value, 1)} ${value === 1 ? "stuk" : "stuks"}`;
+  return `${nl(value, 2)} ${u}`.trim();
+}
+
+export interface PartyLineInput {
+  container: string;
+  capacity: number;
+  capacity_unit: string | null;
+  needed: number;
+  containers: number;
+  full_containers: boolean;
+  produced: number;
+  last_container: number;
+  difference: number;
+  total_cost: number | null;
+  overproduction_cost: number | null;
+}
+
+export interface PartyLineFigures {
+  /** Netto nodig: gasten × deelname% × portie. */
+  needed: string;
+  /** Wat de keuken maakt, en in welke vormen. */
+  produced: string;
+  distribution: string;
+  /** Verwacht over (0 bij "laatste vorm aanpassen"). */
+  leftover: string | null;
+  /** Kosten van wat de keuken maakt — alleen met financiële rechten. */
+  productionCost: number | null;
+  leftoverCost: number | null;
+  mode: "volle vormen" | "laatste vorm aangepast";
+}
+
+export function partyLineFigures(p: PartyLineInput, canViewFinancial: boolean): PartyLineFigures {
+  const unit = p.capacity_unit;
+  const dist: string[] = [];
+  const full = p.full_containers ? p.containers : Math.max(0, p.containers - 1);
+  const one = containerLabel(p.container, 1);
+  const many = (n: number) => containerLabel(p.container, n);
+  if (full > 0) dist.push(`${full} ${many(full)} van ${formatPartyAmount(Number(p.capacity), unit)}`);
+  if (!p.full_containers && p.containers > 0) {
+    const last = Number(p.last_container);
+    if (Math.abs(last - Number(p.capacity)) < 1e-9) {
+      // Laatste vorm is toevallig vol: geen aparte regel.
+      dist[0] = `${p.containers} ${many(p.containers)} van ${formatPartyAmount(Number(p.capacity), unit)}`;
+    } else {
+      dist.push(`1 ${one} van ${formatPartyAmount(last, unit)}`);
+    }
+  }
+  const diff = Number(p.difference);
+  return {
+    needed: formatPartyAmount(Number(p.needed), unit),
+    produced: formatPartyAmount(Number(p.produced), unit),
+    distribution: dist.join(" + ") || "—",
+    leftover: diff > 0.0005 ? formatPartyAmount(diff, unit) : null,
+    productionCost: canViewFinancial && p.total_cost !== null ? Number(p.total_cost) : null,
+    leftoverCost:
+      canViewFinancial && p.overproduction_cost !== null && Number(p.overproduction_cost) > 0
+        ? Number(p.overproduction_cost)
+        : null,
+    mode: p.full_containers ? "volle vormen" : "laatste vorm aangepast",
+  };
+}

@@ -21,6 +21,7 @@ import { Modal } from "@/components/ui/modal";
 import { MenuLineForm } from "@/components/menus/menu-line-form";
 import { MenuOrderList } from "@/components/menus/menu-order-list";
 import { MenuWorkList } from "@/components/menus/menu-work-list";
+import { PartyPlanSummary } from "@/components/menus/party-plan-summary";
 import { MenuNacalculatie } from "@/components/menus/menu-nacalculatie";
 import { MenuGramDistribution } from "@/components/menus/menu-gram-distribution";
 import { useCompanyScope } from "@/components/company-context";
@@ -1016,6 +1017,15 @@ export default function MenuDetailPage({
                 )}
               </CardContent>
             </Card>
+
+            {/* Partijgerechten: netto nodig, wat de keuken maakt, wat overblijft en de kosten. */}
+            <PartyPlanSummary
+              rows={Object.values(partyPlan)}
+              personCount={menu.person_count}
+              canViewFinancial={canViewFinancial}
+              salesPricePerPerson={menu.sales_price_per_person}
+              onToggleFull={(lineId, full) => updateLine(lineId, { full_containers: full })}
+            />
           </div>
         )}
 
@@ -1159,6 +1169,7 @@ export default function MenuDetailPage({
             personCount={menu.person_count}
             serviceDate={menu.service_date}
             companyId={referenceCompanyId}
+            canViewFinancial={canViewFinancial}
           />
         )}
 

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { containerLabel, formatDistribution } from "@/lib/party/party-calc";
+import { containerLabel, formatDistribution, partyLineFigures } from "@/lib/party/party-calc";
 import { RecipeBreakdown, type BreakdownColumn } from "@/components/menus/recipe-breakdown";
 import type { PartyCapacityAdjustment } from "@/lib/types/database";
 
@@ -90,11 +90,14 @@ export function MenuWorkList({
   personCount,
   serviceDate,
   companyId,
+  canViewFinancial = false,
 }: {
   menuId: string;
   personCount: number;
   serviceDate: string | null;
   companyId: string | null;
+  /** Productiekosten alleen tonen met financiële rechten (operator: nooit). */
+  canViewFinancial?: boolean;
 }) {
   const [items, setItems] = useState<WorkItem[]>([]);
   const [party, setParty] = useState<PartyPlanRow[]>([]);
@@ -375,18 +378,27 @@ export function MenuWorkList({
                         {p.recipe_name}
                         <span className="ml-1 text-xs font-normal text-muted">{p.section_name}</span>
                       </button>
-                      <p className="text-xs text-muted">
-                        {fmt(p.quantity_per_person)} {unit} p.p.
-                        {Number(p.participation_pct) !== 100 && <> · {fmt(p.participation_pct)}% deelname</>} ·
-                        netto {fmt(p.needed)} {unit} · verdeling{" "}
-                        {formatDistribution(partyDistribution(p), unit)}
-                        {p.difference > 0 && (
-                          <>
-                            {" "}
-                            · {fmt(p.difference)} {unit} extra (volle {containerLabel(p.container, 2)})
-                          </>
-                        )}
-                      </p>
+                      {(() => {
+                        // Zelfde getallen als het menu en de bestellijst (event_line_plan).
+                        const f = partyLineFigures(p, canViewFinancial);
+                        return (
+                          <p className="text-xs text-muted">
+                            {personCount} gasten
+                            {Number(p.participation_pct) !== 100 && <> × {fmt(p.participation_pct)}%</>} ×{" "}
+                            {fmt(p.quantity_per_person)} {unit} p.p. · netto <strong>{f.needed}</strong> · maken{" "}
+                            <strong className="text-foreground">{f.produced}</strong> ({f.distribution})
+                            {f.leftover && <> · verwacht over <strong>{f.leftover}</strong></>}
+                            {f.productionCost !== null && (
+                              <>
+                                {" "}
+                                · productie €{" "}
+                                {f.productionCost.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </>
+                            )}
+                            <span className="sr-only">{formatDistribution(partyDistribution(p), unit)}</span>
+                          </p>
+                        );
+                      })()}
                       {adjustments.has(p.line_id) && practice?.lineId !== p.line_id && (() => {
                         const a = adjustments.get(p.line_id)!;
                         return (
