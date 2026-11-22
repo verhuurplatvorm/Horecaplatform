@@ -2,14 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { TrendingDown, TrendingUp, TriangleAlert } from "lucide-react";
+import { TrendingDown, TrendingUp, TriangleAlert, X } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
+import { withReturnTo } from "@/lib/use-return-navigation";
 import { cn } from "@/lib/utils";
-import type { PriceChangeHistory } from "@/lib/types/database";
+import {
+  aggregateImpact,
+  describeCause,
+  normalizeImpactRow,
+  type ImpactRow,
+  type RecipeImpact,
+} from "@/lib/price-impact";
 
 const FOODCOST_NORM = 33;
 const PERIODS = [
@@ -19,25 +26,24 @@ const PERIODS = [
   { value: 365, label: "Laatste jaar" },
 ];
 
-interface IngredientChange extends PriceChangeHistory {
-  productName: string;
-  supplierName: string;
-  deltaPct: number;
+/** Netto prijswijziging van een ingrediënt voor het gekozen bedrijf (company_price_changes). */
+interface IngredientChange {
+  product_id: string;
+  product_name: string;
+  supplier_name: string | null;
+  changed_on: string;
+  old_price: number;
+  new_price: number;
+  delta_pct: number;
+  change_count: number;
 }
 
-interface RecipeChange {
-  id: string;
-  name: string;
-  kind: "gerecht" | "halfproduct";
-  oldCost: number;
-  newCost: number;
-  delta: number;
-  deltaPct: number;
-  salesPrice: number | null;
-  vatRate: number;
-  foodCostPct: number | null;
-}
-
+/**
+ * Prijsontwikkeling: welke ingrediënten zijn duurder/goedkoper geworden en
+ * welke halfproducten en gerechten raakt dat — ook via onderliggende
+ * halfproducten. Prijzen en kostprijzen gelden voor het gekozen bedrijf en
+ * komen uit de bestaande kostprijsberekening (migratie 0150).
+ */
 export default function PrijzenDashboardPage() {
   const { can, loading: permsLoading } = usePermissions();
   const canViewFinancial = can("leveranciers").canViewFinancial;
@@ -46,222 +52,184 @@ export default function PrijzenDashboardPage() {
   const referenceCompanyName = companies.find((c) => c.id === referenceCompanyId)?.name;
 
   const [periodDays, setPeriodDays] = useState(30);
-  const [ingredientChanges, setIngredientChanges] = useState<IngredientChange[]>([]);
-  const [recipeChanges, setRecipeChanges] = useState<RecipeChange[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<{ key: string; changes: IngredientChange[]; impact: ImpactRow[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   const asofDate = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - periodDays);
     return d.toISOString().slice(0, 10);
   }, [periodDays]);
+  const key = `${referenceCompanyId}|${asofDate}`;
 
   useEffect(() => {
     if (scopeLoading || !referenceCompanyId) return;
     let cancelled = false;
-
-    async function run() {
-      setLoading(true);
-      const supabase = createClient();
-
-      const { data: changes } = await supabase
-        .from("price_change_history")
-        .select("*")
-        .not("old_price_per_base_unit", "is", null)
-        .gte("valid_from", asofDate)
-        .order("valid_from", { ascending: false })
-        .limit(500);
-
+    const supabase = createClient();
+    Promise.all([
+      supabase.rpc("company_price_changes", { p_company_id: referenceCompanyId, p_from: asofDate }),
+      supabase.rpc("price_change_impact", { p_company_id: referenceCompanyId, p_from: asofDate }),
+    ]).then(([c, i]) => {
       if (cancelled) return;
-
-      let enrichedIngredients: IngredientChange[] = [];
-      if (changes && changes.length > 0) {
-        const productIds = [...new Set(changes.map((c) => c.product_id))];
-        const supplierIds = [...new Set(changes.map((c) => c.supplier_id))];
-        const [{ data: products }, { data: suppliers }] = await Promise.all([
-          supabase.from("products").select("id, name").in("id", productIds),
-          supabase.from("suppliers").select("id, name").in("id", supplierIds),
-        ]);
-        const productMap = new Map((products ?? []).map((p) => [p.id, p.name]));
-        const supplierMap = new Map((suppliers ?? []).map((s) => [s.id, s.name]));
-
-        enrichedIngredients = changes.map((c) => ({
-          ...c,
-          productName: productMap.get(c.product_id) ?? "onbekend",
-          supplierName: supplierMap.get(c.supplier_id) ?? "onbekend",
-          deltaPct:
-            c.old_price_per_base_unit && c.old_price_per_base_unit > 0
-              ? ((c.new_price_per_base_unit! - c.old_price_per_base_unit) /
-                  c.old_price_per_base_unit) *
-                100
-              : 0,
-        }));
+      if (c.error || i.error) {
+        setError((c.error ?? i.error)!.message);
+        return;
       }
-
-      const { data: recipes } = await supabase
-        .from("recipes")
-        .select("id, name, recipe_kind, sales_price, vat_rate")
-        .order("name");
-
-      let enrichedRecipes: RecipeChange[] = [];
-      if (recipes && recipes.length > 0) {
-        enrichedRecipes = await Promise.all(
-          recipes.map(async (r) => {
-            const [{ data: newCost }, { data: oldCost }] = await Promise.all([
-              supabase.rpc("calculate_recipe_cost", {
-                p_recipe_id: r.id,
-                p_company_id: referenceCompanyId,
-              }),
-              supabase.rpc("calculate_recipe_cost_asof", {
-                p_recipe_id: r.id,
-                p_company_id: referenceCompanyId,
-                p_asof_date: asofDate,
-              }),
-            ]);
-            const nc = newCost ?? 0;
-            const oc = oldCost ?? 0;
-            const delta = nc - oc;
-            const priceExclVat = r.sales_price
-              ? r.sales_price / (1 + (r.vat_rate ?? 9) / 100)
-              : null;
-            return {
-              id: r.id,
-              name: r.name,
-              kind: r.recipe_kind,
-              oldCost: oc,
-              newCost: nc,
-              delta,
-              deltaPct: oc > 0 ? (delta / oc) * 100 : 0,
-              salesPrice: r.sales_price,
-              vatRate: r.vat_rate ?? 9,
-              foodCostPct: priceExclVat && priceExclVat > 0 ? (nc / priceExclVat) * 100 : null,
-            };
-          })
-        );
-      }
-
-      if (!cancelled) {
-        setIngredientChanges(enrichedIngredients);
-        setRecipeChanges(enrichedRecipes.filter((r) => Math.abs(r.delta) > 0.0001));
-        setLoading(false);
-      }
-    }
-
-    run();
+      setError(null);
+      setData({
+        key,
+        changes: ((c.data ?? []) as IngredientChange[]).map((x) => ({
+          ...x,
+          old_price: Number(x.old_price),
+          new_price: Number(x.new_price),
+          delta_pct: Number(x.delta_pct),
+        })),
+        impact: ((i.data ?? []) as ImpactRow[]).map(normalizeImpactRow),
+      });
+    });
     return () => {
       cancelled = true;
     };
-  }, [referenceCompanyId, scopeLoading, asofDate]);
+  }, [referenceCompanyId, scopeLoading, asofDate, key]);
 
-  const stijgersIngredienten = [...ingredientChanges]
-    .filter((c) => c.deltaPct > 0)
-    .sort((a, b) => b.deltaPct - a.deltaPct);
-  const dalersIngredienten = [...ingredientChanges]
-    .filter((c) => c.deltaPct < 0)
-    .sort((a, b) => a.deltaPct - b.deltaPct);
+  const loading = data?.key !== key;
+  const changes = useMemo(() => (loading ? [] : data!.changes), [data, loading]);
+  const impactRows = useMemo(() => (loading ? [] : data!.impact), [data, loading]);
+  // Een gekozen ingrediënt dat in deze periode niet meer voorkomt telt niet.
+  const activeProduct = selectedProduct && changes.some((c) => c.product_id === selectedProduct) ? selectedProduct : null;
+  const impact = useMemo(() => aggregateImpact(impactRows, activeProduct), [impactRows, activeProduct]);
+  const gerechten = impact.filter((r) => r.kind === "gerecht");
+  const halfproducten = impact.filter((r) => r.kind === "halfproduct");
+  const opKaart = gerechten.filter((r) => r.activeCards.length > 0);
+  const bovenNorm = gerechten.filter((r) => r.newFoodcostPct !== null && r.newFoodcostPct > FOODCOST_NORM);
 
-  const halfproductChanges = recipeChanges.filter((r) => r.kind === "halfproduct");
-  const gerechtChanges = recipeChanges.filter((r) => r.kind === "gerecht");
-  const gerechtenBovenNorm = gerechtChanges.filter(
-    (r) => r.foodCostPct !== null && r.foodCostPct > FOODCOST_NORM
-  );
-
-  const gemiddeldeStijging =
-    stijgersIngredienten.length > 0
-      ? stijgersIngredienten.reduce((s, c) => s + c.deltaPct, 0) / stijgersIngredienten.length
-      : 0;
-  const gemiddeldeDaling =
-    dalersIngredienten.length > 0
-      ? dalersIngredienten.reduce((s, c) => s + c.deltaPct, 0) / dalersIngredienten.length
-      : 0;
+  const stijgers = changes.filter((c) => c.delta_pct > 0).sort((a, b) => b.delta_pct - a.delta_pct);
+  const dalers = changes.filter((c) => c.delta_pct < 0).sort((a, b) => a.delta_pct - b.delta_pct);
+  const affectedCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of impactRows) if (r.recipe_kind === "gerecht") m.set(r.product_id, (m.get(r.product_id) ?? 0) + 1);
+    return m;
+  }, [impactRows]);
+  const selectedName = changes.find((c) => c.product_id === activeProduct)?.product_name;
 
   return (
     <>
-      <Topbar title="Prijzendashboard" />
-      <main className="p-6 space-y-6">
+      <Topbar title="Prijsontwikkeling" />
+      <main className="space-y-6 p-6">
         {!permsLoading && !canViewFinancial && (
           <p className="rounded-md bg-copper/10 p-3 text-sm text-copper">
-            Je rol heeft geen toegang tot financiële gegevens. Dit scherm toont
-            kostprijzen, marges en foodcost en is daarom afgeschermd.
+            Je rol heeft geen toegang tot financiële gegevens. Dit scherm toont kostprijzen, marges en
+            foodcost en is daarom afgeschermd.
           </p>
         )}
-        {(permsLoading || canViewFinancial) && (
-        <>
-        {!referenceCompanyId ? (
-          <p className="text-sm text-muted">
-            Selecteer een bedrijf via de bedrijfsselector rechtsboven.
-          </p>
-        ) : (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted">
-                Voor {referenceCompanyName}, vergeleken met {periodDays} dagen geleden.
+        {(permsLoading || canViewFinancial) &&
+          (!referenceCompanyId ? (
+            <p className="text-sm text-muted">Selecteer een bedrijf via de bedrijfsselector rechtsboven.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted">
+                  Prijzen voor <strong className="text-foreground">{referenceCompanyName}</strong>, vergeleken
+                  met de prijs van vóór de eerste wijziging in de periode.
+                </p>
+                <select
+                  value={periodDays}
+                  onChange={(e) => setPeriodDays(Number(e.target.value))}
+                  className="h-9 rounded-md border border-border bg-surface px-2 text-sm"
+                >
+                  {PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {error && <p className="text-sm text-danger">{error}</p>}
+
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <SummaryCard label="Ingrediënten duurder" value={stijgers.length} tone="bad" />
+                <SummaryCard label="Ingrediënten goedkoper" value={dalers.length} tone="good" />
+                <SummaryCard label="Halfproducten geraakt" value={halfproducten.length} />
+                <SummaryCard label="Gerechten geraakt" value={gerechten.length} />
+                <SummaryCard
+                  label="Waarvan op actieve kaart"
+                  value={opKaart.length}
+                  tone={opKaart.length > 0 ? "bad" : undefined}
+                />
+                <SummaryCard
+                  label={`Boven ${FOODCOST_NORM}% foodcost`}
+                  value={bovenNorm.length}
+                  tone={bovenNorm.length > 0 ? "bad" : "good"}
+                />
+                <SummaryCard
+                  label="Grootste stijger"
+                  value={stijgers[0] ? `+${stijgers[0].delta_pct.toFixed(0)}%` : "—"}
+                  sub={stijgers[0]?.product_name}
+                  tone="bad"
+                />
+                <SummaryCard
+                  label="Grootste daler"
+                  value={dalers[0] ? `${dalers[0].delta_pct.toFixed(0)}%` : "—"}
+                  sub={dalers[0]?.product_name}
+                  tone="good"
+                />
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2">
+                <ChangeTable
+                  title="Duurder geworden — ingrediënten"
+                  rows={stijgers}
+                  selected={activeProduct}
+                  affected={affectedCount}
+                  onSelect={setSelectedProduct}
+                />
+                <ChangeTable
+                  title="Goedkoper geworden — ingrediënten"
+                  rows={dalers}
+                  selected={activeProduct}
+                  affected={affectedCount}
+                  onSelect={setSelectedProduct}
+                />
+              </div>
+
+              {selectedName && (
+                <div className="flex items-center gap-2 rounded-md border border-teal/30 bg-teal/5 px-4 py-2 text-sm">
+                  Gevolgen van de prijswijziging van <strong>{selectedName}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProduct(null)}
+                    className="ml-auto inline-flex items-center gap-1 text-xs text-teal hover:underline"
+                  >
+                    <X className="h-3.5 w-3.5" /> Alle wijzigingen tonen
+                  </button>
+                </div>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Gerechten — kostprijs per portie</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ImpactTable rows={gerechten} basePath="/recepturen" showFoodcost loading={loading} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Halfproducten — kostprijs per productie</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ImpactTable rows={halfproducten} basePath="/halfproducten" loading={loading} />
+                </CardContent>
+              </Card>
+              <p className="text-xs text-muted">
+                Oude en nieuwe kostprijs komen uit dezelfde kostprijsberekening als de rest van Culilogic,
+                met alleen de gewijzigde ingrediëntprijs(zen) op oud of nieuw gezet. Gerechten op een actieve
+                menukaart van {referenceCompanyName} staan bovenaan. Partijgerechten tonen de kostprijs per vorm.
               </p>
-              <select
-                value={periodDays}
-                onChange={(e) => setPeriodDays(Number(e.target.value))}
-                className="h-9 rounded-md border border-border bg-surface px-2 text-sm"
-              >
-                {PERIODS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <SummaryCard label="Ingrediënten duurder" value={stijgersIngredienten.length} tone="bad" />
-              <SummaryCard label="Ingrediënten goedkoper" value={dalersIngredienten.length} tone="good" />
-              <SummaryCard label="Gem. stijging" value={`+${gemiddeldeStijging.toFixed(1)}%`} tone="bad" />
-              <SummaryCard label="Gem. daling" value={`${gemiddeldeDaling.toFixed(1)}%`} tone="good" />
-              <SummaryCard label="Halfproducten gewijzigd" value={halfproductChanges.length} />
-              <SummaryCard label="Gerechten gewijzigd" value={gerechtChanges.length} />
-              <SummaryCard
-                label={`Boven ${FOODCOST_NORM}% foodcost`}
-                value={gerechtenBovenNorm.length}
-                tone={gerechtenBovenNorm.length > 0 ? "bad" : "good"}
-              />
-              <SummaryCard
-                label="Grootste stijger"
-                value={
-                  stijgersIngredienten[0]
-                    ? `+${stijgersIngredienten[0].deltaPct.toFixed(0)}%`
-                    : "—"
-                }
-                sub={stijgersIngredienten[0]?.productName}
-                tone="bad"
-              />
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-2">
-              <ChangeTable title="Top prijsstijgers — ingrediënten" rows={stijgersIngredienten.slice(0, 10)} />
-              <ChangeTable title="Top prijsdalers — ingrediënten" rows={dalersIngredienten.slice(0, 10)} />
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Halfproducten — kostprijswijziging</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <RecipeChangeTable rows={halfproductChanges} basePath="/halfproducten" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Gerechten — kostprijs, foodcost &amp; marge</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <RecipeChangeTable rows={gerechtChanges} basePath="/recepturen" showFoodcost />
-              </CardContent>
-            </Card>
-
-            {loading && <p className="text-sm text-muted">Bijwerken…</p>}
-          </>
-        )}
-        </>
-        )}
+            </>
+          ))}
       </main>
     </>
   );
@@ -285,7 +253,7 @@ function SummaryCard({
         <p
           className={cn(
             "tabular text-2xl font-semibold",
-            tone === "bad" ? "text-danger" : tone === "good" ? "text-success" : "text-foreground"
+            tone === "bad" ? "text-danger" : tone === "good" ? "text-success" : "text-foreground",
           )}
         >
           {value}
@@ -296,146 +264,183 @@ function SummaryCard({
   );
 }
 
-function ChangeTable({ title, rows }: { title: string; rows: IngredientChange[] }) {
+function ChangeTable({
+  title,
+  rows,
+  selected,
+  affected,
+  onSelect,
+}: {
+  title: string;
+  rows: IngredientChange[];
+  selected: string | null;
+  affected: Map<string, number>;
+  onSelect: (id: string | null) => void;
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-<table className="w-full text-sm">
-          <tbody>
-            {rows.map((c) => (
-              <IngredientRow key={c.id} change={c} />
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td className="px-5 py-6 text-center text-muted">Geen wijzigingen</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-</div>
+        <div className="max-h-96 overflow-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {rows.map((c) => {
+                const n = affected.get(c.product_id) ?? 0;
+                const isSel = selected === c.product_id;
+                return (
+                  <tr
+                    key={c.product_id}
+                    onClick={() => onSelect(isSel ? null : c.product_id)}
+                    className={cn("cursor-pointer border-t border-border hover:bg-background", isSel && "bg-teal/5")}
+                    title="Toon welke halfproducten en gerechten deze prijswijziging raakt"
+                  >
+                    <td className="px-5 py-2.5">
+                      <span className="font-medium">{c.product_name}</span>
+                      <p className="text-xs text-muted">
+                        {c.supplier_name ?? "—"} · {new Date(c.changed_on).toLocaleDateString("nl-NL")}
+                      </p>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular text-xs">
+                      <span className="text-muted">{perKgOrBase(c.old_price)}</span> → {perKgOrBase(c.new_price)}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={cn(
+                          "flex items-center justify-end gap-1 tabular",
+                          c.delta_pct > 0 ? "text-danger" : "text-success",
+                        )}
+                      >
+                        {c.delta_pct > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                        {c.delta_pct > 0 ? "+" : ""}
+                        {c.delta_pct.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="px-5 py-2.5 text-right text-xs text-muted">
+                      {n > 0 ? `${n} gerecht${n === 1 ? "" : "en"} →` : "geen gerechten"}
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && (
+                <tr>
+                  <td className="px-5 py-6 text-center text-muted">Geen wijzigingen</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function IngredientRow({ change }: { change: IngredientChange }) {
-  return (
-    <tr className="border-t border-border">
-      <td className="px-5 py-3">
-        <Link
-          href={`/producten/${change.product_id}/bewerken`}
-          className="font-medium hover:text-teal hover:underline"
-        >
-          {change.productName}
-        </Link>
-        <p className="text-xs text-muted">{change.supplierName}</p>
-      </td>
-      <td className="px-5 py-3 tabular text-muted">
-        € {change.old_price_per_base_unit?.toFixed(4)}
-      </td>
-      <td className="px-5 py-3 tabular">€ {change.new_price_per_base_unit?.toFixed(4)}</td>
-      <td className="px-5 py-3">
-        <span
-          className={cn(
-            "flex items-center gap-1 tabular",
-            change.deltaPct > 0 ? "text-danger" : "text-success"
-          )}
-        >
-          {change.deltaPct > 0 ? (
-            <TrendingUp className="h-3.5 w-3.5" />
-          ) : (
-            <TrendingDown className="h-3.5 w-3.5" />
-          )}
-          {change.deltaPct > 0 ? "+" : ""}
-          {change.deltaPct.toFixed(1)}%
-        </span>
-      </td>
-    </tr>
-  );
+/** Prijs per basiseenheid compact: kleine bedragen (g/ml) als € per 1000. */
+function perKgOrBase(p: number): string {
+  return p < 0.1 ? `€ ${(p * 1000).toFixed(2)}/1000` : `€ ${p.toFixed(4)}`;
 }
 
-function RecipeChangeTable({
+function ImpactTable({
   rows,
   basePath,
   showFoodcost,
+  loading,
 }: {
-  rows: RecipeChange[];
+  rows: RecipeImpact[];
   basePath: string;
   showFoodcost?: boolean;
+  loading: boolean;
 }) {
-  const sorted = [...rows].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const cols = showFoodcost ? 6 : 5;
   return (
     <div className="overflow-x-auto">
-<table className="w-full text-sm">
-      <thead>
-        <tr className="text-left text-xs uppercase tracking-wide text-muted">
-          <th className="px-5 py-3 font-medium">Naam</th>
-          <th className="px-5 py-3 font-medium">Oude kostprijs</th>
-          <th className="px-5 py-3 font-medium">Nieuwe kostprijs</th>
-          <th className="px-5 py-3 font-medium">Verschil</th>
-          {showFoodcost && <th className="px-5 py-3 font-medium">Foodcost</th>}
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((r) => (
-          <tr key={r.id} className="border-t border-border">
-            <td className="px-5 py-3">
-              <Link
-                href={`${basePath}/${r.id}/bewerken`}
-                className="font-medium hover:text-teal hover:underline"
-              >
-                {r.name}
-              </Link>
-            </td>
-            <td className="px-5 py-3 tabular text-muted">€ {r.oldCost.toFixed(2)}</td>
-            <td className="px-5 py-3 tabular">€ {r.newCost.toFixed(2)}</td>
-            <td className="px-5 py-3">
-              <span
-                className={cn(
-                  "flex items-center gap-1 tabular",
-                  r.delta > 0 ? "text-danger" : "text-success"
-                )}
-              >
-                {r.delta > 0 ? (
-                  <TrendingUp className="h-3.5 w-3.5" />
-                ) : (
-                  <TrendingDown className="h-3.5 w-3.5" />
-                )}
-                {r.delta > 0 ? "+" : ""}€{r.delta.toFixed(2)} ({r.deltaPct.toFixed(1)}%)
-              </span>
-            </td>
-            {showFoodcost && (
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase tracking-wide text-muted">
+            <th className="px-5 py-3 font-medium">Naam</th>
+            <th className="px-5 py-3 font-medium">Geraakt door</th>
+            <th className="px-5 py-3 text-right font-medium">Oud</th>
+            <th className="px-5 py-3 text-right font-medium">Nieuw</th>
+            <th className="px-5 py-3 text-right font-medium">Verschil</th>
+            {showFoodcost && <th className="px-5 py-3 text-right font-medium">Foodcost</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.recipeId} className="border-t border-border align-top">
               <td className="px-5 py-3">
-                {r.foodCostPct !== null ? (
-                  <span
-                    className={cn(
-                      "flex items-center gap-1 tabular",
-                      r.foodCostPct > FOODCOST_NORM ? "text-copper" : "text-success"
-                    )}
-                  >
-                    {r.foodCostPct > FOODCOST_NORM && <TriangleAlert className="h-3.5 w-3.5" />}
-                    {r.foodCostPct.toFixed(1)}%
-                  </span>
-                ) : (
-                  "—"
+                <Link
+                  href={withReturnTo(`${basePath}/${r.recipeId}/bewerken`)}
+                  className="font-medium hover:text-teal hover:underline"
+                >
+                  {r.name}
+                </Link>
+                {r.perForm && <span className="ml-1 text-xs text-muted">(per vorm)</span>}
+                {r.activeCards.length > 0 && (
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {r.activeCards.map((c) => (
+                      <span key={c} className="rounded bg-copper/10 px-1.5 text-xs text-copper">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </td>
-            )}
-          </tr>
-        ))}
-        {sorted.length === 0 && (
-          <tr>
-            <td colSpan={showFoodcost ? 5 : 4} className="px-5 py-6 text-center text-muted">
-              Geen kostprijswijzigingen in deze periode.
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-</div>
+              <td className="px-5 py-3 text-xs text-muted">
+                {r.causes.map((c) => (
+                  <div key={c.productId}>{describeCause(c)}</div>
+                ))}
+              </td>
+              <td className="px-5 py-3 text-right tabular text-muted">€ {r.oldCost.toFixed(2)}</td>
+              <td className="px-5 py-3 text-right tabular">€ {r.newCost.toFixed(2)}</td>
+              <td className="px-5 py-3">
+                <span
+                  className={cn(
+                    "flex items-center justify-end gap-1 tabular",
+                    r.delta > 0 ? "text-danger" : "text-success",
+                  )}
+                >
+                  {r.delta > 0 ? "+" : "−"}€ {Math.abs(r.delta).toFixed(2)}
+                  {r.deltaPct !== null && (
+                    <span className="text-xs">
+                      ({r.deltaPct > 0 ? "+" : ""}
+                      {r.deltaPct.toFixed(1)}%)
+                    </span>
+                  )}
+                </span>
+              </td>
+              {showFoodcost && (
+                <td className="px-5 py-3 text-right tabular">
+                  {r.newFoodcostPct !== null ? (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1",
+                        r.newFoodcostPct > FOODCOST_NORM ? "text-copper" : "text-success",
+                      )}
+                    >
+                      {r.newFoodcostPct > FOODCOST_NORM && <TriangleAlert className="h-3.5 w-3.5" />}
+                      {r.oldFoodcostPct !== null && (
+                        <span className="text-xs text-muted">{r.oldFoodcostPct.toFixed(1)}% →</span>
+                      )}
+                      {r.newFoodcostPct.toFixed(1)}%
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              )}
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={cols} className="px-5 py-6 text-center text-muted">
+                {loading ? "Bezig met rekenen…" : "Geen kostprijswijzigingen in deze periode."}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }

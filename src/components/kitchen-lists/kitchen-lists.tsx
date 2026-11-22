@@ -584,7 +584,7 @@ export function KitchenLists({ companyId }: { companyId: string }) {
   // ---------- weergave helpers ----------
   const cardNames = cards
     .filter((c) => cardIds.includes(c.id))
-    .map((c) => c.name)
+    .map(kitchenCardName)
     .join(" + ");
   const stationLabel =
     selected.size === 0
@@ -659,7 +659,7 @@ export function KitchenLists({ companyId }: { companyId: string }) {
                   )}
                 >
                   {on && <Check className="mr-1 inline h-3.5 w-3.5" />}
-                  {c.name}
+                  {kitchenCardName(c)}
                   {c.status !== "actief" && (
                     <span className="ml-1 text-xs">({c.status})</span>
                   )}
@@ -1468,4 +1468,9 @@ export function KitchenLists({ companyId }: { companyId: string }) {
       `}</style>
     </div>
   );
+}
+
+/** Korte keukennaam van een menukaart, anders de gewone kaartnaam. */
+function kitchenCardName(c: { name: string; kitchen_name?: string | null }): string {
+  return c.kitchen_name?.trim() || c.name;
 }

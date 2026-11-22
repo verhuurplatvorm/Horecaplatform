@@ -80,6 +80,10 @@ export async function POST(request: Request) {
       name: menuCardName.trim(),
       status: "concept",
       source_file_path: storagePath,
+      // Oorspronkelijke bestandsnaam (pad = "<groep>/<tijd>-<bestandsnaam>").
+      source_file_name: storagePath
+        ? storagePath.split("/").pop()!.replace(/^\d+-/, "")
+        : null,
       created_by: user.id,
     })
     .select("id")

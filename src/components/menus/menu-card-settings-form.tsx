@@ -22,6 +22,7 @@ export function MenuCardSettingsForm({
 
   const [card, setCard] = useState<MenuCard | null>(null);
   const [name, setName] = useState("");
+  const [kitchenName, setKitchenName] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [menuType, setMenuType] = useState("");
   const [description, setDescription] = useState("");
@@ -45,6 +46,7 @@ export function MenuCardSettingsForm({
         const c = data as MenuCard;
         setCard(c);
         setName(c.name);
+        setKitchenName(c.kitchen_name ?? "");
         setCompanyId(c.company_id ?? "");
         setMenuType(c.menu_type ?? "");
         setDescription(c.description ?? "");
@@ -66,6 +68,7 @@ export function MenuCardSettingsForm({
       .from("menu_cards")
       .update({
         name: name.trim(),
+        kitchen_name: kitchenName.trim() || null,
         company_id: companyId || null,
         menu_type: menuType.trim() || null,
         description: description.trim() || null,
@@ -117,6 +120,26 @@ export function MenuCardSettingsForm({
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-sm font-medium text-foreground">Naam</label>
                 <input required value={name} onChange={(e) => setName(e.target.value)} className="input" />
+                {card.source_file_name && (
+                  <p className="mt-1 text-xs text-muted">
+                    Geïmporteerd uit: <span className="font-mono">{card.source_file_name}</span>
+                  </p>
+                )}
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Korte naam voor de keuken
+                </label>
+                <input
+                  value={kitchenName}
+                  onChange={(e) => setKitchenName(e.target.value)}
+                  placeholder={`bv. Dinerkaart Het Strand — leeg = "${name}"`}
+                  maxLength={60}
+                  className="input"
+                />
+                <p className="mt-1 text-xs text-muted">
+                  Wordt gebruikt in Keukenlijsten en Prijsontwikkeling. Leeg laten = de naam hierboven.
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">Bedrijf</label>

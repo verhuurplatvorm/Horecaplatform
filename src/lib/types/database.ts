@@ -631,6 +631,10 @@ export type MenuCard = {
   language: string;
   duplicated_from_id: string | null;
   source_file_path: string | null;
+  /** Korte naam voor de keuken (Keukenlijsten); leeg = name. */
+  kitchen_name?: string | null;
+  /** Oorspronkelijke bestandsnaam van het geïmporteerde document. */
+  source_file_name?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1582,6 +1586,23 @@ export type Database = {
           p_include_unreferenced?: boolean;
         };
         Returns: PriceComparisonRow[];
+      };
+      company_price_changes: {
+        Args: { p_company_id: string; p_from: string; p_product_id?: string | null };
+        Returns: {
+          product_id: string;
+          product_name: string;
+          supplier_name: string | null;
+          changed_on: string;
+          old_price: number;
+          new_price: number;
+          delta_pct: number;
+          change_count: number;
+        }[];
+      };
+      price_change_impact: {
+        Args: { p_company_id: string; p_from: string; p_product_id?: string | null };
+        Returns: import("@/lib/price-impact").ImpactRow[];
       };
       contract_price_overlaps: {
         Args: Record<string, never>;
