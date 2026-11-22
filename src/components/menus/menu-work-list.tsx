@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Printer, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight, Printer, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { containerLabel, formatDistribution } from "@/lib/party/party-calc";
+import { RecipeBreakdown, type BreakdownColumn } from "@/components/menus/recipe-breakdown";
 
 /** Eén rij uit get_event_menu_party_plan (centrale rekenregel in de database). */
 export interface PartyPlanRow {
@@ -40,6 +41,25 @@ export function partyDistribution(p: PartyPlanRow): number[] {
   );
 }
 
+/** Kolommen voor de ingrediënten van een partijgerecht: per vorm, kleinere laatste vorm, totaal. */
+function partyColumns(p: PartyPlanRow): BreakdownColumn[] {
+  const one = containerLabel(p.container, 1);
+  const cols: BreakdownColumn[] = [{ label: `Per ${one}`, factor: p.per_container }];
+  const partialLast =
+    !p.full_containers && p.containers > 1 && p.capacity > 0 && p.last_container < p.capacity;
+  if (partialLast) {
+    cols.push({
+      label: `Laatste ${one}`,
+      factor: (p.last_container / p.capacity) * p.per_container,
+    });
+  }
+  cols.push({
+    label: `Totaal (${p.containers} ${containerLabel(p.container, p.containers)})`,
+    factor: p.recipe_factor,
+  });
+  return cols;
+}
+
 interface WorkItem {
   /** recept + eenheid: lukt omrekenen niet, dan kan een recept twee regels hebben */
   key: string;
@@ -47,6 +67,8 @@ interface WorkItem {
   name: string;
   quantity: number;
   unitName: string | null;
+  /** Hoe vaak het recept nodig is; null als de eenheid niet op de opbrengst aansluit. */
+  recipeFactor: number | null;
   location: string;
   preparation: string | null;
   isHalfproduct: boolean;
@@ -78,6 +100,14 @@ export function MenuWorkList({
   const [done, setDone] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggleOpen = (key: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   // Afgevinkte regels ophalen: bij openen en als je terugkomt op het
   // tabblad (een ander scherm kan intussen hebben afgevinkt).
@@ -171,6 +201,8 @@ export function MenuWorkList({
         last_container: Number(p.last_container),
         difference: Number(p.difference),
         containers_exact: Number(p.containers_exact),
+        per_container: Number(p.per_container),
+        recipe_factor: Number(p.recipe_factor),
       }));
       if (!cancelled) setParty(plans);
 
@@ -194,7 +226,7 @@ export function MenuWorkList({
       const [{ data: recipes }, { data: units }] = await Promise.all([
         supabase
           .from("recipes")
-          .select("id, name, recipe_kind, preparation, production_location")
+          .select("id, name, recipe_kind, preparation, production_location, base_unit_id, yield_quantity")
           .in("id", recipeIds),
         supabase.from("units").select("id, name"),
       ]);
@@ -205,7 +237,12 @@ export function MenuWorkList({
       for (const row of rows) {
         const r = recipeById.get(row.recipe_id);
         if (!r) continue;
+        const yieldQty = Number(r.yield_quantity ?? 0);
         out.push({
+          recipeFactor:
+            row.unit_id && row.unit_id === r.base_unit_id && yieldQty > 0
+              ? Number(row.quantity) / yieldQty
+              : null,
           key: `${row.recipe_id}:${row.unit_id ?? ""}`,
           recipeId: row.recipe_id,
           name: r.name,
@@ -284,10 +321,22 @@ export function MenuWorkList({
                       className="mt-1"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className={cn("font-medium", done.has(p.line_id) && "text-muted line-through")}>
+                      <button
+                        type="button"
+                        onClick={() => toggleOpen(p.line_id)}
+                        className={cn(
+                          "flex items-center gap-1 text-left font-medium hover:text-teal",
+                          done.has(p.line_id) && "text-muted line-through"
+                        )}
+                      >
+                        {open.has(p.line_id) ? (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted print:hidden" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted print:hidden" />
+                        )}
                         {p.recipe_name}
-                        <span className="ml-2 text-xs font-normal text-muted">{p.section_name}</span>
-                      </p>
+                        <span className="ml-1 text-xs font-normal text-muted">{p.section_name}</span>
+                      </button>
                       <p className="text-xs text-muted">
                         {fmt(p.quantity_per_person)} {unit} p.p.
                         {Number(p.participation_pct) !== 100 && <> · {fmt(p.participation_pct)}% deelname</>} ·
@@ -300,6 +349,17 @@ export function MenuWorkList({
                           </>
                         )}
                       </p>
+                      {open.has(p.line_id) && (
+                        <RecipeBreakdown
+                          recipeId={p.recipe_id}
+                          columns={partyColumns(p)}
+                          note={
+                            p.per_container >= 1.05
+                              ? `1 ${containerLabel(p.container, 1)} = recept × ${p.per_container.toLocaleString("nl-NL", { maximumFractionDigits: 2 })}`
+                              : null
+                          }
+                        />
+                      )}
                     </div>
                     <span className="tabular whitespace-nowrap font-medium">
                       {p.containers} {containerLabel(p.container, p.containers)}
@@ -335,21 +395,44 @@ export function MenuWorkList({
                       className="mt-1"
                     />
                     <div className="min-w-0 flex-1">
-                      <p
+                      <button
+                        type="button"
+                        onClick={() => toggleOpen(i.key)}
                         className={cn(
-                          "font-medium",
+                          "flex items-center gap-1 text-left font-medium hover:text-teal",
                           done.has(i.key) && "text-muted line-through"
                         )}
                       >
+                        {open.has(i.key) ? (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted print:hidden" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted print:hidden" />
+                        )}
                         {i.name}
-                        <span className="ml-2 text-xs font-normal text-muted">
+                        <span className="ml-1 text-xs font-normal text-muted">
                           {i.isHalfproduct ? "halfproduct" : "gerecht"}
                         </span>
-                      </p>
-                      {i.preparation && (
-                        <p className="mt-0.5 line-clamp-2 text-xs text-muted">
-                          {i.preparation}
-                        </p>
+                      </button>
+                      {open.has(i.key) ? (
+                        <RecipeBreakdown
+                          recipeId={i.recipeId}
+                          columns={
+                            i.recipeFactor !== null
+                              ? [{ label: "Totaal", factor: i.recipeFactor }]
+                              : [{ label: "Per recept", factor: 1 }]
+                          }
+                          note={
+                            i.recipeFactor !== null
+                              ? `Recept × ${i.recipeFactor.toLocaleString("nl-NL", { maximumFractionDigits: 2 })}`
+                              : "De hoeveelheid sluit niet aan op de opbrengst van het recept; dit is het recept zelf."
+                          }
+                        />
+                      ) : (
+                        i.preparation && (
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted">
+                            {i.preparation}
+                          </p>
+                        )
                       )}
                     </div>
                     <span className="tabular whitespace-nowrap font-medium">
