@@ -10,6 +10,7 @@ import { fmt, parsePackaging, pricesFromCount, isUnitKey } from "@/lib/packaging
 import { parsePackagingText, UNIT_TO_BASE_FACTOR } from "@/lib/price-import/packaging-parser";
 import type { Product, ProductMissingUnitBridge, SupplierProduct, Unit } from "@/lib/types/database";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
+import { CostCleanup } from "@/components/costing/cost-cleanup";
 
 interface SupplierPriceRow extends SupplierProduct {
   supplierName: string;
@@ -236,6 +237,9 @@ export default function ProductenOpschonenPage() {
       <Topbar title="Ingrediënten — te controleren" />
       <main className="max-w-4xl space-y-4 p-6">
         <ProductViewTabs />
+
+        {/* Eerst wat de kostprijs onvolledig maakt, met voorrang voor actieve kaarten en buffetten. */}
+        <CostCleanup />
 
         {missingBridge.length > 0 && (
           <Card>

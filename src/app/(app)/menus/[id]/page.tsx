@@ -29,6 +29,9 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import Link from "next/link";
+import { fetchEventMenuCostStatus } from "@/lib/recipes/costs";
+import type { CostStatus } from "@/lib/costing/status";
+import { CostIncompleteBadge, CostIssueList } from "@/components/costing/cost-status";
 import type {
   EventMenu,
   EventMenuLine,
@@ -123,6 +126,7 @@ export default function MenuDetailPage({
       .then(({ data }) => setUnits((data as Unit[]) ?? []));
   }, []);
   const [totalCost, setTotalCost] = useState<number | null>(null);
+  const [costStatus, setCostStatus] = useState<CostStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [addingLine, setAddingLine] = useState(false);
@@ -173,7 +177,7 @@ export default function MenuDetailPage({
     // dezelfde prijsbronnen en conversies gebruikt als de rest van het
     // platform. Hier wordt dus niets opnieuw uitgerekend.
     if (referenceCompanyId) {
-      const [{ data: breakdown }, { data: cost }, { data: plan }] = await Promise.all([
+      const [{ data: breakdown }, { data: cost }, { data: plan }, status] = await Promise.all([
         supabase.rpc("get_event_menu_breakdown", {
           p_menu_id: id,
           p_company_id: referenceCompanyId,
@@ -186,7 +190,9 @@ export default function MenuDetailPage({
           p_menu_id: id,
           p_company_id: referenceCompanyId,
         }),
+        fetchEventMenuCostStatus(supabase, id, referenceCompanyId),
       ]);
+      setCostStatus(status);
       const planMap: Record<string, EventMenuPartyPlanRow> = {};
       for (const p of (plan as EventMenuPartyPlanRow[] | null) ?? []) planMap[p.line_id] = p;
       setPartyPlan(planMap);
@@ -370,8 +376,10 @@ export default function MenuDetailPage({
   const salesExclVat = menu.sales_price_per_person
     ? menu.sales_price_per_person / (1 + menu.vat_rate / 100)
     : null;
+  // Kostprijs onvolledig: alleen bekende kosten, geen foodcost of marge.
+  const costIncomplete = costStatus?.isComplete === false;
   const foodcostPct =
-    costPerPerson !== null && salesExclVat && salesExclVat > 0
+    !costIncomplete && costPerPerson !== null && salesExclVat && salesExclVat > 0
       ? (costPerPerson / salesExclVat) * 100
       : null;
 
@@ -391,10 +399,11 @@ export default function MenuDetailPage({
                   {menu.status}
                 </span>
                 {canViewFinancial && costPerPerson !== null && (
-                  <span className="font-medium text-foreground">
-                    € {costPerPerson.toFixed(2)} p.p.
+                  <span className={costIncomplete ? "text-muted" : "font-medium text-foreground"}>
+                    {costIncomplete ? "bekende kosten " : ""}€ {costPerPerson.toFixed(2)} p.p.
                   </span>
                 )}
+                {canViewFinancial && <CostIncompleteBadge status={costStatus} />}
               </p>
               {lines.length > 0 && (
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -965,9 +974,12 @@ export default function MenuDetailPage({
                 {/* Altijd zichtbare samenvatting onder de samenstelling. */}
                 {canViewFinancial && lines.length > 0 && (
                   <div className="grid gap-3 border-t border-border bg-background px-4 py-3 sm:grid-cols-5">
-                    <Summary label="Totale kostprijs" value={`€ ${(totalCost ?? 0).toFixed(2)}`} />
                     <Summary
-                      label="Kostprijs p.p."
+                      label={costIncomplete ? "Bekende kosten" : "Totale kostprijs"}
+                      value={`€ ${(totalCost ?? 0).toFixed(2)}`}
+                    />
+                    <Summary
+                      label={costIncomplete ? "Bekende kosten p.p." : "Kostprijs p.p."}
                       value={costPerPerson !== null ? `€ ${costPerPerson.toFixed(2)}` : "—"}
                     />
                     <Summary
@@ -980,7 +992,7 @@ export default function MenuDetailPage({
                     />
                     <Summary
                       label="Foodcost %"
-                      value={foodcostPct !== null ? `${foodcostPct.toFixed(1)}%` : "—"}
+                      value={costIncomplete ? "Kostprijs onvolledig" : foodcostPct !== null ? `${foodcostPct.toFixed(1)}%` : "—"}
                       tone={
                         foodcostPct === null ? undefined : foodcostPct > 33 ? "bad" : "good"
                       }
@@ -988,11 +1000,18 @@ export default function MenuDetailPage({
                     <Summary
                       label="Brutomarge"
                       value={
-                        salesExclVat !== null && costPerPerson !== null
-                          ? `€ ${((salesExclVat - costPerPerson) * menu.person_count).toFixed(2)}`
-                          : "—"
+                        costIncomplete
+                          ? "Kostprijs onvolledig"
+                          : salesExclVat !== null && costPerPerson !== null
+                            ? `€ ${((salesExclVat - costPerPerson) * menu.person_count).toFixed(2)}`
+                            : "—"
                       }
                     />
+                  </div>
+                )}
+                {canViewFinancial && costIncomplete && (
+                  <div className="border-t border-border px-4 py-3">
+                    <CostIssueList status={costStatus} />
                   </div>
                 )}
               </CardContent>
@@ -1051,10 +1070,14 @@ export default function MenuDetailPage({
                   />
                 </div>
                 <div className="border-t border-border pt-2">
-                  <Row label="Totale kostprijs" value={`€ ${(totalCost ?? 0).toFixed(2)}`} strong />
+                  <Row
+                    label={costIncomplete ? "Bekende kosten" : "Totale kostprijs"}
+                    value={`€ ${(totalCost ?? 0).toFixed(2)}`}
+                    strong
+                  />
                 </div>
                 <Row
-                  label="Kostprijs per persoon"
+                  label={costIncomplete ? "Bekende kosten per persoon" : "Kostprijs per persoon"}
                   value={costPerPerson !== null ? `€ ${costPerPerson.toFixed(2)}` : "—"}
                   strong
                 />
@@ -1100,7 +1123,13 @@ export default function MenuDetailPage({
                     />
                   </>
                 )}
-                {costPerPerson !== null && (
+                {costIncomplete && (
+                  <p className="rounded-md bg-copper/10 p-3 text-copper">
+                    Kostprijs onvolledig: foodcost en marge volgen zodra alle regels een koppeling,
+                    inkoopprijs en omrekening hebben.
+                  </p>
+                )}
+                {costPerPerson !== null && !costIncomplete && (
                   <div className="space-y-1 rounded-md bg-teal/5 p-3">
                     {menu.fixed_costs > 0 && (
                       <p>

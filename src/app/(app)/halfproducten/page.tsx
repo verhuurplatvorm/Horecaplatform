@@ -24,6 +24,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
+import { fetchRecipeCostStatus } from "@/lib/recipes/costs";
+import type { CostStatus } from "@/lib/costing/status";
+import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +48,7 @@ interface HalfproductRow {
   unitName: string | null;
   costPrice: number | null;
   costPerBaseUnit: number | null;
+  costStatus: CostStatus | null;
   usageCount: number;
   isFavorite: boolean;
   isCurrent: boolean;
@@ -179,6 +183,11 @@ export default function HalfproductenPage() {
       });
       if (cancelled) return;
       const overviewById = new Map((overview ?? []).map((o) => [o.recipe_id, o]));
+      // Kostprijs onvolledig (ook door onderliggende halfproducten).
+      const statuses = referenceCompanyId
+        ? await fetchRecipeCostStatus(supabase, referenceCompanyId, recipes.map((r) => r.id))
+        : new Map<string, CostStatus>();
+      if (cancelled) return;
 
       const withCost: HalfproductRow[] = recipes.map((r) => {
         const o = overviewById.get(r.id);
@@ -195,7 +204,10 @@ export default function HalfproductenPage() {
           unitName: r.base_unit_id ? unitNameById.get(r.base_unit_id) ?? null : null,
           costPrice,
           costPerBaseUnit:
-            costPrice !== null && r.yield_quantity ? costPrice / r.yield_quantity : null,
+            costPrice !== null && r.yield_quantity && statuses.get(r.id)?.isComplete !== false
+              ? costPrice / r.yield_quantity
+              : null,
+          costStatus: statuses.get(r.id) ?? null,
           usageCount: Number(o?.usage_count ?? 0),
           isFavorite: favoriteIds.has(r.id),
           isCurrent: Boolean(r.is_current_menu),
@@ -346,7 +358,9 @@ export default function HalfproductenPage() {
       r.yield_quantity ?? "",
       r.unitName ?? "",
       ...(canViewFinancial
-        ? [r.costPerBaseUnit?.toFixed(4) ?? "", r.costPrice?.toFixed(2) ?? ""]
+        ? r.costStatus?.isComplete === false
+          ? ["Kostprijs onvolledig", `Bekende kosten ${r.costPrice?.toFixed(2) ?? ""}`]
+          : [r.costPerBaseUnit?.toFixed(4) ?? "", r.costPrice?.toFixed(2) ?? ""]
         : []),
       r.status,
       new Date(r.updated_at).toLocaleDateString("nl-NL"),
@@ -1006,12 +1020,16 @@ export default function HalfproductenPage() {
                       {canViewFinancial && (
                         <>
                           <td className="px-2 py-3 tabular">
-                            {r.costPerBaseUnit !== null
-                              ? `€ ${r.costPerBaseUnit.toFixed(4)}`
-                              : "—"}
+                            {r.costStatus?.isComplete === false ? (
+                              <CostIncompleteBadge status={r.costStatus} />
+                            ) : r.costPerBaseUnit !== null ? (
+                              `€ ${r.costPerBaseUnit.toFixed(4)}`
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="px-2 py-3 tabular">
-                            {r.costPrice !== null ? `€ ${r.costPrice.toFixed(2)}` : "—"}
+                            <CostAmount amount={r.costPrice} status={r.costStatus} />
                           </td>
                         </>
                       )}

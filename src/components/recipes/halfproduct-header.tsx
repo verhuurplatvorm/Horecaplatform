@@ -11,6 +11,8 @@ import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { toCostStatus, type CostStatus } from "@/lib/costing/status";
+import { CostIncompleteBadge } from "@/components/costing/cost-status";
 
 /**
  * Vaste balk boven het halfproductscherm: wat een kok als eerste wil zien
@@ -43,6 +45,7 @@ export function HalfproductHeader({
   const canViewFinancial = can("halfproducten").canViewFinancial;
 
   const [costPerUnit, setCostPerUnit] = useState<number | null>(null);
+  const [costStatus, setCostStatus] = useState<CostStatus | null>(null);
   const [neighbours, setNeighbours] = useState<{ prev: string | null; next: string | null }>({
     prev: null,
     next: null,
@@ -55,10 +58,17 @@ export function HalfproductHeader({
       const supabase = createClient();
 
       if (canViewFinancial && referenceCompanyId && yieldQuantity && yieldQuantity > 0) {
-        const { data } = await supabase.rpc("calculate_recipe_cost", {
-          p_recipe_id: recipeId,
-          p_company_id: referenceCompanyId,
-        });
+        const [{ data }, { data: status }] = await Promise.all([
+          supabase.rpc("calculate_recipe_cost", {
+            p_recipe_id: recipeId,
+            p_company_id: referenceCompanyId,
+          }),
+          supabase.rpc("recipe_cost_status", {
+            p_company_id: referenceCompanyId,
+            p_recipe_ids: [recipeId],
+          }),
+        ]);
+        if (!cancelled) setCostStatus(toCostStatus(status?.[0]));
         if (!cancelled && typeof data === "number") {
           setCostPerUnit(data / yieldQuantity);
         }
@@ -189,7 +199,10 @@ export function HalfproductHeader({
                   ? "gearchiveerd"
                   : "concept"}
             </span>
-            {canViewFinancial && costPerUnit !== null && baseUnitName && (
+            {canViewFinancial && costStatus && !costStatus.isComplete && (
+              <CostIncompleteBadge status={costStatus} />
+            )}
+            {canViewFinancial && costPerUnit !== null && baseUnitName && costStatus?.isComplete !== false && (
               <span className="font-medium text-foreground">
                 € {costPerUnit.toFixed(4)} per {baseUnitName}
               </span>

@@ -1849,6 +1849,33 @@ export type Database = {
         Args: { p_company_id: string; p_recipe_ids: string[] };
         Returns: { recipe_id: string; cost: number | null }[];
       };
+      recipe_cost_status: {
+        Args: { p_company_id: string; p_recipe_ids: string[] };
+        Returns: { recipe_id: string; is_complete: boolean; issues: unknown }[];
+      };
+      event_menu_cost_status: {
+        Args: { p_menu_id: string; p_company_id: string };
+        Returns: { is_complete: boolean; issues: unknown }[];
+      };
+      cost_attention_items: {
+        Args: { p_company_id: string };
+        Returns: {
+          line_id: string;
+          recipe_id: string | null;
+          recipe_name: string;
+          recipe_kind: string;
+          kind: "koppeling" | "prijs" | "omrekening" | "opbrengst";
+          name: string | null;
+          product_id: string | null;
+          sub_recipe_id: string | null;
+          unit_name: string | null;
+          active_sources: string[];
+        }[];
+      };
+      link_unmatched_lines: {
+        Args: { p_line_ids: string[]; p_product_id: string | null; p_sub_recipe_id: string | null };
+        Returns: number;
+      };
       calculate_sales_product_cost: {
         Args: { p_sales_product_id: string; p_company_id: string };
         Returns: number;

@@ -45,6 +45,7 @@ export function RecipeFinancialTable({
   wastePercentage,
   marginFreeCosts,
   labourCost,
+  costIncomplete = false,
 }: {
   recipeId: string;
   yieldQuantity: number | null;
@@ -52,6 +53,8 @@ export function RecipeFinancialTable({
   wastePercentage: number | null;
   marginFreeCosts: number | null;
   labourCost: number;
+  /** Kostprijs onvolledig: alleen bekende kosten tonen, geen prijs per eenheid. */
+  costIncomplete?: boolean;
 }) {
   const { activeCompanyIds } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
@@ -276,7 +279,7 @@ export function RecipeFinancialTable({
           )}
           <div className="border-t border-border pt-2">
             <Line
-              label="Totale productiekostprijs"
+              label={costIncomplete ? "Bekende kosten (kostprijs onvolledig)" : "Totale productiekostprijs"}
               value={`€ ${productionCost.toFixed(2)}`}
               strong
             />
@@ -287,7 +290,12 @@ export function RecipeFinancialTable({
               yieldQuantity ? `${yieldQuantity} ${baseUnitName ?? ""}` : "niet ingevuld"
             }
           />
-          {costPerUnit !== null ? (
+          {costIncomplete ? (
+            <p className="rounded-md bg-copper/10 p-3 text-copper">
+              Kostprijs onvolledig: de prijs per eenheid volgt zodra alle regels een koppeling,
+              inkoopprijs en omrekening hebben.
+            </p>
+          ) : costPerUnit !== null ? (
             <p className="rounded-md bg-teal/5 p-3">
               <strong>€ {productionCost.toFixed(2)}</strong> totale kosten ÷{" "}
               <strong>

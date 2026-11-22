@@ -1,6 +1,8 @@
 "use client";
 
-import { fetchRecipeCosts } from "@/lib/recipes/costs";
+import { fetchRecipeCostStatus, fetchRecipeCosts } from "@/lib/recipes/costs";
+import type { CostStatus } from "@/lib/costing/status";
+import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useRef, useState } from "react";
@@ -49,6 +51,8 @@ type RecipeListItem = Pick<
 
 interface RecipeWithCost extends RecipeListItem {
   costPrice: number | null;
+  /** Kostprijs onvolledig? (null = nog niet bekend) */
+  costStatus?: CostStatus | null;
 }
 
 /** Een menukaart waarop een gerecht staat. */
@@ -331,14 +335,15 @@ export default function RecepturenPage() {
       }
 
       // Alle kostprijzen in één aanvraag (voorheen één per gerecht).
-      const costs = await fetchRecipeCosts(
-        supabase,
-        referenceCompanyId,
-        data.map((r) => r.id),
-      );
+      const ids = data.map((r) => r.id);
+      const [costs, statuses] = await Promise.all([
+        fetchRecipeCosts(supabase, referenceCompanyId, ids),
+        fetchRecipeCostStatus(supabase, referenceCompanyId, ids),
+      ]);
       const withCost = data.map((recipe) => ({
         ...recipe,
         costPrice: costs.get(recipe.id) ?? null,
+        costStatus: statuses.get(recipe.id) ?? null,
       }));
 
       if (!cancelled) {
@@ -1251,8 +1256,9 @@ export default function RecepturenPage() {
                         r.sales_price && r.vat_rate !== null
                           ? r.sales_price / (1 + r.vat_rate / 100)
                           : r.sales_price;
+                      const costIncomplete = r.costStatus?.isComplete === false;
                       const foodCostPct =
-                        r.costPrice !== null && priceExclVat
+                        r.costPrice !== null && priceExclVat && !costIncomplete
                           ? (r.costPrice / priceExclVat) * 100
                           : null;
                       return (
@@ -1349,11 +1355,7 @@ export default function RecepturenPage() {
                           )}
                           {canViewFinancial && show("kostprijs") && (
                             <td className="whitespace-nowrap px-3 py-2.5 tabular">
-                              {loading
-                                ? "…"
-                                : r.costPrice !== null
-                                  ? `€ ${r.costPrice.toFixed(2)}`
-                                  : "—"}
+                              {loading ? "…" : <CostAmount amount={r.costPrice} status={r.costStatus} />}
                             </td>
                           )}
                           {show("verkoopprijs") && (
@@ -1367,7 +1369,9 @@ export default function RecepturenPage() {
                           )}
                           {canViewFinancial && show("foodcost") && (
                             <td className="whitespace-nowrap px-3 py-2.5 tabular">
-                              {foodCostPct !== null ? (
+                              {costIncomplete ? (
+                                <CostIncompleteBadge status={r.costStatus} />
+                              ) : foodCostPct !== null ? (
                                 <span
                                   className={
                                     foodCostPct > 33

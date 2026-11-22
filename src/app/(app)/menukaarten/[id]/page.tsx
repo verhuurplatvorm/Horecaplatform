@@ -1,6 +1,8 @@
 "use client";
 
-import { fetchRecipeCosts } from "@/lib/recipes/costs";
+import { fetchRecipeCostStatus, fetchRecipeCosts } from "@/lib/recipes/costs";
+import type { CostStatus } from "@/lib/costing/status";
+import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -43,6 +45,7 @@ const FOODCOST_NORM = 33;
 interface ItemWithRecipe extends MenuItem {
   recipe?: Recipe;
   cost: number | null;
+  costStatus?: CostStatus | null;
 }
 
 export default function MenukaartWorkspacePage({
@@ -124,17 +127,18 @@ export default function MenukaartWorkspacePage({
       const compId =
         (cardData as MenuCard | null)?.company_id ?? referenceCompanyId;
       // Alle kostprijzen in één aanvraag (voorheen één per gerecht).
-      const costs = compId
-        ? await fetchRecipeCosts(
-            supabase,
-            compId,
-            rawItems.map((i) => i.recipe_id),
-          )
-        : new Map<string, number | null>();
+      const itemRecipeIds = rawItems.map((i) => i.recipe_id);
+      const [costs, statuses] = compId
+        ? await Promise.all([
+            fetchRecipeCosts(supabase, compId, itemRecipeIds),
+            fetchRecipeCostStatus(supabase, compId, itemRecipeIds),
+          ])
+        : [new Map<string, number | null>(), new Map<string, CostStatus>()];
       const withCost = rawItems.map((i) => ({
         ...i,
         recipe: recipeMap.get(i.recipe_id),
         cost: costs.get(i.recipe_id) ?? null,
+        costStatus: statuses.get(i.recipe_id) ?? null,
       }));
 
       if (!cancelled) {
@@ -346,10 +350,18 @@ export default function MenukaartWorkspacePage({
 
   const folderStats = useMemo(() => {
     if (selectedItems.length === 0) return null;
+    // Onvolledige kostprijzen tellen niet mee in de gemiddelde foodcost.
+    const incompleteCount = selectedItems.filter((i) => i.costStatus?.isComplete === false).length;
     const withPrice = selectedItems.filter(
-      (i) => (i.price ?? i.recipe?.sales_price) && i.cost !== null,
+      (i) =>
+        (i.price ?? i.recipe?.sales_price) &&
+        i.cost !== null &&
+        i.costStatus?.isComplete !== false,
     );
-    if (withPrice.length === 0) return null;
+    if (withPrice.length === 0)
+      return incompleteCount > 0
+        ? { count: selectedItems.length, avgFoodcost: null, attentionCount: 0, incompleteCount }
+        : null;
     const foodcosts = withPrice.map((i) => {
       const price = i.price ?? i.recipe!.sales_price!;
       const vat = i.recipe?.vat_rate ?? 9;
@@ -360,6 +372,7 @@ export default function MenukaartWorkspacePage({
       count: selectedItems.length,
       avgFoodcost: foodcosts.reduce((a, b) => a + b, 0) / foodcosts.length,
       attentionCount: foodcosts.filter((f) => f > FOODCOST_NORM).length,
+      incompleteCount,
     };
   }, [selectedItems]);
 
@@ -462,7 +475,14 @@ export default function MenukaartWorkspacePage({
                       {canViewFinancial && (
                         <>
                           {" "}
-                          · gem. foodcost {folderStats.avgFoodcost.toFixed(1)}%
+                          {folderStats.avgFoodcost !== null && (
+                            <>· gem. foodcost {folderStats.avgFoodcost.toFixed(1)}%</>
+                          )}
+                          {folderStats.incompleteCount > 0 && (
+                            <span className="ml-2 text-copper">
+                              · {folderStats.incompleteCount} met kostprijs onvolledig
+                            </span>
+                          )}
                           {folderStats.attentionCount > 0 && (
                             <span className="ml-2 text-copper">
                               · {folderStats.attentionCount} boven norm
@@ -513,8 +533,9 @@ export default function MenukaartWorkspacePage({
                           const priceExcl = price
                             ? price / (1 + vat / 100)
                             : null;
+                          const costIncomplete = item.costStatus?.isComplete === false;
                           const foodcost =
-                            priceExcl && item.cost !== null
+                            priceExcl && item.cost !== null && !costIncomplete
                               ? (item.cost / priceExcl) * 100
                               : null;
                           return (
@@ -599,12 +620,12 @@ export default function MenukaartWorkspacePage({
                               {canViewFinancial && (
                                 <>
                                   <td className="px-5 py-3 tabular text-muted">
-                                    {item.cost !== null
-                                      ? `€ ${item.cost.toFixed(2)}`
-                                      : "—"}
+                                    <CostAmount amount={item.cost} status={item.costStatus} />
                                   </td>
                                   <td className="px-5 py-3">
-                                    {foodcost !== null ? (
+                                    {costIncomplete ? (
+                                      <CostIncompleteBadge status={item.costStatus} />
+                                    ) : foodcost !== null ? (
                                       <span
                                         className={
                                           foodcost > FOODCOST_NORM

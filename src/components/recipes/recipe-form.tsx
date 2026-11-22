@@ -30,6 +30,8 @@ import { createClient } from "@/lib/supabase/client";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { convertQuantity } from "@/lib/units/convert";
 import { approximateMeasure, halfproductLineCost, ingredientLineCost, recipeTotals } from "@/lib/costing";
+import { costDisplay, formCostStatus, toCostStatus, type CostStatus } from "@/lib/costing/status";
+import { CostIssueList } from "@/components/costing/cost-status";
 import { RecipeHistory } from "@/components/recipes/recipe-history";
 import { RecipeFinancialTable } from "@/components/recipes/recipe-financial-table";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
@@ -286,6 +288,8 @@ export function RecipeForm({
       string,
       {
         pricePerBaseUnit: number;
+        /** false = geen geldige inkoopprijs (er wordt dan met € 0 gerekend). */
+        hasPrice: boolean;
         baseUnitId: string | null;
         avgUnitQuantity: number | null;
         avgUnitId: string | null;
@@ -315,6 +319,8 @@ export function RecipeForm({
         allergensContains: string[];
         allergensTraces: string[];
         nutritionTotals: Record<string, number>;
+        /** Kostprijs onvolledig in dit halfproduct (of dieper)? */
+        costStatus: CostStatus;
       }
     >
   >(new Map());
@@ -472,6 +478,7 @@ export function RecipeForm({
     setProductPrices((prev) =>
       new Map(prev).set(productId, {
         pricePerBaseUnit: cost?.price_per_base_unit ?? 0,
+        hasPrice: cost?.price_per_base_unit != null,
         baseUnitId: product?.base_unit_id ?? null,
         avgUnitQuantity: product?.avg_unit_quantity ?? null,
         avgUnitId: product?.avg_unit_id ?? null,
@@ -493,7 +500,7 @@ export function RecipeForm({
   async function loadHalfproductCost(recipeId: string) {
     if (!referenceCompanyId) return;
     const supabase = createClient();
-    const [{ data: cost }, { data: recipe }, { data: allergens }, { data: nutrition }] =
+    const [{ data: cost }, { data: recipe }, { data: allergens }, { data: nutrition }, { data: status }] =
       await Promise.all([
         supabase.rpc("calculate_recipe_cost", {
           p_recipe_id: recipeId,
@@ -506,6 +513,10 @@ export function RecipeForm({
           .single(),
         supabase.rpc("calculate_recipe_allergens", { p_recipe_id: recipeId }),
         supabase.rpc("calculate_recipe_nutrition", { p_recipe_id: recipeId }),
+        supabase.rpc("recipe_cost_status", {
+          p_company_id: referenceCompanyId,
+          p_recipe_ids: [recipeId],
+        }),
       ]);
     setHalfproductCosts((prev) =>
       new Map(prev).set(recipeId, {
@@ -517,6 +528,7 @@ export function RecipeForm({
         allergensContains: allergens?.bevat ?? [],
         allergensTraces: allergens?.sporen ?? [],
         nutritionTotals: nutrition ?? {},
+        costStatus: toCostStatus(status?.[0]),
       })
     );
   }
@@ -999,6 +1011,34 @@ export function RecipeForm({
     return totals;
   }, [rows, productPrices, halfproductCosts, unitsById]);
 
+  // Kostprijs onvolledig: eigen regels (zelfde regelkosten als hierboven)
+  // plus de status van gebruikte halfproducten, op elke diepte.
+  const costStatus = useMemo(
+    () =>
+      formCostStatus({
+        rows: rows.map((row, i) => ({
+          lineId: row.id ?? null,
+          type: row.type,
+          refId: row.refId,
+          refName: row.refName,
+          unmatchedName: row.unmatchedName,
+          quantity: row.quantity,
+          unitName: row.unitId ? unitsById.get(row.unitId)?.name ?? null : null,
+          cost: lineCosts[i],
+          hasPrice: row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId)?.hasPrice : undefined,
+          hasYield:
+            row.type === "halfproduct" && row.refId && halfproductCosts.has(row.refId)
+              ? Boolean(halfproductCosts.get(row.refId)?.yieldQuantity)
+              : undefined,
+        })),
+        halfproductStatus: new Map(
+          [...halfproductCosts.entries()].map(([id, hp]) => [id, hp.costStatus]),
+        ),
+      }),
+    [rows, lineCosts, unitsById, productPrices, halfproductCosts],
+  );
+  const costIncomplete = !costStatus.isComplete;
+
   const incompleteLineIndexes = rows
     .map((row, i) => ({ row, i }))
     .filter(({ row, i }) => (row.refId || row.quantity.trim()) && lineCosts[i] === null)
@@ -1027,14 +1067,15 @@ export function RecipeForm({
     salesPrice && vatRate
       ? Number(salesPrice) / (1 + Number(vatRate) / 100)
       : null;
-  const foodCostPct =
-    salesPriceExclEstimate && salesPriceExclEstimate > 0
-      ? (totalCost / salesPriceExclEstimate) * 100
-      : null;
-  const marginEuro =
-    salesPriceExclEstimate !== null ? salesPriceExclEstimate - totalCost : null;
+  // Hergebruikt de centrale foodcost/marge-regel; bij een onvolledige
+  // kostprijs zijn foodcost, marge en adviesprijs niet te bepalen.
+  const { foodcostPct: foodCostPct, margin: marginEuro } = costDisplay(
+    totalCost,
+    costStatus,
+    salesPriceExclEstimate,
+  );
   const advisedPrice =
-    targetFoodCostPct && Number(targetFoodCostPct) > 0
+    !costIncomplete && targetFoodCostPct && Number(targetFoodCostPct) > 0
       ? costBeforeMarginFree / (Number(targetFoodCostPct) / 100) + marginFreeCostsNum
       : null;
   const advisedPriceInclVat =
@@ -2706,9 +2747,10 @@ export function RecipeForm({
                   </div>
                   {canViewFinancial && (
                     <div>
-                      <p className="text-xs text-muted">Kostprijs</p>
+                      <p className="text-xs text-muted">{costIncomplete ? "Bekende kosten" : "Kostprijs"}</p>
                       <p className="tabular text-sm font-medium">€ {totalCost.toFixed(2)} totaal</p>
-                      {costPerBaseUnit !== null && (
+                      {costIncomplete && <p className="text-xs text-copper">Kostprijs onvolledig</p>}
+                      {!costIncomplete && costPerBaseUnit !== null && (
                         <p className="tabular text-xs text-muted">
                           € {costPerBaseUnit.toFixed(4)} per {unitLabel}
                           {costPerLargerUnit !== null && largerUnit
@@ -2952,7 +2994,7 @@ export function RecipeForm({
             )}
 
           {/* Maakt zichtbaar hoe de kostprijs per eenheid tot stand komt. */}
-          {recipeKind === "halfproduct" && yieldQuantityNum > 0 && (
+          {recipeKind === "halfproduct" && yieldQuantityNum > 0 && !costIncomplete && (
             <p className="rounded-md bg-teal/5 p-3 text-sm">
               <strong>€ {totalCost.toFixed(2)}</strong> totale kosten ÷{" "}
               <strong>
@@ -2967,7 +3009,11 @@ export function RecipeForm({
           )}
 
           <div className="grid grid-cols-1 gap-4 border-t border-border pt-3 sm:grid-cols-3">
-            <Stat label="Totale kostprijs" value={`€ ${totalCost.toFixed(4)}`} emphasis />
+            <Stat
+              label={costIncomplete ? "Bekende kosten" : "Totale kostprijs"}
+              value={`€ ${totalCost.toFixed(4)}`}
+              emphasis={!costIncomplete}
+            />
             {isPartyDish ? (
               <Stat label="Kostprijs = één standaardvorm" value="Geen verkoopprijs per partijgerecht" />
             ) : recipeKind === "gerecht" ? (
@@ -2996,14 +3042,14 @@ export function RecipeForm({
               <>
                 <Stat
                   label={`Prijs per ${baseUnitName ?? "basiseenheid"}`}
-                  value={costPerBaseUnit !== null ? `€ ${costPerBaseUnit.toFixed(4)}` : "—"}
+                  value={costPerBaseUnit !== null && !costIncomplete ? `€ ${costPerBaseUnit.toFixed(4)}` : "—"}
                   emphasis
                 />
                 {largerUnit && (
                   <Stat
                     label={`Prijs per ${largerUnit.name}`}
                     value={
-                      costPerLargerUnit !== null ? `€ ${costPerLargerUnit.toFixed(2)}` : "—"
+                      costPerLargerUnit !== null && !costIncomplete ? `€ ${costPerLargerUnit.toFixed(2)}` : "—"
                     }
                   />
                 )}
@@ -3018,15 +3064,16 @@ export function RecipeForm({
               />
               <Stat
                 label="Foodcost%"
-                value={foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
-                tone={foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
+                value={costIncomplete ? "Kostprijs onvolledig" : foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
+                tone={costIncomplete ? undefined : foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
               />
               <Stat
                 label="Brutomarge (excl. btw)"
-                value={marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
+                value={costIncomplete ? "Kostprijs onvolledig" : marginEuro !== null ? `€ ${marginEuro.toFixed(2)}` : "—"}
               />
             </div>
           )}
+          <CostIssueList status={costStatus} />
           {incompleteLineIndexes.length > 0 && (
             <p className="flex items-center gap-1 text-xs text-copper">
               <TriangleAlert className="h-3.5 w-3.5" />
@@ -3427,6 +3474,7 @@ export function RecipeForm({
                   baseUnitName={baseUnitName}
                   wastePercentage={Number(wastePct) || 0}
                   marginFreeCosts={marginFreeCostsNum || 0}
+                  costIncomplete={costIncomplete}
                   labourCost={
                     Number(labourRate) > 0
                       ? (((Number(labourKitchen) || 0) + (Number(labourOther) || 0)) / 60) *

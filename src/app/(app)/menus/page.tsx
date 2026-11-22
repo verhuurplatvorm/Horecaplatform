@@ -11,10 +11,14 @@ import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import type { EventMenu } from "@/lib/types/database";
+import { fetchEventMenuCostStatus } from "@/lib/recipes/costs";
+import type { CostStatus } from "@/lib/costing/status";
+import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
 
 interface MenuRow extends EventMenu {
   companyName: string | null;
   totalCost: number | null;
+  costStatus: CostStatus | null;
 }
 
 /**
@@ -49,17 +53,23 @@ export default function MenusPage() {
       const withCost = await Promise.all(
         (menus as EventMenu[]).map(async (m) => {
           let totalCost: number | null = null;
+          let costStatus: CostStatus | null = null;
           if (canViewFinancial && referenceCompanyId) {
-            const { data } = await supabase.rpc("calculate_event_menu_cost", {
-              p_menu_id: m.id,
-              p_company_id: referenceCompanyId,
-            });
+            const [{ data }, status] = await Promise.all([
+              supabase.rpc("calculate_event_menu_cost", {
+                p_menu_id: m.id,
+                p_company_id: referenceCompanyId,
+              }),
+              fetchEventMenuCostStatus(supabase, m.id, referenceCompanyId),
+            ]);
             totalCost = (data as number | null) ?? null;
+            costStatus = status;
           }
           return {
             ...m,
             companyName: m.company_id ? companyName.get(m.company_id) ?? null : null,
             totalCost,
+            costStatus,
           };
         })
       );
@@ -77,9 +87,11 @@ export default function MenusPage() {
   const costPerPerson = (r: MenuRow) =>
     r.totalCost !== null && r.person_count > 0 ? r.totalCost / r.person_count : null;
 
+  const incomplete = (r: MenuRow) => r.costStatus?.isComplete === false;
+
   const foodcost = (r: MenuRow) => {
     const cpp = costPerPerson(r);
-    if (cpp === null || !r.sales_price_per_person) return null;
+    if (incomplete(r) || cpp === null || !r.sales_price_per_person) return null;
     const exclVat = r.sales_price_per_person / (1 + r.vat_rate / 100);
     return exclVat > 0 ? (cpp / exclVat) * 100 : null;
   };
@@ -146,8 +158,7 @@ export default function MenusPage() {
                     align: "right" as const,
                     value: (r: MenuRow) => costPerPerson(r),
                     render: (r: MenuRow) => {
-                      const c = costPerPerson(r);
-                      return c !== null ? `€ ${c.toFixed(2)}` : "—";
+                      return <CostAmount amount={costPerPerson(r)} status={r.costStatus} />;
                     },
                   },
                   {
@@ -156,8 +167,7 @@ export default function MenusPage() {
                     width: 120,
                     align: "right" as const,
                     value: (r: MenuRow) => r.totalCost,
-                    render: (r: MenuRow) =>
-                      r.totalCost !== null ? `€ ${r.totalCost.toFixed(2)}` : "—",
+                    render: (r: MenuRow) => <CostAmount amount={r.totalCost} status={r.costStatus} />,
                   },
                   {
                     key: "fc",
@@ -166,6 +176,7 @@ export default function MenusPage() {
                     align: "right" as const,
                     value: (r: MenuRow) => foodcost(r),
                     render: (r: MenuRow) => {
+                      if (incomplete(r)) return <CostIncompleteBadge status={r.costStatus} />;
                       const f = foodcost(r);
                       if (f === null) return "—";
                       return (
@@ -182,7 +193,7 @@ export default function MenusPage() {
                     align: "right" as const,
                     value: (r: MenuRow) => {
                       const cpp = costPerPerson(r);
-                      if (cpp === null || !r.sales_price_per_person) return null;
+                      if (incomplete(r) || cpp === null || !r.sales_price_per_person) return null;
                       return (
                         (r.sales_price_per_person / (1 + r.vat_rate / 100) - cpp) *
                         r.person_count
@@ -190,6 +201,7 @@ export default function MenusPage() {
                     },
                     render: (r: MenuRow) => {
                       const cpp = costPerPerson(r);
+                      if (incomplete(r)) return "—";
                       if (cpp === null || !r.sales_price_per_person) return "—";
                       const m =
                         (r.sales_price_per_person / (1 + r.vat_rate / 100) - cpp) *

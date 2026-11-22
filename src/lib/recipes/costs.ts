@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
+import { toCostStatus, type CostStatus } from "@/lib/costing/status";
 
 /**
  * Kostprijzen van veel recepten in één keer (database-functie
@@ -27,4 +28,45 @@ export async function fetchRecipeCosts(
     }),
   );
   return result;
+}
+
+/**
+ * Status "Kostprijs onvolledig" voor veel recepten in één keer (database-functie
+ * recipe_cost_status). Werkt door naar onderliggende halfproducten op elke diepte.
+ */
+export async function fetchRecipeCostStatus(
+  supabase: SupabaseClient<Database>,
+  companyId: string,
+  recipeIds: string[],
+): Promise<Map<string, CostStatus>> {
+  const result = new Map<string, CostStatus>();
+  const unique = [...new Set(recipeIds.filter(Boolean))];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 400) chunks.push(unique.slice(i, i + 400));
+  await Promise.all(
+    chunks.map(async (ids) => {
+      const { data } = await supabase.rpc("recipe_cost_status", {
+        p_company_id: companyId,
+        p_recipe_ids: ids,
+      });
+      for (const row of (data ?? []) as { recipe_id: string; is_complete: boolean; issues: unknown }[]) {
+        result.set(row.recipe_id, toCostStatus(row));
+      }
+    }),
+  );
+  return result;
+}
+
+/** Status "Kostprijs onvolledig" van één menu/buffet. */
+export async function fetchEventMenuCostStatus(
+  supabase: SupabaseClient<Database>,
+  menuId: string,
+  companyId: string,
+): Promise<CostStatus> {
+  const { data } = await supabase.rpc("event_menu_cost_status", {
+    p_menu_id: menuId,
+    p_company_id: companyId,
+  });
+  const row = Array.isArray(data) ? data[0] : data;
+  return toCostStatus(row as { is_complete: boolean; issues: unknown } | null);
 }
