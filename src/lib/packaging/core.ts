@@ -279,8 +279,26 @@ export interface PackagingPrices {
   perBase: number | null;
   /** Prijs per stuk (alleen als stuk de basiseenheid is, of een gewicht-per-stuk bekend is). */
   perPiece: number | null;
+  /** Alleen bij een gewichtsproduct of stuks met een geldig gewicht per stuk. */
   perKg: number | null;
+  /** Idem, per gram. */
+  perGram: number | null;
+  /** Alleen bij een inhoudsproduct of stuks met een geldige inhoud per stuk. */
   perLiter: number | null;
+}
+
+/**
+ * Waar wordt dit product écht in gemeten? Gewicht of inhoud: de
+ * basiseenheid zelf, of bij stuks de eenheid van "1 stuk = X". Geen
+ * geldige brug = alleen stuks. Zo krijgt brood (18 × 260 g) een kilo-,
+ * maar géén literprijs — "1 ml telt als 1 g" is een rekenhulp voor
+ * recepten, geen prijsweergave.
+ */
+export function measureDimension(base: UnitKey, bridge?: KeyBridge | null): Dimension {
+  const own = UNIT_TABLE[base].dimension;
+  if (own !== "aantal") return own;
+  if (!bridge?.unit || !isUnitKey(bridge.unit) || !(Number(bridge.quantity) > 0)) return "aantal";
+  return UNIT_TABLE[bridge.unit].dimension;
 }
 
 /**
@@ -294,7 +312,7 @@ export function pricesFromCount(
   bridge?: KeyBridge | null
 ): PackagingPrices {
   if (!Number.isFinite(price) || !Number.isFinite(count) || count <= 0) {
-    return { perBase: null, perPiece: null, perKg: null, perLiter: null };
+    return { perBase: null, perPiece: null, perKg: null, perGram: null, perLiter: null };
   }
   const perBase = price / count;
   const perUnit = (to: UnitKey): number | null => {
@@ -302,11 +320,13 @@ export function pricesFromCount(
     const baseOfOne = convert(1, to, base, bridge, true);
     return baseOfOne === null ? null : perBase * baseOfOne;
   };
+  const measure = measureDimension(base, bridge);
   return {
     perBase,
     perPiece: perUnit("stuk"),
-    perKg: perUnit("kg"),
-    perLiter: perUnit("l"),
+    perKg: measure === "gewicht" ? perUnit("kg") : null,
+    perGram: measure === "gewicht" ? perUnit("g") : null,
+    perLiter: measure === "inhoud" ? perUnit("l") : null,
   };
 }
 
