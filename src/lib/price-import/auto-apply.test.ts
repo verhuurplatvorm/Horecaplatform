@@ -46,4 +46,26 @@ describe("decideAutoRow — aantal uit productnaam", () => {
     });
     assert.equal(r.decision, "toepassen");
   });
+  it("vaste prijzen: afwijkende factuurprijs gaat naar controle, ook als het klein is", () => {
+    const r = decideAutoRow({ newPrice: 12.5, packagingUnitCount: 24, existingPrice: 10.75, fixedPrices: true });
+    assert.equal(r.decision, "controle");
+    assert.equal(r.reason, "wijkt af van vaste prijs");
+    assert.equal(
+      decideAutoRow({ newPrice: 10.8, packagingUnitCount: 24, existingPrice: 10.75, fixedPrices: true }).decision,
+      "controle",
+    );
+  });
+  it("vaste prijzen: gelijke prijs of nieuw artikel mag wel", () => {
+    assert.equal(
+      decideAutoRow({ newPrice: 10.75, packagingUnitCount: 24, existingPrice: 10.75, fixedPrices: true }).decision,
+      "toepassen",
+    );
+    assert.equal(
+      decideAutoRow({ newPrice: 10.75, packagingUnitCount: 24, existingPrice: null, fixedPrices: true }).decision,
+      "toepassen",
+    );
+  });
+  it("dagprijzen / niet ingesteld: kleine afwijking wordt gewoon doorgevoerd", () => {
+    assert.equal(decideAutoRow({ newPrice: 11, packagingUnitCount: 24, existingPrice: 10.75 }).decision, "toepassen");
+  });
 });

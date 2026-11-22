@@ -165,7 +165,17 @@ export default function PrijswijzigingenPage() {
               <tbody>
                 {filtered.map((c) => (
                   <tr key={c.id} className="border-t border-border">
-                    <td className="px-5 py-3 font-medium">{c.productName}</td>
+                    <td className="px-5 py-3 font-medium">
+                      {c.productName}
+                      {c.is_acknowledged && (
+                        <span
+                          className="ml-2 rounded-full bg-success/10 px-2 py-0.5 text-xs font-normal text-success"
+                          title="Geaccepteerd als nieuwe standaard — geen waarschuwing meer"
+                        >
+                          nieuwe standaard
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-muted">{c.supplierName}</td>
                     <td className="px-5 py-3 text-muted">{c.companyName ?? "groepsbreed"}</td>
                     <td className="px-5 py-3 tabular text-muted">

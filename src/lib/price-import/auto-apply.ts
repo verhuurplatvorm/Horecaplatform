@@ -24,10 +24,15 @@ export function decideAutoRow(input: {
   description?: string | null;
   /** Maximale prijswijziging (%) voor automatisch doorvoeren; standaard MAX_AUTO_CHANGE_PCT. */
   maxChangePct?: number;
+  /** Leverancier met vaste prijzen: een afwijkende factuurprijs nooit automatisch doorvoeren. */
+  fixedPrices?: boolean;
 }): { decision: AutoRowDecision; reason?: string } {
   const { newPrice, packagingUnitCount, existingPrice, description } = input;
   const maxPct = input.maxChangePct ?? MAX_AUTO_CHANGE_PCT;
   if (newPrice === null || !(newPrice > 0)) return { decision: "controle", reason: "prijs ontbreekt" };
+  if (input.fixedPrices && existingPrice !== null && existingPrice > 0 && Math.abs(newPrice - existingPrice) >= 0.005) {
+    return { decision: "controle", reason: "wijkt af van vaste prijs" };
+  }
   if (existingPrice !== null && existingPrice > 0) {
     const pct = (Math.abs(newPrice - existingPrice) / existingPrice) * 100;
     if (pct > maxPct) {
@@ -62,6 +67,11 @@ export async function autoApplyInvoiceBatch(
     ? await supabase.from("groups").select("auto_apply_max_change_pct").eq("id", batch.group_id).maybeSingle()
     : { data: null };
   const maxChangePct = grp?.auto_apply_max_change_pct != null ? Number(grp.auto_apply_max_change_pct) : MAX_AUTO_CHANGE_PCT;
+  // Vaste prijzen (bv. Horesca): de prijslijst is de norm, niet de factuur.
+  const { data: sup } = batch?.supplier_id
+    ? await supabase.from("suppliers").select("price_type").eq("id", batch.supplier_id).maybeSingle()
+    : { data: null };
+  const fixedPrices = sup?.price_type === "vast";
   const { data: rows } = await supabase
     .from("price_import_rows")
     .select("id, matched_product_id, status, purchase_price, packaging_unit_count, description, row_number")
@@ -92,6 +102,7 @@ export async function autoApplyInvoiceBatch(
       existingPrice: existing.get(row.matched_product_id as string) ?? null,
       description: row.description as string | null,
       maxChangePct,
+      fixedPrices,
     });
     if (verdict.decision === "controle") continue;
     const { error } = await supabase.rpc("apply_price_import_row", { p_row_id: row.id });

@@ -151,6 +151,8 @@ export type Supplier = {
   iban: string | null;
   iban_verified_at: string | null;
   is_active: boolean;
+  /** dag = dagprijzen, vast = vaste prijzen per periode; null = niet ingesteld (migratie 0142). */
+  price_type?: "dag" | "vast" | null;
 }
 
 export type SupplierProduct = {
@@ -566,6 +568,8 @@ export type PriceChangeHistory = {
   old_packaging_description: string | null;
   old_packaging_unit_count: number | null;
   old_price_per_base_unit: number | null;
+  /** Wijziging is afgehandeld (prijslijst geaccepteerd of alarm weggehaald). */
+  is_acknowledged: boolean;
 }
 
 export type UserProfile = {
@@ -789,6 +793,11 @@ export type PriceImportBatch = {
   original_file_path: string | null;
   /** Datum vanaf wanneer een prijslijst geldt (leeg = importdatum). */
   price_date?: string | null;
+  /** Vaste prijzen: laatste dag dat de prijslijst geldt. */
+  price_valid_to?: string | null;
+  /** Geaccepteerd als nieuwe standaard (geen waarschuwingen meer). */
+  accepted_at?: string | null;
+  accepted_by?: string | null;
 };
 
 export type PriceImportRow = {
@@ -1464,6 +1473,25 @@ export type Database = {
       apply_price_import_row: {
         Args: { p_row_id: string };
         Returns: void;
+      };
+      price_import_batch_changes: {
+        Args: { p_batch_id: string };
+        Returns: {
+          row_id: string;
+          product_id: string;
+          product_name: string;
+          article_number: string | null;
+          old_price: number | null;
+          new_price: number | null;
+          diff: number | null;
+          diff_pct: number | null;
+          change_kind: "hoger" | "lager" | "gelijk" | "nieuw";
+          valid_from: string | null;
+        }[];
+      };
+      accept_price_import_batch: {
+        Args: { p_batch_id: string };
+        Returns: number;
       };
       rollback_price_import_batch: {
         Args: { p_batch_id: string };

@@ -103,7 +103,7 @@ export function RecipeFinancialTable({
             .is("valid_to", null),
           supabase
             .from("price_change_history")
-            .select("product_id, old_purchase_price, new_purchase_price, valid_from")
+            .select("product_id, old_purchase_price, new_purchase_price, valid_from, is_acknowledged")
             .in("product_id", productIds)
             .not("old_purchase_price", "is", null)
             .order("valid_from", { ascending: false }),
@@ -136,9 +136,14 @@ export function RecipeFinancialTable({
           // @ts-expect-error -- suppliers komt als geneste relatie terug
           e.supplierName = pr.suppliers?.name ?? null;
         }
+        // Alleen de laatste wijziging telt; is die geaccepteerd (nieuwe
+        // standaard), dan geen "vorige prijs" meer tonen.
+        const seenHistory = new Set<string>();
         for (const h of history ?? []) {
+          if (seenHistory.has(h.product_id)) continue;
+          seenHistory.add(h.product_id);
           const e = map.get(h.product_id);
-          if (e && e.previousPrice === null) e.previousPrice = h.old_purchase_price;
+          if (e && !h.is_acknowledged) e.previousPrice = h.old_purchase_price;
         }
         if (!cancelled) setExtras(map);
       }

@@ -1,5 +1,6 @@
 "use client";
 
+import { PriceListOverview } from "@/components/price-import/price-list-overview";
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleAlert, FileText, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
@@ -501,6 +502,16 @@ export default function ImportReviewPage({
         )}
         {batch.source_kind === "factuur" && batch.invoice_date && (
           <InvoicePriceCheck batchId={batch.id} invoiceDate={batch.invoice_date} />
+        )}
+        {batch.source_kind === "prijslijst" && batch.supplier_id && (
+          <PriceListOverview
+            batchId={batch.id}
+            supplierId={batch.supplier_id}
+            priceDate={batch.price_date ?? null}
+            priceValidTo={batch.price_valid_to ?? null}
+            acceptedAt={batch.accepted_at ?? null}
+            reloadToken={reloadToken}
+          />
         )}
         <Card>
           <CardHeader>

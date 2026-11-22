@@ -44,6 +44,7 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
   );
   const [companyId, setCompanyId] = useState(initialSupplier?.company_id ?? "");
   const [isActive, setIsActive] = useState(initialSupplier?.is_active ?? true);
+  const [priceType, setPriceType] = useState<"dag" | "vast" | "">(initialSupplier?.price_type ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -86,6 +87,7 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
       delivery_days: Array.from(deliveryDays),
       company_id: scopeChoice === "company" ? companyId : null,
       is_active: isActive,
+      price_type: priceType || null,
     };
 
     if (isEdit && initialSupplier) {
@@ -292,6 +294,41 @@ export function SupplierForm({ initialSupplier }: SupplierFormProps) {
                   {day}
                 </label>
               ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-sm font-medium text-foreground">Prijsafspraak</p>
+            <div className="space-y-1.5">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={priceType === "dag"}
+                  onChange={(e) => setPriceType(e.target.checked ? "dag" : "")}
+                />
+                <span>
+                  <span className="font-medium">Dagprijzen</span>
+                  <span className="block text-xs text-muted">
+                    Prijzen wisselen; een andere prijs op de factuur is normaal en geeft geen
+                    waarschuwing.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={priceType === "vast"}
+                  onChange={(e) => setPriceType(e.target.checked ? "vast" : "")}
+                />
+                <span>
+                  <span className="font-medium">Vaste prijzen</span>
+                  <span className="block text-xs text-muted">
+                    De prijslijst geldt voor een periode. Elke afwijking op een factuur wordt
+                    gemeld en niet automatisch doorgevoerd.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
