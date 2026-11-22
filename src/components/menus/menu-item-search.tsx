@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Star } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export interface MenuItemHit {
@@ -9,6 +9,7 @@ export interface MenuItemHit {
   id: string;
   name: string;
   baseUnitId: string | null;
+  favorite?: boolean;
 }
 
 /**
@@ -47,14 +48,14 @@ export function MenuItemSearch({
           .limit(12),
         supabase
           .from("products")
-          .select("id, name, custom_name, base_unit_id")
+          .select("id, name, custom_name, base_unit_id, is_favorite")
           .ilike("name", like)
           .eq("is_active", true)
           .order("name")
           .limit(10),
         supabase
           .from("products")
-          .select("id, name, custom_name, base_unit_id")
+          .select("id, name, custom_name, base_unit_id, is_favorite")
           .ilike("custom_name", like)
           .eq("is_active", true)
           .order("name")
@@ -76,9 +77,11 @@ export function MenuItemSearch({
           id: x.id as string,
           name: ((x.custom_name as string | null) || x.name) as string,
           baseUnitId: (x.base_unit_id as string | null) ?? null,
+          favorite: Boolean(x.is_favorite),
         })),
       ].filter((h) => (seen.has(h.id) ? false : (seen.add(h.id), true)));
-      setHits(list);
+      // Favoriete ingrediënten bovenaan; de rest houdt zijn volgorde.
+      setHits([...list].sort((x, y) => Number(y.favorite ?? false) - Number(x.favorite ?? false)));
     }, 200);
     return () => {
       cancelled = true;
@@ -113,7 +116,12 @@ export function MenuItemSearch({
               }}
               className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface"
             >
-              <span className="truncate">{h.name}</span>
+              <span className="flex min-w-0 items-center gap-1">
+                {h.favorite && (
+                  <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="Favoriet" />
+                )}
+                <span className="truncate">{h.name}</span>
+              </span>
               <span className="shrink-0 text-xs text-muted">{h.kind}</span>
             </button>
           ))}

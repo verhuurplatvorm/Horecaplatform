@@ -12,6 +12,7 @@ import { withReturnTo } from "@/lib/use-return-navigation";
 import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { ProductViewTabs } from "@/components/products/product-view-tabs";
+import { FavoriteStar } from "@/components/products/favorite-star";
 import { ConfigurableTable } from "@/components/ui/configurable-table";
 import { cn } from "@/lib/utils";
 import { convert, isUnitKey } from "@/lib/packaging";
@@ -45,6 +46,7 @@ interface ProductRow {
   updatedAt: string;
   flaggedForReview: boolean;
   previousPurchasePrice: number | null;
+  isFavorite: boolean;
 }
 
 interface UsageInfo {
@@ -169,6 +171,11 @@ export default function ProductenPage() {
   const BLOCK_SIZE = 1000;
   const MAX_ALL = 20000;
 
+  /** Ster in de lijst bijwerken zonder opnieuw te laden. */
+  function markFavorite(id: string, value: boolean) {
+    setRows((prev) => prev.map((x) => (x.id === id ? { ...x, isFavorite: value } : x)));
+  }
+
   const fetchPage = useCallback(
     async (offset: number, search: string, append: boolean, limit = PAGE_SIZE): Promise<number> => {
       const supabase = createClient();
@@ -223,6 +230,7 @@ export default function ProductenPage() {
           updatedAt: p.updated_at,
           flaggedForReview: p.flagged_for_review,
           previousPurchasePrice: p.previous_purchase_price,
+          isFavorite: p.is_favorite,
         };
       });
 
@@ -446,6 +454,21 @@ export default function ProductenPage() {
           rowClassName={(row) => (!row.is_active ? "opacity-50" : undefined)}
           onFilterActiveChange={setColumnFilterActive}
           columns={[
+            {
+              key: "fav",
+              label: "★",
+              width: 40,
+              noFilter: true,
+              value: (r) => (r.isFavorite ? "1" : "0"),
+              render: (r) => (
+                <FavoriteStar
+                  key={`${r.id}:${r.isFavorite}`}
+                  productId={r.id}
+                  initial={r.isFavorite}
+                  onChange={(v) => markFavorite(r.id, v)}
+                />
+              ),
+            },
             {
               key: "flag",
               label: "!",

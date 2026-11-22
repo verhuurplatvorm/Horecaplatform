@@ -11,6 +11,7 @@ import {
   Printer,
   Search,
   SprayCan,
+  Star,
   Trash2,
   UtensilsCrossed,
 } from "lucide-react";
@@ -33,6 +34,7 @@ interface Hit {
   kind: Kind;
   sub: string | null;
   href: string;
+  favorite?: boolean;
 }
 
 const FILTERS: { key: Filter; label: string }[] = [
@@ -114,12 +116,12 @@ export default function OperatorPage() {
         rq = rq.eq("recipe_kind", filter);
       let pq = supabase
         .from("products")
-        .select("id, name, custom_name, product_group")
+        .select("id, name, custom_name, product_group, is_favorite")
         .eq("is_active", true)
         .in("item_category", ["food", "onbekend"]);
       let cq = supabase
         .from("products")
-        .select("id, name, custom_name, product_group")
+        .select("id, name, custom_name, product_group, is_favorite")
         .eq("is_active", true)
         .in("item_category", ["food", "onbekend"]);
       for (const w of ws) {
@@ -166,6 +168,7 @@ export default function OperatorPage() {
         name: string;
         custom_name: string | null;
         product_group: string | null;
+        is_favorite: boolean;
       }[]) {
         if (seen.has(x.id)) continue;
         seen.add(x.id);
@@ -175,10 +178,12 @@ export default function OperatorPage() {
           kind: "ingredient",
           sub: x.product_group,
           href: `/producten/${x.id}/bewerken`,
+          favorite: x.is_favorite,
         });
       }
       out.sort(
         (a, b) =>
+          Number(b.favorite ?? false) - Number(a.favorite ?? false) ||
           score(a.name, term) - score(b.name, term) ||
           a.name.localeCompare(b.name, "nl"),
       );
@@ -288,8 +293,14 @@ export default function OperatorPage() {
                     >
                       <k.icon className="h-5 w-5 shrink-0 text-muted" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-lg font-medium text-foreground">
-                          {h.name}
+                        <span className="flex items-center gap-1.5 truncate text-lg font-medium text-foreground">
+                          {h.favorite && (
+                            <Star
+                              className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400"
+                              aria-label="Favoriet"
+                            />
+                          )}
+                          <span className="truncate">{h.name}</span>
                         </span>
                         {h.sub && (
                           <span className="block truncate text-xs text-muted">

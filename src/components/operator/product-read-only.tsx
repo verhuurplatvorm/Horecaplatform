@@ -1,4 +1,5 @@
 import { Package } from "lucide-react";
+import { FavoriteStar } from "@/components/products/favorite-star";
 import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
 import { createClient } from "@/lib/supabase/server";
 import { formatAmount } from "@/lib/units/format";
@@ -60,7 +61,8 @@ export async function ProductReadOnly({
             Ingrediënt
             {product.product_group ? ` · ${product.product_group}` : ""}
           </p>
-          <h2 className="mt-1 text-2xl font-semibold text-foreground">
+          <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-foreground">
+            <FavoriteStar productId={product.id} initial={product.is_favorite ?? false} readOnly size="md" />
             {name}
           </h2>
           {product.custom_name?.trim() &&

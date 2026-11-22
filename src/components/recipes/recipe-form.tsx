@@ -1347,6 +1347,7 @@ export function RecipeForm({
       base_unit_id: string | null;
       yield_quantity: number | null;
       match_rank: number;
+      is_favorite?: boolean;
     }[];
     if (hits.length === 0) {
       finish({ matchState: "onbekend" });
@@ -1357,7 +1358,13 @@ export function RecipeForm({
     // als er precies één naam is die ermee begint.
     const exact = hits.filter((h) => h.match_rank === 0);
     const startsWith = hits.filter((h) => h.match_rank === 1);
-    const sure = exact.length === 1 ? exact : exact.length === 0 ? startsWith : [];
+    let sure = exact.length === 1 ? exact : exact.length === 0 ? startsWith : [];
+    // Meerdere kandidaten? Is er precies één favoriet bij, dan is dat de keuze.
+    if (sure.length !== 1) {
+      const candidates = exact.length > 0 ? exact : startsWith;
+      const favs = candidates.filter((h) => h.is_favorite);
+      if (favs.length === 1) sure = favs;
+    }
     if (sure.length !== 1) {
       finish({ matchState: "meerdere" });
       return "meerdere";

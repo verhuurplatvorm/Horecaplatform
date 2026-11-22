@@ -127,6 +127,8 @@ export type Product = {
   min_stock_quantity: number | null;
   reorder_quantity: number | null;
   is_active: boolean;
+  /** Favoriet ingrediënt: bovenaan in de zoekvensters (migratie 0141). */
+  is_favorite: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1695,6 +1697,7 @@ export type Database = {
           yield_quantity: number | null;
           yield_unit: string | null;
           match_rank: number;
+          is_favorite: boolean;
         }[];
       };
       search_products_overview: {
@@ -1734,6 +1737,7 @@ export type Database = {
           flagged_for_review: boolean;
           previous_purchase_price: number | null;
           total_count: number;
+          is_favorite: boolean;
         }[];
       };
       get_event_menu_breakdown: {

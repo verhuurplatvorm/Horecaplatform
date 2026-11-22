@@ -2,7 +2,7 @@
 
 import { formatAmount } from "@/lib/units/format";
 import { useEffect, useRef, useState } from "react";
-import { Check, Package, Search, SoupIcon, X } from "lucide-react";
+import { Check, Package, Search, SoupIcon, Star, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { ProductForm } from "@/components/products/product-form";
 import { HalfproductQuickForm } from "@/components/recipes/halfproduct-quick-form";
@@ -36,6 +36,7 @@ interface SearchRow {
   yield_quantity: number | null;
   yield_unit: string | null;
   match_rank: number;
+  is_favorite?: boolean;
 }
 
 const EURO = new Intl.NumberFormat("nl-NL", {
@@ -320,8 +321,14 @@ export function IngredientSearch({
                             <SoupIcon className="h-3.5 w-3.5 shrink-0 text-copper" />
                           )}
                           <span className="min-w-0">
-                            <span className="block truncate font-medium">
-                              {r.custom_name?.trim() || r.name}
+                            <span className="flex items-center gap-1 truncate font-medium">
+                              {r.is_favorite && (
+                                <Star
+                                  className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400"
+                                  aria-label="Favoriet"
+                                />
+                              )}
+                              <span className="truncate">{r.custom_name?.trim() || r.name}</span>
                             </span>
                             {r.custom_name?.trim() && r.custom_name !== r.name && (
                               <span className="block truncate text-xs text-muted">{r.name}</span>
