@@ -52,6 +52,7 @@ export function ConfigurableTable<T extends { id: string }>({
   rowClassName,
   onFilterActiveChange,
   countLabel = "ingrediënten",
+  server,
 }: {
   columns: DataColumn<T>[];
   rows: T[];
@@ -66,6 +67,18 @@ export function ConfigurableTable<T extends { id: string }>({
   onFilterActiveChange?: (active: boolean) => void;
   /** Woord in de teller onder de tabel ("12 van 40 …"). */
   countLabel?: string;
+  /**
+   * Servermodus: kolomfilters en sorteren gebeuren in de database over de
+   * volledige lijst. De tabel filtert/sorteert dan niet zelf, maar meldt
+   * wijzigingen; `rows` is al de juiste pagina.
+   */
+  server?: {
+    onQueryChange: (q: { filters: Record<string, string>; sortKey: string | null; sortDesc: boolean }) => void;
+    /** Totaal aantal resultaten (alle pagina's) voor de teller. */
+    totalCount: number;
+    /** Kolommen waarop de server niet kan sorteren. */
+    unsortable?: string[];
+  };
 }) {
   const defaultOrder = useMemo(() => columns.map((c) => c.key), [columns]);
   const defaultHidden = useMemo(
@@ -83,6 +96,14 @@ export function ConfigurableTable<T extends { id: string }>({
   }, [filterActive, onFilterActiveChange]);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(1);
+  // Servermodus: filters en sortering doorgeven aan de pagina.
+  const onQueryChange = server?.onQueryChange;
+  const filterKey = JSON.stringify(
+    Object.fromEntries(Object.entries(filters).filter(([, v]) => v.trim() !== "").map(([k, v]) => [k, v.trim()])),
+  );
+  useEffect(() => {
+    onQueryChange?.({ filters: JSON.parse(filterKey), sortKey, sortDesc: sortDir === -1 });
+  }, [onQueryChange, filterKey, sortKey, sortDir]);
   const [showColumnPanel, setShowColumnPanel] = useState(false);
   const [views, setViews] = useState<SavedView[]>([]);
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -158,6 +179,7 @@ export function ConfigurableTable<T extends { id: string }>({
     (selectedIds ? CHECKBOX_COL : 0) + shown.reduce((sum, c) => sum + colWidth(c), 0);
 
   const filtered = useMemo(() => {
+    if (server) return rows;
     const active = Object.entries(filters).filter(([, v]) => v.trim() !== "");
     let out = rows;
     if (active.length) {
@@ -187,9 +209,10 @@ export function ConfigurableTable<T extends { id: string }>({
       }
     }
     return out;
-  }, [rows, filters, sortKey, sortDir, byKey]);
+  }, [rows, filters, sortKey, sortDir, byKey, server]);
 
   function toggleSort(key: string) {
+    if (server?.unsortable?.includes(key)) return;
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
     else {
       setSortKey(key);
@@ -482,9 +505,11 @@ export function ConfigurableTable<T extends { id: string }>({
         </table>
       </div>
 
-      <p className="text-xs text-muted">
-        {filtered.length} van {rows.length} {countLabel}
-      </p>
+      {!server && (
+        <p className="text-xs text-muted">
+          {filtered.length} van {rows.length} {countLabel}
+        </p>
+      )}
     </div>
   );
 }

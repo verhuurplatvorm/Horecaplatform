@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Plus, Search, TriangleAlert, Trash2, Upload } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -15,7 +15,7 @@ import { ProductViewTabs } from "@/components/products/product-view-tabs";
 import { FavoriteStar } from "@/components/products/favorite-star";
 import { ConfigurableTable } from "@/components/ui/configurable-table";
 import { cn } from "@/lib/utils";
-import { convert, isUnitKey } from "@/lib/packaging";
+import { formatUnitPrice, unitPriceLines } from "@/lib/packaging";
 import { useRouter } from "next/navigation";
 
 interface ProductRow {
@@ -27,6 +27,7 @@ interface ProductRow {
   avg_unit_quantity: number | null;
   avg_unit_name: string | null;
   avgUnitKey: string | null;
+  netUnitQuantity: number | null;
   article_number: string | null;
   ean_code: string | null;
   is_active: boolean;
@@ -76,14 +77,20 @@ export default function ProductenPage() {
       });
   }, []);
 
-  /** Exporteert wat er nu zichtbaar is (inclusief actieve zoekterm). */
-  function exportCsv() {
+  /** Exporteert het volledige resultaat van de huidige zoekopdracht en filters (alle pagina's). */
+  async function exportCsv() {
+    const all: ProductRow[] = [];
+    for (let offset = 0; offset < Math.max(totalCount, 1); offset += 500) {
+      const { rows: chunk } = await fetchRows(offset, 500);
+      all.push(...chunk);
+      if (chunk.length < 500) break;
+    }
     const header = [
       "ID","Naam","Leveranciersartikelnr.","Merk","Leverancier","Categorie",
       "Prijs per verpakking","Verpakking","Inhoud","Eenheid","Prijs per basiseenheid",
       "Prijswijziging %","Laatste prijswijziging","Beschikbaar","EAN","Notitie",
     ];
-    const lines = filteredRows.map((r) => {
+    const lines = all.map((r) => {
       const d = priceDelta(r);
       return [
         r.productNumber ?? "", r.customName?.trim() || r.name, r.supplierArticleCode ?? "",
@@ -106,18 +113,22 @@ export default function ProductenPage() {
     URL.revokeObjectURL(url);
   }
 
-  /** Prijsverschil t.o.v. de vorige actieve prijs, of null als er geen vorige is. */
-  /** Bij stuks met bekend gewicht/inhoud: de kilo- of literprijs ernaast. */
-  function perKiloOrLiter(r: ProductRow): string | null {
-    if (r.base_unit !== "stuk" || r.pricePerBaseUnit === null || !r.avg_unit_quantity) return null;
-    if (!isUnitKey(r.avgUnitKey)) return null;
-    for (const [target, label] of [["l", "l"], ["kg", "kg"]] as const) {
-      const per = convert(r.avg_unit_quantity, r.avgUnitKey, target);
-      if (per !== null && per > 0) return `€ ${(r.pricePerBaseUnit / per).toFixed(2)} / ${label}`;
-    }
-    return null;
+  /**
+   * Prijs per basiseenheid plus de passende extra prijzen (per stuk, per
+   * kg/g bij gewicht, per liter bij inhoud) — één centrale regel
+   * (unitPriceLines). Brood 18 × 260 g: per stuk en per kg, nooit per liter.
+   */
+  function unitPrices(r: ProductRow) {
+    return unitPriceLines({
+      pricePerBase: r.pricePerBaseUnit,
+      baseUnit: r.base_unit,
+      bridgeQuantity: r.avg_unit_quantity,
+      bridgeUnit: r.avgUnitKey,
+      netQuantity: r.netUnitQuantity,
+    });
   }
 
+  /** Prijsverschil t.o.v. de vorige actieve prijs, of null als er geen vorige is. */
   function priceDelta(r: ProductRow) {
     if (r.purchasePrice === null || r.previousPurchasePrice === null) return null;
     if (r.previousPurchasePrice === 0) return null;
@@ -133,7 +144,6 @@ export default function ProductenPage() {
   const { activeCompanyIds } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
   const [rows, setRows] = useState<ProductRow[]>([]);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -143,157 +153,132 @@ export default function ProductenPage() {
   const [deletingRow, setDeletingRow] = useState<ProductRow | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
-  const [units, setUnits] = useState<
-    { id: string; key: string; name: string; dimension: string }[]
-  >([]);
+
+  // Alles wat de lijst bepaalt gaat naar de database: zoeken, kolomfilters,
+  // sorteren, leverancier, favorieten, actuele ingrediënten en de pagina.
+  const PAGE_SIZE = 100;
+  const [columnQuery, setColumnQuery] = useState<{
+    filters: Record<string, string>;
+    sortKey: string | null;
+    sortDesc: boolean;
+  }>({ filters: {}, sortKey: null, sortDesc: false });
+  const [supplierFilter, setSupplierFilter] = useState<string>("");
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [onlyCurrent, setOnlyCurrent] = useState(false);
+  const [supplierNames, setSupplierNames] = useState<string[]>([]);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("units")
-      .select("id, key, name, dimension")
-      .order("sort_order")
-      .then(({ data, error: unitsError }) => {
-        if (unitsError) {
-          console.error("Kan eenheden niet ophalen:", unitsError.message);
-        }
-        setUnits(data ?? []);
-      });
+    createClient()
+      .from("suppliers")
+      .select("name")
+      .order("name")
+      .then(({ data }) => setSupplierNames((data ?? []).map((x) => x.name as string)));
   }, []);
 
-  // Eén pagina tegelijk ophalen via search_products_overview: zoeken,
-  // sorteren en pagineren gebeuren in de database. Daarmee vervalt het
-  // ophalen van de volledige catalogus plus tientallen losse prijs- en
-  // historie-queries; het scherm toont de eerste regels vrijwel meteen.
-  const PAGE_SIZE = 100;
-  // Eén aanvraag levert hooguit 1000 regels op (limiet van de API); alles
-  // laden voor een kolomfilter gaat daarom in blokken van 1000.
-  const BLOCK_SIZE = 1000;
-  const MAX_ALL = 20000;
+  const onQueryChange = useCallback(
+    (q: { filters: Record<string, string>; sortKey: string | null; sortDesc: boolean }) =>
+      setColumnQuery((prev) => (JSON.stringify(prev) === JSON.stringify(q) ? prev : q)),
+    []
+  );
+
+  // Paginanummer hoort bij één combinatie van zoeken, filters en sortering:
+  // verandert daar iets aan, dan begint de lijst vanzelf weer op pagina 1.
+  const listKey = JSON.stringify([query.trim(), columnQuery, supplierFilter, onlyFavorites, onlyCurrent]);
+  const [pageState, setPageState] = useState({ key: listKey, page: 0 });
+  const page = pageState.key === listKey ? pageState.page : 0;
+  const setPage = (next: number | ((p: number) => number)) =>
+    setPageState({ key: listKey, page: typeof next === "function" ? next(page) : next });
 
   /** Ster in de lijst bijwerken zonder opnieuw te laden. */
   function markFavorite(id: string, value: boolean) {
     setRows((prev) => prev.map((x) => (x.id === id ? { ...x, isFavorite: value } : x)));
   }
 
-  const fetchPage = useCallback(
-    async (offset: number, search: string, append: boolean, limit = PAGE_SIZE): Promise<number> => {
-      const supabase = createClient();
-      if (append) setLoadingMore(true);
-      else setLoading(true);
-
-      const { data, error: rpcError } = await supabase.rpc("search_products_overview", {
+  /** Eén pagina van de volledige, gefilterde en gesorteerde lijst. */
+  const fetchRows = useCallback(
+    async (offset: number, limit: number): Promise<{ rows: ProductRow[]; total: number; failed: boolean }> => {
+      const { data, error: rpcError } = await createClient().rpc("search_products_page", {
         p_company_id: referenceCompanyId,
-        p_search: search.trim() || null,
+        p_search: query.trim() || null,
+        p_filters: columnQuery.filters,
+        p_sort_key: columnQuery.sortKey,
+        p_sort_desc: columnQuery.sortDesc,
         p_limit: limit,
         p_offset: offset,
+        p_only_favorites: onlyFavorites,
+        p_only_current: onlyCurrent,
+        p_supplier: supplierFilter || null,
       });
-
-      if (rpcError) {
-        setError(true);
-        setLoading(false);
-        setLoadingMore(false);
-        return -1;
-      }
-
-      const list = (data ?? []) as NonNullable<typeof data>;
-      const mapped: ProductRow[] = list.map((p) => {
-        const usesManualPrice =
-          p.manual_price_per_base_unit !== null && p.price_per_base_unit === null;
-        return {
-          id: p.id,
-          name: p.name,
-          customName: p.custom_name,
-          base_unit: p.base_unit,
-          base_unit_id: p.base_unit_id,
-          avg_unit_quantity: p.avg_unit_quantity,
-          avg_unit_name: null,
-          avgUnitKey: null,
-          article_number: p.article_number,
-          ean_code: p.ean_code,
-          is_active: p.is_active,
-          priceRowId: p.price_row_id,
-          pricePerBaseUnit: usesManualPrice
-            ? p.manual_price_per_base_unit
-            : p.price_per_base_unit,
-          purchasePrice: p.purchase_price,
-          packagingUnitCount: p.packaging_unit_count,
-          packagingDescription: p.packaging_description,
-          supplierName: usesManualPrice ? "Eigen prijs" : p.supplier_name,
-          validFrom: p.valid_from,
-          productNumber: p.product_number,
-          brand: p.brand,
-          productGroup: p.product_group,
-          note: p.description,
-          supplierArticleCode: p.supplier_article_code ?? p.article_number,
-          createdAt: p.created_at,
-          updatedAt: p.updated_at,
-          flaggedForReview: p.flagged_for_review,
-          previousPurchasePrice: p.previous_purchase_price,
-          isFavorite: p.is_favorite,
-        };
-      });
-
-      // Gewicht/inhoud per stuk: voor de kilo-/literprijs naast de stuksprijs.
-      const needBridge = mapped.filter((m) => m.base_unit === "stuk" && m.avg_unit_quantity);
-      if (needBridge.length > 0) {
-        const [{ data: prods }, { data: unitRows }] = await Promise.all([
-          supabase.from("products").select("id, avg_unit_id").in("id", needBridge.map((m) => m.id)),
-          supabase.from("units").select("id, key"),
-        ]);
-        const keyById = new Map((unitRows ?? []).map((u) => [u.id as string, u.key as string]));
-        const avgById = new Map((prods ?? []).map((x) => [x.id as string, x.avg_unit_id as string | null]));
-        for (const m of needBridge) {
-          const uid = avgById.get(m.id);
-          m.avgUnitKey = uid ? (keyById.get(uid) ?? null) : null;
-        }
-      }
-      setTotalCount(list.length > 0 ? Number(list[0].total_count) : 0);
-      setRows((prev) => (append ? [...prev, ...mapped] : mapped));
-      setLoading(false);
-      setLoadingMore(false);
-      return list.length;
+      if (rpcError) return { rows: [], total: 0, failed: true };
+      const list = data ?? [];
+      const num = (v: number | string | null) => (v === null ? null : Number(v));
+      const mapped: ProductRow[] = list.map((p) => ({
+        id: p.id,
+        name: p.name,
+        customName: p.custom_name,
+        base_unit: p.base_unit,
+        base_unit_id: p.base_unit_id,
+        avg_unit_quantity: num(p.avg_unit_quantity),
+        avg_unit_name: null,
+        avgUnitKey: p.avg_unit_key,
+        netUnitQuantity: num(p.net_unit_quantity),
+        article_number: p.article_number,
+        ean_code: p.ean_code,
+        is_active: p.is_active,
+        priceRowId: p.price_row_id,
+        // De database kiest al tussen leveranciersprijs en eigen prijs.
+        pricePerBaseUnit: num(p.price_per_base_unit),
+        purchasePrice: num(p.purchase_price),
+        packagingUnitCount: num(p.packaging_unit_count),
+        packagingDescription: p.packaging_description,
+        supplierName: p.supplier_name,
+        validFrom: p.valid_from,
+        productNumber: p.product_number,
+        brand: p.brand,
+        productGroup: p.product_group,
+        note: p.description,
+        supplierArticleCode: p.supplier_article_code ?? p.article_number,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        flaggedForReview: p.flagged_for_review,
+        previousPurchasePrice: num(p.previous_purchase_price),
+        isFavorite: p.is_favorite,
+      }));
+      return { rows: mapped, total: list.length > 0 ? Number(list[0].total_count) : 0, failed: false };
     },
-    [referenceCompanyId]
+    [referenceCompanyId, query, columnQuery, onlyFavorites, onlyCurrent, supplierFilter]
   );
 
-  // Zoeken met een korte vertraging, zodat er niet bij elke toetsaanslag
-  // een query vertrekt.
+  // Ophalen met een korte vertraging (typen in zoekveld of kolomfilter);
+  // alleen het antwoord op de laatste aanvraag telt.
+  const requestRef = useRef(0);
   useEffect(() => {
-    const t = setTimeout(() => {
-      fetchPage(0, query, false);
+    const myRequest = ++requestRef.current;
+    const t = setTimeout(async () => {
+      setLoading(true);
+      const res = await fetchRows(page * PAGE_SIZE, PAGE_SIZE);
+      if (myRequest !== requestRef.current) return;
+      if (res.failed) {
+        setError(true);
+      } else {
+        setError(false);
+        setRows(res.rows);
+        // Lege pagina voorbij het einde (bv. na verwijderen): terug naar pagina 1.
+        if (res.rows.length === 0 && page > 0) setPage(0);
+        else setTotalCount(res.total);
+      }
+      setLoading(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [query, fetchPage, reloadToken]);
-
+  }, [fetchRows, page, reloadToken]);
 
   function reload() {
     setReloadToken((t) => t + 1);
   }
 
-  // Kolomfilters werken op de geladen regels. Is er een kolomfilter actief
-  // en zijn nog niet alle regels geladen, dan laden we de rest automatisch
-  // (in blokken), zodat het filter in alle ingrediënten zoekt.
-  const [columnFilterActive, setColumnFilterActive] = useState(false);
-  const loadingAllRef = useRef(false);
-
-  useEffect(() => {
-    const target = Math.min(totalCount, MAX_ALL);
-    if (!columnFilterActive || loading || loadingAllRef.current) return;
-    if (rows.length >= target) return;
-    loadingAllRef.current = true;
-    (async () => {
-      let offset = rows.length;
-      while (offset < target) {
-        const got = await fetchPage(offset, query, true, BLOCK_SIZE);
-        if (got <= 0) break;
-        offset += got;
-      }
-    })().finally(() => {
-      loadingAllRef.current = false;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnFilterActive, loading, rows.length, totalCount]);
+  const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const firstShown = totalCount === 0 ? 0 : page * PAGE_SIZE + 1;
+  const lastShown = Math.min(totalCount, page * PAGE_SIZE + rows.length);
 
   /** Klikbare cel: opent het verpakking-venster (verpakking, inhoud, eenheid en prijs per eenheid). */
   function packagingCell(r: ProductRow, content: React.ReactNode) {
@@ -361,10 +346,6 @@ export default function ProductenPage() {
     setDeletingRow(null);
   }
 
-  // Zoeken gebeurt in de database (search_products_overview), dus hier
-  // niet nog eens filteren. De kolomfilters in de tabel werken wel
-  // gewoon op wat er geladen is.
-  const filteredRows = rows;
 
   return (
     <>
@@ -376,7 +357,9 @@ export default function ProductenPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+              }}
               placeholder="Zoek op leverancier, ingrediënt of artikelnummer…"
               className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm"
             />
@@ -401,18 +384,65 @@ export default function ProductenPage() {
             </Button>
           </Link>
         </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {!loading && (
-              <span className="text-xs text-muted">
-                {rows.length < totalCount
-                  ? columnFilterActive
-                    ? `Alle ${totalCount} ingrediënten worden geladen voor het filter… (${rows.length} geladen)`
-                    : `${rows.length} van ${totalCount} ingrediënten geladen — typ je in een kolomfilter, dan worden automatisch alle ${totalCount} geladen`
-                  : `${totalCount} ingrediënten`}
-              </span>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <select
+            value={supplierFilter}
+            onChange={(e) => {
+              setSupplierFilter(e.target.value);
+            }}
+            className="h-9 rounded-md border border-border bg-surface px-2 text-sm"
+            title="Leverancier van de actuele prijs"
+          >
+            <option value="">Alle leveranciers</option>
+            <option value="Eigen prijs">Eigen prijs</option>
+            {supplierNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-muted">
+            <input
+              type="checkbox"
+              checked={onlyFavorites}
+              onChange={(e) => {
+                setOnlyFavorites(e.target.checked);
+              }}
+            />
+            Alleen favorieten
+          </label>
+          <label
+            className="flex items-center gap-1.5 text-muted"
+            title="Ingrediënten in de actuele halfproducten en de gerechten op actieve menukaarten"
+          >
+            <input
+              type="checkbox"
+              checked={onlyCurrent}
+              onChange={(e) => {
+                setOnlyCurrent(e.target.checked);
+              }}
+            />
+            Alleen actuele ingrediënten
+          </label>
+          <span className="ml-auto text-sm" aria-live="polite">
+            {error ? (
+              <span className="text-danger">Zoeken mislukt — probeer het opnieuw.</span>
+            ) : loading && totalCount === 0 ? (
+              <span className="text-muted">Zoeken…</span>
+            ) : (
+              <>
+                <strong>{totalCount.toLocaleString("nl-NL")}</strong>{" "}
+                <span className="text-muted">
+                  {totalCount === 1 ? "resultaat" : "resultaten"}
+                  {totalCount > 0 && ` · ${firstShown}–${lastShown}`}
+                  {loading && " · bijwerken…"}
+                </span>
+              </>
             )}
-          </div>
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <div />
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2">
               <span className="text-sm text-foreground">{selectedIds.size} geselecteerd</span>
@@ -432,7 +462,8 @@ export default function ProductenPage() {
 
         <ConfigurableTable<ProductRow>
           storageKey="ingredienten"
-          rows={filteredRows}
+          rows={rows}
+          server={{ onQueryChange, totalCount, unsortable: ["fav", "flag", "historie"] }}
           selectedIds={selectedIds}
           onToggleSelect={(id) =>
             setSelectedIds((prev) => {
@@ -449,10 +480,9 @@ export default function ProductenPage() {
           }
           onRowClick={(row) => router.push(withReturnTo(`/producten/${row.id}/bewerken`))}
           emptyLabel={
-            loading ? "Ingrediënten laden…" : "Geen ingrediënten gevonden."
+            loading ? "Ingrediënten laden…" : "Geen ingrediënten gevonden met deze zoekopdracht en filters."
           }
           rowClassName={(row) => (!row.is_active ? "opacity-50" : undefined)}
-          onFilterActiveChange={setColumnFilterActive}
           columns={[
             {
               key: "fav",
@@ -540,17 +570,20 @@ export default function ProductenPage() {
               render: (r) =>
                 packagingCell(
                   r,
-                  r.pricePerBaseUnit !== null ? (
-                    <span>
-                      {`€ ${r.pricePerBaseUnit.toFixed(4)} / ${r.base_unit}`}
-                      {(() => {
-                        const extra = perKiloOrLiter(r);
-                        return extra ? <span className="block text-xs text-muted">{extra}</span> : null;
-                      })()}
-                    </span>
-                  ) : (
-                    "—"
-                  )
+                  (() => {
+                    const prices = unitPrices(r);
+                    if (!prices.primary) return "—";
+                    return (
+                      <span>
+                        {formatUnitPrice(prices.primary)}
+                        {prices.extra.map((line) => (
+                          <span key={line.label} className="block text-xs text-muted">
+                            {formatUnitPrice(line)}
+                          </span>
+                        ))}
+                      </span>
+                    );
+                  })()
                 ),
             },
             {
@@ -670,16 +703,21 @@ export default function ProductenPage() {
           ]}
         />
 
-        {rows.length < totalCount && (
-          <div className="flex justify-center">
+        {pageCount > 1 && (
+          <div className="flex items-center justify-center gap-3 text-sm">
+            <Button variant="secondary" size="sm" disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
+              <ChevronLeft className="h-4 w-4" /> Vorige
+            </Button>
+            <span className="text-muted">
+              Pagina {page + 1} van {pageCount}
+            </span>
             <Button
               variant="secondary"
-              disabled={loadingMore}
-              onClick={() => fetchPage(rows.length, query, true)}
+              size="sm"
+              disabled={page + 1 >= pageCount || loading}
+              onClick={() => setPage((p) => p + 1)}
             >
-              {loadingMore
-                ? "Laden…"
-                : `Meer laden (${rows.length} van ${totalCount})`}
+              Volgende <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         )}
