@@ -12,6 +12,7 @@ import {
   Search,
   SprayCan,
   Trash2,
+  UtensilsCrossed,
 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { usePermissions } from "@/components/permissions/permissions-context";
@@ -202,6 +203,12 @@ export default function OperatorPage() {
       label: "Keukenlijsten",
       icon: ClipboardList,
       show: can("recepturen").canView,
+    },
+    {
+      href: "/operator/menus",
+      label: "Menu's & buffetten",
+      icon: UtensilsCrossed,
+      show: can("menukaarten").canView,
     },
     {
       href: "/voorraad",

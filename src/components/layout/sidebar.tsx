@@ -76,7 +76,16 @@ export function Sidebar() {
             <nav className="mt-1 flex-1 space-y-0.5 overflow-y-auto px-3">
               {currentTab.items.map((item) => {
                 if (!can(item.moduleKey).canView) return null;
-                const active = pathname.startsWith(item.href);
+                // Langste passende link wint: /operator/menus maakt
+                // /operator ("Zoeken & bekijken") niet ook actief.
+                const active =
+                  pathname.startsWith(item.href) &&
+                  !currentTab.items.some(
+                    (o) =>
+                      o.href.length > item.href.length &&
+                      o.href.startsWith(item.href) &&
+                      pathname.startsWith(o.href),
+                  );
                 const Icon = item.icon;
                 return (
                   <Link

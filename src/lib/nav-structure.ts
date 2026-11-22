@@ -284,7 +284,8 @@ export function findTabForPath(pathname: string, tabs: NavTab[] = NAV_TABS): Nav
 
 /**
  * Vereenvoudigd menu voor de Operator (keukenmedewerker, alleen bekijken):
- * startscherm met zoeken, stickers, keukenlijsten, producties en afval,
+ * startscherm met zoeken, stickers, keukenlijsten, menu's & buffetten
+ * (werklijst en bestellijst), producties en afval,
  * plus het HACCP-onderdeel volgens de rolrechten.
  */
 export const OPERATOR_TABS: NavTab[] = (() => {
@@ -295,6 +296,12 @@ export const OPERATOR_TABS: NavTab[] = (() => {
     { href: "/operator", label: "Zoeken & bekijken", icon: Search, moduleKey: null },
     pick("/stickers"),
     pick("/keukenlijsten"),
+    {
+      href: "/operator/menus",
+      label: "Menu's & buffetten",
+      icon: UtensilsCrossed,
+      moduleKey: "menukaarten",
+    },
     pick("/voorraad"),
     pick("/afval"),
   ].filter((i): i is NonNullable<typeof i> => Boolean(i));

@@ -74,7 +74,14 @@ function readOutOfStock(menuId: string): Set<string> {
  * De behoefte komt uit de database (get_event_menu_order_needs, migratie
  * 0136): omrekenen en partijgerechten lopen daar. Inkoop rekent BRUTO.
  */
-export function MenuOrderList({ menuId }: { menuId: string }) {
+export function MenuOrderList({
+  menuId,
+  showPrices = true,
+}: {
+  menuId: string;
+  /** false voor rollen zonder financiële rechten (bv. Operator): geen inkoopprijzen. */
+  showPrices?: boolean;
+}) {
   const { activeCompanyIds } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
   const [needs, setNeeds] = useState<Need[]>([]);
@@ -276,14 +283,17 @@ export function MenuOrderList({ menuId }: { menuId: string }) {
   function exportCsv() {
     const header = [
       "Leverancier","Ingrediënt","Benodigd","Eenheid",
-      "Inhoud verpakking","Te bestellen","Besteld totaal","Inkoopprijs","Totaalbedrag",
+      "Inhoud verpakking","Te bestellen","Besteld totaal",
+      ...(showPrices ? ["Inkoopprijs", "Totaalbedrag"] : []),
     ];
     const lines = rows.map((r) => [
       r.supplierName ?? "geen leverancier", r.name,
       r.needed.toFixed(2), r.baseUnitName ?? "",
       r.packagingUnitCount ?? "",
       r.packagesToOrder ?? "", r.orderedQuantity?.toFixed(2) ?? "",
-      r.purchasePrice?.toFixed(2) ?? "", r.lineTotal?.toFixed(2) ?? "",
+      ...(showPrices
+        ? [r.purchasePrice?.toFixed(2) ?? "", r.lineTotal?.toFixed(2) ?? ""]
+        : []),
     ]);
     const csv = [header, ...lines]
       .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"))
@@ -420,8 +430,12 @@ export function MenuOrderList({ menuId }: { menuId: string }) {
                         <th className="px-4 py-2 font-medium">Benodigd</th>
                         <th className="px-4 py-2 font-medium">Verpakking</th>
                         <th className="px-4 py-2 font-medium">Te bestellen</th>
-                        <th className="px-4 py-2 font-medium">Inkoopprijs</th>
-                        <th className="px-4 py-2 font-medium">Totaal</th>
+                        {showPrices && (
+                          <>
+                            <th className="px-4 py-2 font-medium">Inkoopprijs</th>
+                            <th className="px-4 py-2 font-medium">Totaal</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -455,12 +469,16 @@ export function MenuOrderList({ menuId }: { menuId: string }) {
                               <span className="text-copper">verpakking onbekend</span>
                             )}
                           </td>
-                          <td className="px-4 py-2 tabular text-muted">
-                            {r.purchasePrice != null ? `€ ${r.purchasePrice.toFixed(2)}` : "—"}
-                          </td>
-                          <td className="px-4 py-2 tabular font-medium">
-                            {r.lineTotal != null ? `€ ${r.lineTotal.toFixed(2)}` : "—"}
-                          </td>
+                          {showPrices && (
+                            <>
+                              <td className="px-4 py-2 tabular text-muted">
+                                {r.purchasePrice != null ? `€ ${r.purchasePrice.toFixed(2)}` : "—"}
+                              </td>
+                              <td className="px-4 py-2 tabular font-medium">
+                                {r.lineTotal != null ? `€ ${r.lineTotal.toFixed(2)}` : "—"}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -472,10 +490,12 @@ export function MenuOrderList({ menuId }: { menuId: string }) {
               <span className="text-sm text-muted">
                 {rows.length} ingrediënt(en)
                 {outOfStock.size > 0 &&
-                  ` · incl. ${halfproducts.filter((h) => outOfStock.has(h.id)).length} halfproduct(en) niet in huis`}{" "}
-                · bedragen zijn inkoop van hele verpakkingen
+                  ` · incl. ${halfproducts.filter((h) => outOfStock.has(h.id)).length} halfproduct(en) niet in huis`}
+                {showPrices && " · bedragen zijn inkoop van hele verpakkingen"}
               </span>
-              <span className="tabular text-lg font-semibold">€ {total.toFixed(2)}</span>
+              {showPrices && (
+                <span className="tabular text-lg font-semibold">€ {total.toFixed(2)}</span>
+              )}
             </div>
           </>
         )}
