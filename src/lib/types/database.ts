@@ -277,11 +277,21 @@ export type RecipeImportRecord = {
 
 export type EventMenuStatus = "concept" | "definitief" | "uitgevoerd" | "vervallen";
 
+export type EventMenuFolder = {
+  id: string;
+  group_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+};
+
 export type EventMenu = {
   id: string;
   group_id: string;
   company_id: string | null;
   name: string;
+  /** Map in het overzicht; null = "Actueel". */
+  folder_id?: string | null;
   description: string | null;
   category: string | null;
   menu_type: string | null;
@@ -962,6 +972,12 @@ export type Database = {
         Row: RecipeImportRecord;
         Insert: Partial<RecipeImportRecord>;
         Update: Partial<RecipeImportRecord>;
+        Relationships: [];
+      };
+      event_menu_folders: {
+        Row: EventMenuFolder;
+        Insert: Partial<EventMenuFolder> & { group_id: string; name: string };
+        Update: Partial<EventMenuFolder>;
         Relationships: [];
       };
       event_menus: {
