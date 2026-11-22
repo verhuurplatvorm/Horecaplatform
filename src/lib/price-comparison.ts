@@ -37,7 +37,12 @@ export const PRIORITY_META: Record<
 };
 
 export type ComparisonStatus =
-  "open" | "controle" | "betwist" | "geaccepteerd" | "akkoord";
+  | "open"
+  | "controle"
+  | "betwist"
+  | "geaccepteerd"
+  | "akkoord"
+  | "zonder_referentie";
 
 export const STATUS_LABEL: Record<ComparisonStatus, string> = {
   open: "Open",
@@ -45,15 +50,23 @@ export const STATUS_LABEL: Record<ComparisonStatus, string> = {
   betwist: "Betwist",
   geaccepteerd: "Geaccepteerd",
   akkoord: "Akkoord",
+  zonder_referentie: "Zonder referentieprijs",
 };
 
 /** Eén status per regel: een beoordeling gaat vóór de automatische status. */
 export function statusOf(row: PriceComparisonRow): ComparisonStatus {
+  // Zonder referentieprijs valt er niets te vergelijken of te beoordelen.
+  if (hasNoReference(row)) return "zonder_referentie";
   if (row.review_status === "betwist") return "betwist";
   if (row.review_status === "geaccepteerd") return "geaccepteerd";
   if (row.needs_check) return "controle";
   if (row.priority === 5) return "akkoord";
   return "open";
+}
+
+/** Geen contract- of (vergelijkbare) prijslijstprijs gevonden. */
+export function hasNoReference(row: PriceComparisonRow): boolean {
+  return row.ref_source === "geen" || row.ref_price === null;
 }
 
 export interface ComparisonTotals {
@@ -64,12 +77,15 @@ export interface ComparisonTotals {
   critical: number;
   high: number;
   toCheck: number;
+  /** Regels zonder referentieprijs: tellen nergens in mee. */
+  noReference: number;
 }
 
 /**
  * Totalen zonder plussen en minnen tegen elkaar weg te strepen.
  * Regels met "Controle nodig" tellen niet mee in de bedragen (de vergelijking
- * is dan nog niet betrouwbaar) en geaccepteerde regels ook niet.
+ * is dan nog niet betrouwbaar), geaccepteerde regels ook niet, en regels
+ * zonder referentieprijs al helemaal niet ("Mogelijk te veel betaald").
  */
 export function computeTotals(rows: PriceComparisonRow[]): ComparisonTotals {
   const t: ComparisonTotals = {
@@ -80,9 +96,14 @@ export function computeTotals(rows: PriceComparisonRow[]): ComparisonTotals {
     critical: 0,
     high: 0,
     toCheck: 0,
+    noReference: 0,
   };
   for (const r of rows) {
     const status = statusOf(r);
+    if (status === "zonder_referentie") {
+      t.noReference++;
+      continue;
+    }
     if (status === "controle") {
       t.toCheck++;
       continue;
@@ -187,7 +208,7 @@ export function periodRange(
 export const COMPARISON_FILTER_KEY = "prijsvergelijking-filters";
 
 export type StatusFilter = "aandacht" | ComparisonStatus | "alles";
-export type ComparisonView = "regels" | "facturen";
+export type ComparisonView = "regels" | "artikelen" | "facturen";
 
 export interface ComparisonFilters {
   period: PeriodKey;
@@ -263,8 +284,9 @@ export function normalizeComparisonRow(
     ...r,
     quantity: r.quantity === null ? null : Number(r.quantity),
     invoice_price: Number(r.invoice_price),
-    ref_price: Number(r.ref_price),
-    diff_per_unit: Number(r.diff_per_unit),
+    ref_price: r.ref_price === null ? null : Number(r.ref_price),
+    ref_source: r.ref_source ?? (r.ref_price === null ? "geen" : "prijslijst"),
+    diff_per_unit: r.diff_per_unit === null ? null : Number(r.diff_per_unit),
     diff_pct: r.diff_pct === null ? null : Number(r.diff_pct),
     impact: r.impact === null ? null : Number(r.impact),
     reasons: r.reasons ?? [],
@@ -274,6 +296,115 @@ export function normalizeComparisonRow(
 /** Te veel betaald (open + betwist), voor sorteren en tonen. */
 export function overchargeOf(r: PriceComparisonRow): number {
   const s = statusOf(r);
-  if (s === "controle" || s === "geaccepteerd") return 0;
+  if (s === "controle" || s === "geaccepteerd" || s === "zonder_referentie") return 0;
   return Math.max(0, Number(r.impact ?? 0));
+}
+
+// ---------------------------------------------------------------------------
+// Referentie in gewone taal
+
+/** "Contract € 10,50 · geldig vanaf 1 okt 26" / "Prijslijst van 1 sep 26". */
+export function referenceLabel(r: PriceComparisonRow): string {
+  if (hasNoReference(r)) return "Geen referentieprijs";
+  const to = r.ref_valid_to ? ` t/m ${shortDate(r.ref_valid_to)}` : "";
+  return r.ref_source === "contract"
+    ? `Contract, geldig vanaf ${shortDate(r.ref_date)}${to}`
+    : `Prijslijst van ${shortDate(r.ref_date)}${to}`;
+}
+
+// ---------------------------------------------------------------------------
+// Terugkerende open afwijkingen bundelen
+
+export function normalizeArticle(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/\s/g, "").replace(/^0+/, "");
+}
+
+export function normalizePackaging(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/\s/g, "").replace(",", ".");
+}
+
+/** Open afwijking: nog niet beoordeeld, vergelijkbaar en niet gelijk aan de referentie. */
+export function isOpenDeviation(r: PriceComparisonRow): boolean {
+  return statusOf(r) === "open" && Math.abs(Number(r.diff_per_unit ?? 0)) >= 0.005;
+}
+
+export interface DeviationGroup {
+  key: string;
+  companyId: string | null;
+  supplierId: string;
+  supplierName: string;
+  articleNumber: string | null;
+  productName: string | null;
+  packaging: string | null;
+  rows: PriceComparisonRow[];
+  /** Aantal factuurregels. */
+  lineCount: number;
+  /** Aantal verschillende facturen. */
+  invoiceCount: number;
+  /** Som van de afwijkingen (te veel positief, voordelig negatief). */
+  totalDiff: number;
+  /** Alleen het deel dat te veel is betaald. */
+  overcharged: number;
+  /** Laagste (= meest dringende) prioriteit in de groep. */
+  topPriority: PriceComparisonRow["priority"];
+  firstDate: string;
+  lastDate: string;
+}
+
+/**
+ * Bundelt open prijsafwijkingen per bedrijf, leverancier, artikelnummer en
+ * verpakking. Zonder artikelnummer telt het gekoppelde ingrediënt. De
+ * beoordeling blijft per factuurregel; dit is alleen een weergave.
+ * Volgorde: terugkerend (meerdere facturen) eerst, dan het meeste te veel.
+ */
+export function groupDeviations(rows: PriceComparisonRow[]): DeviationGroup[] {
+  const map = new Map<string, DeviationGroup>();
+  for (const r of rows) {
+    if (!isOpenDeviation(r)) continue;
+    const art = r.article_key ?? normalizeArticle(r.article_number);
+    const item = art ? `a:${art}` : `p:${r.product_id ?? normalizeArticle(r.description)}`;
+    const key = [r.company_id ?? "-", r.supplier_id, item, normalizePackaging(r.packaging)].join("|");
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        key,
+        companyId: r.company_id,
+        supplierId: r.supplier_id,
+        supplierName: r.supplier_name,
+        articleNumber: r.article_number,
+        productName: r.product_name ?? r.description,
+        packaging: r.packaging,
+        rows: [],
+        lineCount: 0,
+        invoiceCount: 0,
+        totalDiff: 0,
+        overcharged: 0,
+        topPriority: r.priority,
+        firstDate: r.invoice_date,
+        lastDate: r.invoice_date,
+      };
+      map.set(key, g);
+    }
+    g.rows.push(r);
+  }
+  for (const g of map.values()) {
+    g.rows.sort((a, b) => a.invoice_date.localeCompare(b.invoice_date));
+    g.lineCount = g.rows.length;
+    g.invoiceCount = new Set(g.rows.map((r) => r.batch_id)).size;
+    g.totalDiff = round2(g.rows.reduce((s, r) => s + Number(r.impact ?? 0), 0));
+    g.overcharged = round2(g.rows.reduce((s, r) => s + Math.max(0, Number(r.impact ?? 0)), 0));
+    g.topPriority = Math.min(...g.rows.map((r) => r.priority)) as PriceComparisonRow["priority"];
+    g.firstDate = g.rows[0].invoice_date;
+    g.lastDate = g.rows[g.rows.length - 1].invoice_date;
+  }
+  return [...map.values()].sort(
+    (a, b) =>
+      Number(b.invoiceCount > 1) - Number(a.invoiceCount > 1) ||
+      b.overcharged - a.overcharged ||
+      Math.abs(b.totalDiff) - Math.abs(a.totalDiff),
+  );
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

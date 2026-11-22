@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, FileSpreadsheet, Plus, Search, Trash2 } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { PageActions } from "@/components/layout/page-actions";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { SupplierContractPrice } from "@/lib/types/database";
 import { euro, shortDate } from "@/lib/price-comparison";
+import { ContractImport } from "@/components/price-comparison/contract-import";
 
 interface Option {
   id: string;
@@ -76,6 +77,10 @@ export default function ContractprijzenPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Contract-id → ids van contracten waarmee de periode overlapt. */
+  const [overlaps, setOverlaps] = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +91,8 @@ export default function ContractprijzenPage() {
         .from("supplier_contract_prices")
         .select("*")
         .order("valid_from", { ascending: false }),
-    ]).then(async ([sup, con]) => {
+      supabase.rpc("contract_price_overlaps"),
+    ]).then(async ([sup, con, ov]) => {
       if (cancelled) return;
       const list = (con.data ?? []) as SupplierContractPrice[];
       const ids = [
@@ -104,6 +110,10 @@ export default function ContractprijzenPage() {
       setSuppliers((sup.data ?? []) as Option[]);
       setContracts(list);
       setProductNames(names);
+      const om = new Map<string, string[]>();
+      for (const o of (ov.data ?? []) as { id: string; other_id: string }[])
+        om.set(o.id, [...(om.get(o.id) ?? []), o.other_id]);
+      setOverlaps(om);
       setLoaded(true);
     });
     return () => {
@@ -181,6 +191,18 @@ export default function ContractprijzenPage() {
             <ArrowLeft className="h-4 w-4" /> Prijsvergelijking
           </Button>
         </Link>
+        {!draft && !importing && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setNotice(null);
+              setImporting(true);
+            }}
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Excel importeren
+          </Button>
+        )}
         {!draft && (
           <Button
             size="sm"
@@ -356,6 +378,25 @@ export default function ContractprijzenPage() {
           </Card>
         )}
 
+        {notice && (
+          <p className="rounded-md border border-success/30 bg-success/5 px-4 py-2 text-sm text-success">
+            {notice}
+          </p>
+        )}
+        {importing && (
+          <ContractImport
+            suppliers={suppliers}
+            companies={companies.map((c) => ({ id: c.id, name: c.name }))}
+            existing={contracts}
+            onClose={() => setImporting(false)}
+            onSaved={(n) => {
+              setImporting(false);
+              setNotice(`${n} contractprijs${n === 1 ? "" : "zen"} geïmporteerd.`);
+              setReloadTick((t) => t + 1);
+            }}
+          />
+        )}
+
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -409,6 +450,14 @@ export default function ContractprijzenPage() {
                           {c.valid_to ? shortDate(c.valid_to) : "doorlopend"}
                           {expired && (
                             <span className="ml-1 text-xs">(verlopen)</span>
+                          )}
+                          {overlaps.has(c.id) && (
+                            <span
+                              className="ml-1 inline-flex items-center gap-0.5 text-xs text-warning"
+                              title="Een ander contract voor hetzelfde artikel, bedrijf en dezelfde verpakking geldt in (een deel van) dezelfde periode. De prijsvergelijking gebruikt dan het bedrijfsspecifieke, daarna het laatst ingegane contract."
+                            >
+                              <AlertTriangle className="h-3 w-3" /> overlapt
+                            </span>
                           )}
                         </td>
                         <td className="px-3 py-2">

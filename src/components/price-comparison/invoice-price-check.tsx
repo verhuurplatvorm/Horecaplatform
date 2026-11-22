@@ -181,8 +181,8 @@ export function InvoicePriceCheck({
                       <td
                         className={cn(
                           "whitespace-nowrap px-2 py-1.5 text-right tabular",
-                          r.diff_per_unit > 0.005 && "text-danger",
-                          r.diff_per_unit < -0.005 && "text-success",
+                          (r.diff_per_unit ?? 0) > 0.005 && "text-danger",
+                          (r.diff_per_unit ?? 0) < -0.005 && "text-success",
                         )}
                       >
                         {euro(r.diff_per_unit, true)}

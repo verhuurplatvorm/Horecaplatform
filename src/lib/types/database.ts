@@ -1574,8 +1574,18 @@ export type Database = {
         }[];
       };
       price_comparison: {
-        Args: { p_from: string; p_to: string; p_company_ids?: string[] | null };
+        Args: {
+          p_from: string;
+          p_to: string;
+          p_company_ids?: string[] | null;
+          /** Ook regels zonder referentieprijs (ref_source "geen"). */
+          p_include_unreferenced?: boolean;
+        };
         Returns: PriceComparisonRow[];
+      };
+      contract_price_overlaps: {
+        Args: Record<string, never>;
+        Returns: { id: string; other_id: string }[];
       };
       match_product_by_name: {
         Args: { p_group_id: string; p_name: string };
@@ -2037,12 +2047,13 @@ export type PriceComparisonRow = {
   packaging: string | null;
   quantity: number | null;
   invoice_price: number;
-  ref_price: number;
-  ref_source: "contract" | "prijslijst";
+  /** null = geen bruikbare referentieprijs (ref_source "geen"). */
+  ref_price: number | null;
+  ref_source: "contract" | "prijslijst" | "geen";
   ref_date: string | null;
   ref_after_invoice: boolean;
   compare_basis: "verpakking" | "basiseenheid" | null;
-  diff_per_unit: number;
+  diff_per_unit: number | null;
   diff_pct: number | null;
   impact: number | null;
   priority: 1 | 2 | 3 | 4 | 5;
@@ -2050,6 +2061,12 @@ export type PriceComparisonRow = {
   needs_check: boolean;
   review_status: "geaccepteerd" | "betwist" | null;
   review_note: string | null;
+  /** T/m wanneer de referentie geldt (contract valid_to of prijslijst geldig t/m). */
+  ref_valid_to?: string | null;
+  /** Verpakking van de referentieprijs. */
+  ref_packaging?: string | null;
+  /** Genormaliseerd artikelnummer (zoals de vergelijking het matcht). */
+  article_key?: string | null;
 };
 
 // ---------------------------------------------------------------------

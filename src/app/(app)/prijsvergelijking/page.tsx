@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Flag,
   RotateCcw,
@@ -34,6 +36,9 @@ import {
   PRIORITY_META,
   STATUS_LABEL,
   computeTotals,
+  groupDeviations,
+  referenceLabel,
+  type DeviationGroup,
   euro,
   pct,
   periodRange,
@@ -49,6 +54,7 @@ const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
   betwist: "Betwist",
   geaccepteerd: "Geaccepteerd",
   akkoord: "Akkoord",
+  zonder_referentie: "Zonder referentieprijs",
   alles: "Alles",
 };
 
@@ -59,7 +65,7 @@ type TableRow = PriceComparisonRow & { id: string };
 const BULK_CHUNK = 200;
 
 /** Kan deze regel betwist worden? Alleen bij een prijsverhoging. */
-const canDisputeRow = (r: PriceComparisonRow) => r.diff_per_unit > 0.005;
+const canDisputeRow = (r: PriceComparisonRow) => (r.diff_per_unit ?? 0) > 0.005;
 
 function matchesStatus(row: PriceComparisonRow, filter: StatusFilter): boolean {
   const s = statusOf(row);
@@ -73,8 +79,14 @@ export default function PrijsvergelijkingPage() {
   const {
     scope,
     activeCompanyIds,
+    companies,
     loading: companiesLoading,
   } = useCompanyScope();
+  const companyName = useMemo(
+    () => new Map(companies.map((c) => [c.id, c.name])),
+    [companies],
+  );
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [filters, setFilters] = useState<ComparisonFilters>(
     loadComparisonFilters,
   );
@@ -119,6 +131,8 @@ export default function PrijsvergelijkingPage() {
         p_from: range.from,
         p_to: range.to,
         p_company_ids: companyKey ? companyKey.split(",") : null,
+        // Ook regels zonder referentieprijs, voor de teller en het filter.
+        p_include_unreferenced: true,
       })
       .then(({ data, error: rpcError }) => {
         if (cancelled) return;
@@ -224,6 +238,9 @@ export default function PrijsvergelijkingPage() {
       );
   }, [visible]);
 
+  // Terugkerende open afwijkingen per bedrijf, leverancier, artikel en verpakking.
+  const groups = useMemo(() => groupDeviations(visible), [visible]);
+
   const review = useCallback(
     async (row: PriceComparisonRow, status: ReviewStatus) => {
       setBusyRow(row.row_id);
@@ -267,7 +284,10 @@ export default function PrijsvergelijkingPage() {
   const bulkTargets = useMemo(
     () => ({
       geaccepteerd: selectedRows.filter(
-        (r) => statusOf(r) !== "akkoord" && r.review_status !== "geaccepteerd",
+        (r) =>
+          statusOf(r) !== "akkoord" &&
+          statusOf(r) !== "zonder_referentie" &&
+          r.review_status !== "geaccepteerd",
       ),
       betwist: selectedRows.filter(
         (r) => canDisputeRow(r) && r.review_status !== "betwist",
@@ -413,7 +433,7 @@ export default function PrijsvergelijkingPage() {
       </PageActions>
       <main className="space-y-4 p-4 md:p-6">
         {/* Kerncijfers */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
           <SummaryTile
             label="Mogelijk te veel betaald"
             value={euro(totals.overcharged)}
@@ -438,6 +458,14 @@ export default function PrijsvergelijkingPage() {
             tone={totals.toCheck ? "warning" : undefined}
             onClick={() =>
               updateLocal({ status: "controle", priority: "alle" })
+            }
+          />
+          <SummaryTile
+            label="Zonder referentieprijs"
+            value={String(totals.noReference)}
+            tone={totals.noReference ? "warning" : undefined}
+            onClick={() =>
+              updateLocal({ status: "zonder_referentie", priority: "alle" })
             }
           />
         </div>
@@ -532,7 +560,7 @@ export default function PrijsvergelijkingPage() {
             ))}
           </div>
           <div className="ml-auto flex gap-1 rounded-md border border-border bg-surface p-1">
-            {(["regels", "facturen"] as const).map((v) => (
+            {(["regels", "artikelen", "facturen"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -544,7 +572,11 @@ export default function PrijsvergelijkingPage() {
                     : "text-muted hover:text-foreground",
                 )}
               >
-                {v === "regels" ? "Per regel" : "Per factuur"}
+                {v === "regels"
+                  ? "Per regel"
+                  : v === "artikelen"
+                    ? "Per artikel"
+                    : "Per factuur"}
               </button>
             ))}
           </div>
@@ -570,9 +602,7 @@ export default function PrijsvergelijkingPage() {
           </div>
         )}
 
-        {filters.view === "regels" ? (
-          <div className="space-y-2">
-            {selectedRows.length > 0 && (
+        {filters.view !== "facturen" && selectedRows.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-teal/40 bg-teal/5 px-3 py-2 text-sm">
                 <span className="font-medium">
                   {selectedRows.length} geselecteerd
@@ -625,7 +655,31 @@ export default function PrijsvergelijkingPage() {
                   </Button>
                 </div>
               </div>
-            )}
+        )}
+
+        {filters.view === "artikelen" ? (
+          <DeviationGroups
+            groups={groups}
+            loading={loading}
+            companyName={companyName}
+            open={openGroups}
+            onToggle={(key) =>
+              setOpenGroups((prev) => {
+                const next = new Set(prev);
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+                return next;
+              })
+            }
+            selected={selected}
+            onSelectGroup={(g) => toggleSelectAll(g.rows.map((r) => r.row_id))}
+            onToggleRow={toggleSelect}
+            busyRow={busyRow}
+            bulkBusy={bulkBusy}
+            onReview={review}
+          />
+        ) : filters.view === "regels" ? (
+          <div className="space-y-2">
             <ConfigurableTable<TableRow>
               storageKey="prijsvergelijking-regels"
               rows={loading ? [] : tableRows}
@@ -735,11 +789,14 @@ export default function PrijsvergelijkingPage() {
         )}
 
         <p className="text-xs text-muted">
-          Vergeleken wordt met de contractprijs, of anders de laatste
-          prijslijst/webshopprijs die gold op de factuurdatum (exclusief btw,
-          per verpakking). Factuurregels zonder referentieprijs staan hier niet
-          in. Bedragen van regels met &ldquo;Controle nodig&rdquo; en
-          geaccepteerde regels tellen niet mee in de totalen.
+          Vergeleken wordt met een geldige contractprijs (gaat altijd voor), of
+          anders de laatste prijslijst/webshopprijs die gold op de factuurdatum
+          (exclusief btw, per verpakking). Regels zonder referentieprijs staan
+          onder &ldquo;Zonder referentieprijs&rdquo; en tellen niet mee in
+          &ldquo;Mogelijk te veel betaald&rdquo;; regels met &ldquo;Controle
+          nodig&rdquo; en geaccepteerde regels ook niet. &ldquo;Per
+          artikel&rdquo; bundelt open afwijkingen per bedrijf, leverancier,
+          artikelnummer en verpakking; de beoordeling blijft per factuurregel.
         </p>
       </main>
     </>
@@ -881,15 +938,7 @@ function buildColumns({
       width: 120,
       align: "right",
       value: (r) => r.ref_price,
-      render: (r) => (
-        <>
-          {euro(r.ref_price)}
-          <div className="text-xs text-muted">
-            {r.ref_source === "contract" ? "contract" : "prijslijst"}{" "}
-            {shortDate(r.ref_date)}
-          </div>
-        </>
-      ),
+      render: (r) => <ReferenceCell row={r} />,
     },
     {
       key: "factuur",
@@ -910,8 +959,8 @@ function buildColumns({
       render: (r) => (
         <span
           className={cn(
-            r.diff_per_unit > 0.005 && "text-danger",
-            r.diff_per_unit < -0.005 && "text-success",
+            (r.diff_per_unit ?? 0) > 0.005 && "text-danger",
+            (r.diff_per_unit ?? 0) < -0.005 && "text-success",
           )}
         >
           {euro(r.diff_per_unit, true)}
@@ -976,13 +1025,14 @@ function buildColumns({
           <span
             className={cn(
               "text-xs font-medium",
-              status === "controle" && "text-warning",
+              (status === "controle" || status === "zonder_referentie") &&
+                "text-warning",
               status === "betwist" && "text-danger",
               (status === "akkoord" || status === "geaccepteerd") &&
                 "text-success",
             )}
           >
-            {status === "controle" && (
+            {(status === "controle" || status === "zonder_referentie") && (
               <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
             )}
             {STATUS_LABEL[status]}
@@ -1001,7 +1051,15 @@ function buildColumns({
         const busy = bulkBusy || busyRow === r.row_id;
         return (
           <div className="flex items-center gap-1">
-            {r.review_status ? (
+            {status === "zonder_referentie" ? (
+              <Link
+                href="/prijsvergelijking/contracten"
+                title="Leg een contractprijs vast of importeer een prijslijst"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-teal hover:bg-teal/10"
+              >
+                <Scale className="h-3.5 w-3.5" /> Contractprijs
+              </Link>
+            ) : r.review_status ? (
               <button
                 type="button"
                 disabled={busy}
@@ -1049,4 +1107,291 @@ function buildColumns({
       },
     },
   ];
+}
+
+/** Welke referentie is gebruikt en vanaf wanneer die geldt. */
+function ReferenceCell({ row }: { row: PriceComparisonRow }) {
+  if (row.ref_source === "geen" || row.ref_price === null) {
+    return (
+      <span className="text-xs text-warning" title={row.reasons.join("\n")}>
+        geen referentie
+      </span>
+    );
+  }
+  const packDiffers =
+    row.ref_packaging &&
+    row.packaging &&
+    row.ref_packaging.toLowerCase().replace(/\s/g, "") !==
+      row.packaging.toLowerCase().replace(/\s/g, "");
+  return (
+    <>
+      {euro(row.ref_price)}
+      <div className="text-xs text-muted" title={referenceLabel(row)}>
+        {row.ref_source === "contract" ? (
+          <span className="font-medium text-teal">contract</span>
+        ) : (
+          "prijslijst"
+        )}{" "}
+        {row.ref_source === "contract" ? "vanaf " : "van "}
+        {shortDate(row.ref_date)}
+        {row.ref_valid_to && <> t/m {shortDate(row.ref_valid_to)}</>}
+      </div>
+      {packDiffers && (
+        <div className="text-xs text-muted">ref. {row.ref_packaging}</div>
+      )}
+    </>
+  );
+}
+
+/** Weergave "Per artikel": terugkerende open afwijkingen gebundeld. */
+function DeviationGroups({
+  groups,
+  loading,
+  companyName,
+  open,
+  onToggle,
+  selected,
+  onSelectGroup,
+  onToggleRow,
+  busyRow,
+  bulkBusy,
+  onReview,
+}: {
+  groups: DeviationGroup[];
+  loading: boolean;
+  companyName: Map<string, string>;
+  open: Set<string>;
+  onToggle: (key: string) => void;
+  selected: Set<string>;
+  onSelectGroup: (g: DeviationGroup) => void;
+  onToggleRow: (id: string) => void;
+  busyRow: string | null;
+  bulkBusy: boolean;
+  onReview: (row: PriceComparisonRow, status: ReviewStatus) => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                <th className="w-8 px-2 py-2" />
+                <th className="px-2 py-2 font-medium">Prio</th>
+                <th className="px-2 py-2 font-medium">Bedrijf</th>
+                <th className="px-2 py-2 font-medium">Leverancier</th>
+                <th className="px-2 py-2 font-medium">Art.nr</th>
+                <th className="px-2 py-2 font-medium">Product</th>
+                <th className="px-2 py-2 font-medium">Verpakking</th>
+                <th className="px-2 py-2 text-right font-medium">Factuurregels</th>
+                <th className="px-2 py-2 text-right font-medium">Totaal verschil</th>
+                <th className="px-2 py-2 font-medium">Periode</th>
+                <th className="px-2 py-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => {
+                const isOpen = open.has(g.key);
+                const allSelected = g.rows.every((r) => selected.has(r.row_id));
+                return (
+                  <GroupRows
+                    key={g.key}
+                    group={g}
+                    isOpen={isOpen}
+                    allSelected={allSelected}
+                    company={g.companyId ? companyName.get(g.companyId) ?? "—" : "Groep"}
+                    onToggle={() => onToggle(g.key)}
+                    onSelectGroup={() => onSelectGroup(g)}
+                    selected={selected}
+                    onToggleRow={onToggleRow}
+                    busyRow={busyRow}
+                    bulkBusy={bulkBusy}
+                    onReview={onReview}
+                  />
+                );
+              })}
+              {groups.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="px-4 py-8 text-center text-muted">
+                    {loading
+                      ? "Bezig met vergelijken…"
+                      : "Geen open prijsafwijkingen met deze filters."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GroupRows({
+  group: g,
+  isOpen,
+  allSelected,
+  company,
+  onToggle,
+  onSelectGroup,
+  selected,
+  onToggleRow,
+  busyRow,
+  bulkBusy,
+  onReview,
+}: {
+  group: DeviationGroup;
+  isOpen: boolean;
+  allSelected: boolean;
+  company: string;
+  onToggle: () => void;
+  onSelectGroup: () => void;
+  selected: Set<string>;
+  onToggleRow: (id: string) => void;
+  busyRow: string | null;
+  bulkBusy: boolean;
+  onReview: (row: PriceComparisonRow, status: ReviewStatus) => void;
+}) {
+  return (
+    <>
+      <tr
+        className={cn(
+          "cursor-pointer border-t border-border hover:bg-black/[0.02]",
+          g.topPriority === 1 && "bg-danger/5",
+        )}
+        onClick={onToggle}
+      >
+        <td className="px-2 py-2 text-muted">
+          {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </td>
+        <td className="px-2 py-2">
+          <PriorityBadge priority={g.topPriority} />
+        </td>
+        <td className="px-2 py-2 text-muted">{company}</td>
+        <td className="px-2 py-2">{g.supplierName}</td>
+        <td className="px-2 py-2 tabular text-muted">{g.articleNumber ?? "—"}</td>
+        <td className="px-2 py-2 font-medium">
+          {g.productName ?? "—"}
+          {g.invoiceCount > 1 && (
+            <span className="ml-2 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning">
+              terugkerend · {g.invoiceCount} facturen
+            </span>
+          )}
+        </td>
+        <td className="px-2 py-2 text-muted">{g.packaging ?? "—"}</td>
+        <td className="px-2 py-2 text-right tabular">{g.lineCount}</td>
+        <td
+          className={cn(
+            "px-2 py-2 text-right tabular font-semibold",
+            g.totalDiff > 0 && "text-danger",
+            g.totalDiff < 0 && "text-success",
+          )}
+        >
+          {euro(g.totalDiff, true)}
+        </td>
+        <td className="px-2 py-2 text-xs text-muted">
+          {g.firstDate === g.lastDate
+            ? shortDate(g.firstDate)
+            : `${shortDate(g.firstDate)} – ${shortDate(g.lastDate)}`}
+        </td>
+        <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={onSelectGroup}
+            className="text-xs text-teal hover:underline"
+            title="Alle factuurregels van deze groep (de)selecteren voor beoordelen"
+          >
+            {allSelected ? "Deselecteren" : "Selecteren"}
+          </button>
+        </td>
+      </tr>
+      {isOpen && (
+        <tr className="bg-background">
+          <td />
+          <td colSpan={10} className="px-2 pb-3">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left uppercase tracking-wide text-muted">
+                  <th className="w-6 py-1" />
+                  <th className="py-1 font-medium">Factuur</th>
+                  <th className="py-1 font-medium">Datum</th>
+                  <th className="py-1 text-right font-medium">Referentie</th>
+                  <th className="py-1 text-right font-medium">Factuurprijs</th>
+                  <th className="py-1 text-right font-medium">Aantal</th>
+                  <th className="py-1 text-right font-medium">Verschil</th>
+                  <th className="py-1 font-medium">Status</th>
+                  <th className="py-1 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {g.rows.map((r) => {
+                  const status = statusOf(r);
+                  const busy = bulkBusy || busyRow === r.row_id;
+                  return (
+                    <tr key={r.row_id} className="border-t border-border/60">
+                      <td className="py-1">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(r.row_id)}
+                          onChange={() => onToggleRow(r.row_id)}
+                        />
+                      </td>
+                      <td className="py-1 font-medium">{r.invoice_number ?? "—"}</td>
+                      <td className="py-1 text-muted">{shortDate(r.invoice_date)}</td>
+                      <td className="py-1 text-right">
+                        <ReferenceCell row={r} />
+                      </td>
+                      <td className="py-1 text-right tabular">{euro(r.invoice_price)}</td>
+                      <td className="py-1 text-right tabular">
+                        {r.quantity === null ? "—" : r.quantity.toLocaleString("nl-NL")}
+                      </td>
+                      <td
+                        className={cn(
+                          "py-1 text-right tabular font-medium",
+                          Number(r.impact ?? 0) > 0 && "text-danger",
+                          Number(r.impact ?? 0) < 0 && "text-success",
+                        )}
+                      >
+                        {r.impact === null ? "—" : euro(Number(r.impact), true)}
+                      </td>
+                      <td className="py-1">{STATUS_LABEL[status]}</td>
+                      <td className="py-1">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => onReview(r, "geaccepteerd")}
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-success hover:bg-success/10"
+                          >
+                            <Check className="h-3.5 w-3.5" /> Accepteren
+                          </button>
+                          {canDisputeRow(r) && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => onReview(r, "betwist")}
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-danger hover:bg-danger/10"
+                            >
+                              <Flag className="h-3.5 w-3.5" /> Betwisten
+                            </button>
+                          )}
+                          <Link
+                            href={`/leveranciers/prijzen/importeren/${r.batch_id}`}
+                            title={`Factuur ${r.invoice_number ?? ""} bekijken`}
+                            className="inline-flex items-center rounded px-1.5 py-0.5 text-teal hover:bg-teal/10"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      )}
+    </>
+  );
 }
