@@ -1338,6 +1338,18 @@ export type Database = {
         Args: { p_company_id: string };
         Returns: HaccpTodayRow[];
       };
+      haccp_board: {
+        Args: { p_company_id: string };
+        Returns: HaccpBoardRow[];
+      };
+      haccp_overdue: {
+        Args: { p_company_id: string; p_days?: number };
+        Returns: HaccpOverdueRow[];
+      };
+      waste_overview: {
+        Args: { p_company_ids: string[] | null; p_from: string; p_to: string; p_type?: string };
+        Returns: WasteOverviewRow[];
+      };
       haccp_staff: {
         Args: { p_company_id: string };
         Returns: { id: string; full_name: string; has_pin: boolean }[];
@@ -2276,6 +2288,66 @@ export type HaccpTodayRow = {
   completed_by: string | null;
   last_event_id: string | null;
   done_today: number | null;
+};
+
+/** Taak van vandaag met de stand van de controle (rpc haccp_board). */
+export type HaccpBoardRow = HaccpTodayRow & {
+  requires_check: boolean;
+  check_status: "akkoord" | "afgekeurd" | null;
+  checked_at: string | null;
+  checked_by: string | null;
+};
+
+/** Achterstallige taak met opvolging (rpc haccp_overdue). */
+export type HaccpOverdueRow = {
+  occurrence_id: string;
+  task_id: string;
+  title: string;
+  area_id: string;
+  area_name: string;
+  area_sort: number;
+  department_id: string | null;
+  department_name: string | null;
+  due_date: string;
+  slot: number | null;
+  slots_total: number | null;
+  status: "open" | "uitgevoerd" | "niet_uitgevoerd";
+  completed_at: string | null;
+  completed_by: string | null;
+  requires_check: boolean;
+  check_status: "akkoord" | "afgekeurd" | null;
+  checked_by: string | null;
+  not_done_reason: string | null;
+  not_done_by: string | null;
+  not_done_at: string | null;
+  deviation_count: number;
+  open_deviation_count: number;
+  last_deviation_status: string | null;
+  last_corrective_action: string | null;
+};
+
+/** Afval/personeelsmaaltijd met namen (rpc waste_overview). */
+export type WasteOverviewRow = {
+  id: string;
+  registered_at: string;
+  local_date: string;
+  company_id: string | null;
+  company_name: string | null;
+  registration_type: "afval" | "personeelsmaaltijd";
+  product_id: string | null;
+  recipe_id: string | null;
+  item_name: string | null;
+  item_kind: "ingrediënt" | "halfproduct";
+  quantity: number;
+  unit_name: string | null;
+  unit_dimension: string | null;
+  factor_to_base: number | null;
+  reason_id: string | null;
+  reason_name: string | null;
+  note: string | null;
+  waste_value: number | null;
+  registered_by: string | null;
+  staff_name: string | null;
 };
 
 export type HaccpClosedDay = {

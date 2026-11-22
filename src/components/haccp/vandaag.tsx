@@ -27,12 +27,34 @@ import {
   writeStaffSession,
   type StaffSession,
 } from "@/lib/haccp/cleaning";
-import type { HaccpTodayRow } from "@/lib/types/database";
+import { useCompanyScope } from "@/components/company-context";
+import { checkLabel, overdueFollowUp } from "@/lib/haccp/follow-up";
+import type { HaccpBoardRow, HaccpOverdueRow } from "@/lib/types/database";
+
+type HaccpTodayRow = HaccpBoardRow;
+
+/** Wat nodig is om een taak af te melden (vandaag of achterstallig). */
+type Completable = {
+  kind: "gepland" | "op_aanvraag";
+  occurrence_id: string | null;
+  task_id: string;
+  title: string;
+};
+
+/** ⋯-menu: probleem melden / foto, voor taken van vandaag en achterstallige taken. */
+type MenuTarget = {
+  occurrence_id: string | null;
+  task_id: string;
+  title: string;
+  area_name: string;
+  instruction?: string | null;
+  cleaning_agent?: string | null;
+};
 
 const ALL = "__alle__";
 const NONE = "__geen__";
 
-function rowKey(r: HaccpTodayRow) {
+function rowKey(r: Completable) {
   return r.occurrence_id ?? `taak:${r.task_id}`;
 }
 
@@ -64,6 +86,9 @@ export function Vandaag({
   areaId?: string;
 }) {
   const [rows, setRows] = useState<HaccpTodayRow[] | null>(null);
+  const [overdue, setOverdue] = useState<HaccpOverdueRow[]>([]);
+  const { companies, setScope } = useCompanyScope();
+  const companyName = companies.find((c) => c.id === companyId)?.name ?? "";
   const [error, setError] = useState<string | null>(null);
   const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set());
   const [openInfo, setOpenInfo] = useState<string | null>(null);
@@ -80,12 +105,12 @@ export function Vandaag({
     }
   });
   const canClose = usePermissions().can("haccp_controle").canEdit;
-  const [notDone, setNotDone] = useState<HaccpTodayRow | null>(null);
-  const [menu, setMenu] = useState<HaccpTodayRow | null>(null);
+  const [notDone, setNotDone] = useState<HaccpOverdueRow | null>(null);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [tabletHome, setTabletHomeState] = useState(() =>
     typeof window === "undefined" ? false : isTabletHome(),
   );
-  const [reportFor, setReportFor] = useState<HaccpTodayRow | null>(null);
+  const [reportFor, setReportFor] = useState<MenuTarget | null>(null);
   const [photoKey, setPhotoKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [leadInfo, setLeadInfo] = useState<{
@@ -98,15 +123,19 @@ export function Vandaag({
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await createClient().rpc("haccp_today", {
-      p_company_id: companyId,
-    });
-    if (err) {
-      setError(haccpError(err));
+    const supabaseLoad = createClient();
+    // Vandaag (incl. stand van de controle) en apart de achterstallige taken.
+    const [{ data, error: err }, od] = await Promise.all([
+      supabaseLoad.rpc("haccp_board", { p_company_id: companyId }),
+      supabaseLoad.rpc("haccp_overdue", { p_company_id: companyId, p_days: 14 }),
+    ]);
+    if (err || od.error) {
+      setError(haccpError(err ?? od.error));
       return;
     }
     setError(null);
     setRows((data as HaccpTodayRow[]) ?? []);
+    setOverdue((od.data as HaccpOverdueRow[]) ?? []);
     if (canClose) {
       const supabase = createClient();
       const [d, c] = await Promise.all([
@@ -178,7 +207,7 @@ export function Vandaag({
     });
   }
 
-  async function complete(row: HaccpTodayRow) {
+  async function complete(row: Completable) {
     const key = rowKey(row);
     if (busyKeys.has(key)) return;
     setBusy(key, true);
@@ -254,7 +283,7 @@ export function Vandaag({
   const departments = useMemo(() => {
     const m = new Map<string, string>();
     let none = false;
-    for (const r of rows ?? []) {
+    for (const r of [...(rows ?? []), ...overdue]) {
       if (r.department_id) m.set(r.department_id, r.department_name ?? "");
       else none = true;
     }
@@ -262,7 +291,7 @@ export function Vandaag({
       list: [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])),
       none,
     };
-  }, [rows]);
+  }, [rows, overdue]);
 
   const visible = useMemo(
     () =>
@@ -278,12 +307,29 @@ export function Vandaag({
     [rows, filter, areaId],
   );
 
-  const late = visible
-    .filter((r) => r.is_late)
-    .sort(
-      (a, b) =>
-        a.due_date.localeCompare(b.due_date) || a.title.localeCompare(b.title),
-    );
+  const visibleOverdue = useMemo(
+    () =>
+      overdue
+        .filter((r) =>
+          areaId
+            ? r.area_id === areaId
+            : filter === ALL
+              ? true
+              : filter === NONE
+                ? !r.department_id
+                : r.department_id === filter,
+        )
+        .sort(
+          (a, b) =>
+            a.due_date.localeCompare(b.due_date) ||
+            a.area_sort - b.area_sort ||
+            a.title.localeCompare(b.title) ||
+            (a.slot ?? 0) - (b.slot ?? 0),
+        ),
+    [overdue, filter, areaId],
+  );
+  const overdueOpen = visibleOverdue.filter((r) => r.status === "open");
+  const overdueHandled = visibleOverdue.filter((r) => r.status !== "open");
   const planned = visible.filter((r) => r.kind === "gepland" && !r.is_late);
   const onDemand = visible.filter((r) => r.kind === "op_aanvraag");
 
@@ -346,8 +392,7 @@ export function Vandaag({
     }
     if (r.slots_total && r.slots_total > 1)
       meta.push(`${r.slot} van ${r.slots_total}`);
-    if (r.is_late || r.kind === "op_aanvraag") meta.push(r.area_name);
-    if (r.is_late) meta.push(`gepland ${shortDate(r.due_date)}`);
+    if (r.kind === "op_aanvraag") meta.push(r.area_name);
     if (r.department_name && filter === ALL) meta.push(r.department_name);
 
     return (
@@ -399,7 +444,16 @@ export function Vandaag({
 
         <button
           type="button"
-          onClick={() => setMenu(r)}
+          onClick={() =>
+            setMenu({
+              occurrence_id: r.occurrence_id,
+              task_id: r.task_id,
+              title: r.title,
+              area_name: r.area_name,
+              instruction: r.instruction,
+              cleaning_agent: r.cleaning_agent,
+            })
+          }
           className="shrink-0 rounded-md p-2 text-muted hover:bg-background"
           aria-label="Meer: probleem melden, foto"
         >
@@ -414,19 +468,25 @@ export function Vandaag({
               <span className="block text-xs text-muted">
                 {r.completed_by} · {time(r.completed_at)}
               </span>
+              {/* Afvinken (medewerker) en controle (leidinggevende) blijven los. */}
+              {r.requires_check && (
+                <span
+                  className={cn(
+                    "block text-xs",
+                    r.check_status === "akkoord"
+                      ? "text-teal"
+                      : r.check_status === "afgekeurd"
+                        ? "text-danger"
+                        : "text-copper",
+                  )}
+                >
+                  {checkLabel(r.check_status, r.checked_by)}
+                </span>
+              )}
             </span>
           </span>
         ) : (
           <div className="flex shrink-0 items-center gap-3">
-            {r.is_late && canClose && r.occurrence_id && (
-              <button
-                type="button"
-                onClick={() => setNotDone(r)}
-                className="h-12 rounded-lg border border-border px-3 text-sm text-muted hover:text-foreground"
-              >
-                Niet gedaan
-              </button>
-            )}
             {r.kind === "op_aanvraag" && (r.done_today ?? 0) > 0 && (
               <span className="hidden text-right text-xs text-muted sm:block">
                 vandaag {r.done_today}×
@@ -438,12 +498,7 @@ export function Vandaag({
               type="button"
               onClick={() => void complete(r)}
               disabled={busy}
-              className={cn(
-                "h-12 min-w-28 rounded-lg px-5 text-base font-semibold text-white transition-colors disabled:opacity-60",
-                r.is_late
-                  ? "bg-danger hover:opacity-90"
-                  : "bg-teal hover:bg-teal-light",
-              )}
+              className="h-12 min-w-28 rounded-lg bg-teal px-5 text-base font-semibold text-white transition-colors hover:bg-teal-light disabled:opacity-60"
             >
               {busy ? "…" : "Gereed"}
             </button>
@@ -453,8 +508,126 @@ export function Vandaag({
     );
   }
 
+  function renderOverdue(r: HaccpOverdueRow) {
+    const key = r.occurrence_id;
+    const f = overdueFollowUp(r);
+    const busy = busyKeys.has(key);
+    return (
+      <li
+        key={key}
+        className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+      >
+        <span className="text-sm font-medium tabular text-foreground">
+          {shortDate(r.due_date)}
+          {r.slots_total && r.slots_total > 1 && (
+            <span className="block text-xs font-normal text-muted">
+              {r.slot} van {r.slots_total}
+            </span>
+          )}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-base font-medium text-foreground">{r.title}</span>
+          <span className="block text-xs text-muted">
+            {r.area_name}
+            {r.department_name && filter === ALL ? ` · ${r.department_name}` : ""}
+          </span>
+          {f.lines.map((l, i) => (
+            <span
+              key={i}
+              className={cn(
+                "block text-xs",
+                i === 0 && f.tone === "danger" && "text-danger",
+                i === 0 && f.tone === "copper" && "text-copper",
+                i === 0 && f.tone === "teal" && "text-teal",
+                i > 0 && "text-muted",
+              )}
+            >
+              {l}
+            </span>
+          ))}
+        </span>
+        <span className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setMenu({
+                occurrence_id: r.occurrence_id,
+                task_id: r.task_id,
+                title: r.title,
+                area_name: r.area_name,
+              })
+            }
+            className="shrink-0 rounded-md p-2 text-muted hover:bg-background"
+            aria-label="Meer: probleem melden, foto"
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </button>
+          {f.open && canClose && (
+            <button
+              type="button"
+              onClick={() => setNotDone(r)}
+              className="h-12 rounded-lg border border-border px-3 text-sm text-muted hover:text-foreground"
+            >
+              Niet gedaan
+            </button>
+          )}
+          {f.open && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void complete({
+                  kind: "gepland",
+                  occurrence_id: r.occurrence_id,
+                  task_id: r.task_id,
+                  title: r.title,
+                })
+              }
+              className="h-12 min-w-28 rounded-lg bg-danger px-4 text-base font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {busy ? "…" : "Alsnog gereed"}
+            </button>
+          )}
+        </span>
+      </li>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl p-3 pb-28 sm:p-6">
+      {/* Voor welk bedrijf: altijd zichtbaar, wisselen met één tik. */}
+      {!areaId && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h1 className="mr-auto text-xl font-semibold text-foreground">
+            {companyName || "Schoonmaak"}
+            <span className="ml-2 text-sm font-normal text-muted">
+              {new Date().toLocaleDateString("nl-NL", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}
+            </span>
+          </h1>
+          {companies.length > 1 &&
+            companies.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() =>
+                  c.id !== companyId && setScope({ mode: "companies", ids: [c.id] })
+                }
+                className={cn(
+                  "h-10 rounded-full border px-4 text-sm font-medium",
+                  c.id === companyId
+                    ? "border-teal bg-teal text-white"
+                    : "border-border bg-surface text-foreground",
+                )}
+              >
+                {c.name}
+              </button>
+            ))}
+        </div>
+      )}
       {/* Wie werkt er + voortgang */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-60 flex-1 items-center gap-2 sm:max-w-sm">
@@ -560,21 +733,27 @@ export function Vandaag({
 
       {rows === null && !error && <p className="text-sm text-muted">Laden…</p>}
 
-      {rows !== null && rows.length === 0 && (
+      {rows !== null && rows.length === 0 && overdue.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted">
           Er staan nog geen schoonmaaktaken in het plan. Een beheerder zet ze
           klaar bij HACCP → Schoonmaakplan.
         </div>
       )}
 
-      {late.length > 0 && (
-        <section className="mb-5 overflow-hidden rounded-lg border-2 border-danger/40 bg-surface">
-          <h2 className="flex items-center gap-2 bg-danger/10 px-4 py-2 text-sm font-semibold text-danger">
-            <AlertTriangle className="h-4 w-4" />
-            Te laat ({late.length})
-          </h2>
-          <ul>{late.map(renderRow)}</ul>
-        </section>
+      {overdueOpen.length > 0 && (
+        <a
+          href="#achterstallig"
+          className="mb-4 flex items-center gap-2 rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger"
+        >
+          <AlertTriangle className="h-4 w-4" />
+          {overdueOpen.length} achterstallige {overdueOpen.length === 1 ? "taak" : "taken"} — zie onderaan
+        </a>
+      )}
+
+      {rows !== null && byArea.length > 0 && (
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
+          Vandaag
+        </h2>
       )}
 
       {byArea.map((g) => (
@@ -607,6 +786,31 @@ export function Vandaag({
                   a.title.localeCompare(b.title),
               )
               .map(renderRow)}
+          </ul>
+        </section>
+      )}
+
+      {visibleOverdue.length > 0 && (
+        <section
+          id="achterstallig"
+          className="mb-5 scroll-mt-4 overflow-hidden rounded-lg border-2 border-danger/40 bg-surface"
+        >
+          <h2 className="flex items-center gap-2 bg-danger/10 px-4 py-2 text-sm font-semibold text-danger">
+            <AlertTriangle className="h-4 w-4" />
+            Achterstallig
+            <span className="font-normal">
+              — {overdueOpen.length} open
+              {overdueHandled.length > 0 && `, ${overdueHandled.length} afgehandeld (14 dagen)`}
+            </span>
+          </h2>
+          <div className="grid grid-cols-[5.5rem_1fr_auto] gap-3 border-b border-border bg-background px-4 py-1.5 text-xs uppercase tracking-wide text-muted">
+            <span>Gepland</span>
+            <span>Taak · opvolging</span>
+            <span />
+          </div>
+          <ul>
+            {overdueOpen.map(renderOverdue)}
+            {overdueHandled.map(renderOverdue)}
           </ul>
         </section>
       )}

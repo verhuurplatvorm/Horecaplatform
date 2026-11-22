@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, TriangleAlert, X } from "lucide-react";
 import { DashboardWidget, WidgetTable } from "./dashboard-widget";
+import { periodRange, previousRange, wasteHref, wasteTotals, type WasteFilter } from "@/lib/waste/period";
+import type { WasteOverviewRow } from "@/lib/types/database";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { withReturnTo } from "@/lib/use-return-navigation";
@@ -647,10 +649,13 @@ export function SuppliersWidget({
  */
 export function WasteWidget({
   filters,
+  companyIds,
   onHide,
   hidden,
 }: {
   filters: Filters;
+  /** null = alle bedrijven; zelfde bedrijfskeuze als de andere tellers. */
+  companyIds: string[] | null;
   onHide?: (id: string) => void;
   hidden?: boolean;
 }) {
@@ -667,83 +672,72 @@ export function WasteWidget({
   const [topProducts, setTopProducts] = useState<{ name: string; value: number }[]>([]);
   const [topReasons, setTopReasons] = useState<{ name: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const companyKey = companyIds ? companyIds.join(",") : "alle";
+  // Zelfde filter als het afvaloverzicht na doorklikken: bedrijf + laatste N dagen.
+  const wasteFilter: WasteFilter = useMemo(
+    () => ({
+      companyIds: companyKey === "alle" ? null : companyKey.split(","),
+      period: { key: "dagen", days: filters.days },
+    }),
+    [companyKey, filters.days],
+  );
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       const supabase = createClient();
-      const to = new Date();
-      const from = new Date(to);
-      from.setDate(to.getDate() - filters.days + 1);
-      const iso = (d: Date) => d.toISOString().slice(0, 10);
-
-      const { data: sum } = await supabase.rpc("waste_summary", {
-        p_company_id: filters.companyId,
-        p_from: iso(from),
-        p_to: iso(to),
-        p_type: "afval",
-      });
-      if (cancelled) return;
-      setSummary(sum?.[0] ?? null);
-
-      // Top producten en redenen uit dezelfde periode.
-      const { data: regs } = await supabase
-        .from("waste_registrations")
-        .select("product_id, recipe_id, reason_id, waste_value")
-        .gte("registered_at", `${iso(from)}T00:00:00`)
-        .eq("registration_type", "afval")
-        .eq("is_cancelled", false);
-      if (cancelled || !regs) {
-        setLoading(false);
-        return;
-      }
-
-      const byProduct = new Map<string, number>();
-      const byReason = new Map<string, number>();
-      for (const r of regs) {
-        const key = r.product_id ?? r.recipe_id;
-        if (key) byProduct.set(key, (byProduct.get(key) ?? 0) + (r.waste_value ?? 0));
-        if (r.reason_id)
-          byReason.set(r.reason_id, (byReason.get(r.reason_id) ?? 0) + (r.waste_value ?? 0));
-      }
-
-      const productIds = [...byProduct.keys()];
-      const [{ data: prods }, { data: recs }, { data: reasons }] = await Promise.all([
-        productIds.length
-          ? supabase.from("products").select("id, name, custom_name").in("id", productIds)
-          : Promise.resolve({ data: [] }),
-        productIds.length
-          ? supabase.from("recipes").select("id, name").in("id", productIds)
-          : Promise.resolve({ data: [] }),
-        supabase.from("waste_reasons").select("id, name"),
+      const range = periodRange(wasteFilter.period);
+      const prev = previousRange(range);
+      const [{ data: cur }, { data: before }] = await Promise.all([
+        supabase.rpc("waste_overview", {
+          p_company_ids: wasteFilter.companyIds,
+          p_from: range.from,
+          p_to: range.to,
+          p_type: "afval",
+        }),
+        supabase.rpc("waste_overview", {
+          p_company_ids: wasteFilter.companyIds,
+          p_from: prev.from,
+          p_to: prev.to,
+          p_type: "afval",
+        }),
       ]);
       if (cancelled) return;
-
-      const nameById = new Map<string, string>();
-      for (const p of prods ?? []) nameById.set(p.id, p.custom_name?.trim() || p.name);
-      for (const r of recs ?? []) nameById.set(r.id, r.name);
-      const reasonName = new Map((reasons ?? []).map((r) => [r.id, r.name]));
-
-      setTopProducts(
-        [...byProduct.entries()]
-          .map(([id, value]) => ({ name: nameById.get(id) ?? "onbekend", value }))
+      const rows = (cur as WasteOverviewRow[]) ?? [];
+      const t = wasteTotals(rows);
+      setSummary({
+        total_value: t.value,
+        registration_count: t.count,
+        total_kg: t.kg,
+        total_liter: t.liter,
+        total_pieces: t.pieces,
+        previous_value: wasteTotals((before as WasteOverviewRow[]) ?? []).value,
+        ingredient_value: wasteTotals(rows.filter((r) => r.product_id)).value,
+        halfproduct_value: wasteTotals(rows.filter((r) => r.recipe_id)).value,
+      });
+      const byProduct = new Map<string, number>();
+      const byReason = new Map<string, number>();
+      for (const r of rows) {
+        const v = Number(r.waste_value ?? 0);
+        if (r.item_name) byProduct.set(r.item_name, (byProduct.get(r.item_name) ?? 0) + v);
+        if (r.reason_name) byReason.set(r.reason_name, (byReason.get(r.reason_name) ?? 0) + v);
+      }
+      const top = (m: Map<string, number>) =>
+        [...m.entries()]
+          .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value)
-          .slice(0, 5)
-      );
-      setTopReasons(
-        [...byReason.entries()]
-          .map(([id, value]) => ({ name: reasonName.get(id) ?? "onbekend", value }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 5)
-      );
+          .slice(0, 5);
+      setTopProducts(top(byProduct));
+      setTopReasons(top(byReason));
       setLoading(false);
     }
-    run();
+    void run();
     return () => {
       cancelled = true;
     };
-  }, [filters.companyId, filters.days]);
+  }, [wasteFilter]);
+  const href = wasteHref(wasteFilter);
 
   const delta =
     summary && summary.previous_value > 0
@@ -754,7 +748,7 @@ export function WasteWidget({
     <DashboardWidget
       id="afval"
       title="Afvalregistratie"
-      href="/afval"
+      href={href}
       hidden={hidden}
       onHide={onHide}
     >
@@ -767,7 +761,7 @@ export function WasteWidget({
       ) : (
         <div className="space-y-3 p-4">
           <div className="flex flex-wrap items-baseline gap-3">
-            <Link href="/afval" className="hover:underline">
+            <Link href={href} className="hover:underline">
               <span className="tabular text-2xl font-semibold text-danger">
                 € {summary.total_value.toFixed(2)}
               </span>

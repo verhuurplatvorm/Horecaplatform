@@ -1,171 +1,136 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { Download, Plus } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Download } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
+import { WasteQuickEntry } from "@/components/waste/quick-entry";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { ConsumptionType, WasteReason } from "@/lib/types/database";
+import {
+  PERIOD_PRESETS,
+  parseWasteFilter,
+  periodLabel,
+  periodRange,
+  wasteHref,
+  wasteTotals,
+  type WasteFilter,
+} from "@/lib/waste/period";
+import type { ConsumptionType, WasteOverviewRow } from "@/lib/types/database";
 
-interface Row {
-  id: string;
-  registered_at: string;
-  quantity: number;
-  waste_value: number | null;
-  note: string | null;
-  is_cancelled: boolean;
-  productName: string | null;
-  recipeName: string | null;
-  unitName: string | null;
-  reasonName: string | null;
-  staffName: string | null;
-  companyName: string | null;
+export default function AfvalPage() {
+  return (
+    <>
+      <Topbar title="Afval & personeelsmaaltijden" />
+      <Suspense fallback={<p className="p-6 text-sm text-muted">Laden…</p>}>
+        <AfvalOverzicht />
+      </Suspense>
+    </>
+  );
 }
 
-const PERIODS = [
-  { key: "vandaag", label: "Vandaag" },
-  { key: "week", label: "Deze week" },
-  { key: "vorigeweek", label: "Vorige week" },
-  { key: "maand", label: "Deze maand" },
-] as const;
-
-function periodRange(key: string): { from: string; to: string } {
-  const today = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  if (key === "vandaag") return { from: iso(today), to: iso(today) };
-  if (key === "week") {
-    const start = new Date(today);
-    start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-    return { from: iso(start), to: iso(today) };
-  }
-  if (key === "vorigeweek") {
-    const start = new Date(today);
-    start.setDate(today.getDate() - ((today.getDay() + 6) % 7) - 7);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    return { from: iso(start), to: iso(end) };
-  }
-  const start = new Date(today.getFullYear(), today.getMonth(), 1);
-  return { from: iso(start), to: iso(today) };
-}
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleString("nl-NL", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Amsterdam",
+  });
 
 /**
- * Overzicht van geregistreerd afval, met filters en totalen onderaan.
- * Toont uitsluitend wat daadwerkelijk geregistreerd is; er wordt niets
- * afgeleid uit voorraad.
+ * Snelinvoer bovenaan; daaronder het overzicht met dezelfde filters voor
+ * bedrijf en periode als het dashboardblok (waste_overview). De filters
+ * staan in de URL, zodat de doorklik vanaf het dashboard precies dezelfde
+ * registraties en hetzelfde totaal laat zien.
  */
-export default function AfvalPage() {
-  const { activeCompanyIds } = useCompanyScope();
-  const companyId = activeCompanyIds[0] ?? null;
+function AfvalOverzicht() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const { companies, scope, activeCompanyIds } = useCompanyScope();
 
-  const [regType, setRegType] = useState<ConsumptionType>("afval");
-  const [period, setPeriod] = useState<string>("maand");
-  const [reasonId, setReasonId] = useState<string>("");
-  const [staffId, setStaffId] = useState<string>("");
-  const [reasons, setReasons] = useState<WasteReason[]>([]);
-  const [staff, setStaff] = useState<{ id: string; full_name: string }[]>([]);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
+  // URL is leidend zodra er een periode in staat (dashboard of eerder gekozen);
+  // anders begint het overzicht bij de bedrijfskeuze bovenin.
+  const fromUrl = params.has("periode") || params.has("dagen");
+  const filter: WasteFilter = useMemo(() => {
+    const f = parseWasteFilter(params);
+    if (fromUrl) return f;
+    return {
+      companyIds: scope.mode === "companies" && activeCompanyIds.length ? activeCompanyIds : null,
+      period: f.period,
+    };
+  }, [params, fromUrl, scope.mode, activeCompanyIds]);
 
-  useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("waste_reasons")
-      .select("*")
-      .order("sort_order")
-      .then(({ data }) => setReasons((data as WasteReason[]) ?? []));
-    supabase
-      .from("user_profiles")
-      .select("id, full_name")
-      .order("full_name")
-      .then(({ data }) => setStaff(data ?? []));
-  }, []);
+  const regType: ConsumptionType = params.get("soort") === "personeelsmaaltijd" ? "personeelsmaaltijd" : "afval";
+  const [reasonId, setReasonId] = useState("");
+  const [staffId, setStaffId] = useState("");
+  const [result, setResult] = useState<{ key: string; rows: WasteOverviewRow[] } | null>(null);
+  const [reload, setReload] = useState(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const { from, to } = periodRange(period);
+  const range = periodRange(filter.period);
+  const companyKey = filter.companyIds?.join(",") ?? "alle";
+  const loadKey = `${companyKey}|${range.from}|${range.to}|${regType}|${reload}`;
 
-    let q = supabase
-      .from("waste_registrations")
-      .select("*")
-      .gte("registered_at", `${from}T00:00:00`)
-      .lte("registered_at", `${to}T23:59:59`)
-      .order("registered_at", { ascending: false })
-      .limit(500);
-    q = q.eq("registration_type", regType);
-    if (companyId) q = q.eq("company_id", companyId);
-    if (reasonId) q = q.eq("reason_id", reasonId);
-    if (staffId) q = q.eq("registered_by", staffId);
-
-    const { data } = await q;
-    const list = data ?? [];
-
-    // Namen erbij halen in enkele queries, niet per regel.
-    const productIds = [...new Set(list.map((r) => r.product_id).filter(Boolean))] as string[];
-    const recipeIds = [...new Set(list.map((r) => r.recipe_id).filter(Boolean))] as string[];
-    const [{ data: products }, { data: recipes }, { data: units }, { data: companies }] =
-      await Promise.all([
-        productIds.length
-          ? supabase.from("products").select("id, name, custom_name").in("id", productIds)
-          : Promise.resolve({ data: [] }),
-        recipeIds.length
-          ? supabase.from("recipes").select("id, name").in("id", recipeIds)
-          : Promise.resolve({ data: [] }),
-        supabase.from("units").select("id, name"),
-        supabase.from("companies").select("id, name"),
-      ]);
-
-    const productName = new Map((products ?? []).map((p) => [p.id, p.custom_name?.trim() || p.name]));
-    const recipeName = new Map((recipes ?? []).map((r) => [r.id, r.name]));
-    const unitName = new Map((units ?? []).map((u) => [u.id, u.name]));
-    const companyName = new Map((companies ?? []).map((c) => [c.id, c.name]));
-    const reasonName = new Map(reasons.map((r) => [r.id, r.name]));
-    const staffName = new Map(staff.map((s) => [s.id, s.full_name]));
-
-    setRows(
-      list.map((r) => ({
-        id: r.id,
-        registered_at: r.registered_at,
-        quantity: r.quantity,
-        waste_value: r.waste_value,
-        note: r.note,
-        is_cancelled: r.is_cancelled,
-        productName: r.product_id ? productName.get(r.product_id) ?? null : null,
-        recipeName: r.recipe_id ? recipeName.get(r.recipe_id) ?? null : null,
-        unitName: r.unit_id ? unitName.get(r.unit_id) ?? null : null,
-        reasonName: r.reason_id ? reasonName.get(r.reason_id) ?? null : null,
-        staffName: r.registered_by ? staffName.get(r.registered_by) ?? null : null,
-        companyName: r.company_id ? companyName.get(r.company_id) ?? null : null,
-      }))
-    );
-    setLoading(false);
-  }, [period, reasonId, staffId, companyId, reasons, staff, regType]);
+  const navigate = useCallback(
+    (next: WasteFilter, soort: ConsumptionType = regType) => {
+      const href = wasteHref(next, soort === "personeelsmaaltijd" ? { soort } : {});
+      router.replace(href.replace("/afval", pathname), { scroll: false });
+    },
+    [router, pathname, regType],
+  );
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    void createClient()
+      .rpc("waste_overview", {
+        p_company_ids: filter.companyIds,
+        p_from: range.from,
+        p_to: range.to,
+        p_type: regType,
+      })
+      .then(({ data }) => {
+        if (!cancelled) setResult({ key: loadKey, rows: (data as WasteOverviewRow[]) ?? [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // loadKey bevat alle invoer van de query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadKey]);
 
-  const active = rows.filter((r) => !r.is_cancelled);
-  const totalValue = active.reduce((s, r) => s + (r.waste_value ?? 0), 0);
+  const loading = result?.key !== loadKey;
+  const all = useMemo(() => (loading ? [] : (result?.rows ?? [])), [loading, result]);
+  const rows = all.filter(
+    (r) => (!reasonId || r.reason_id === reasonId) && (!staffId || r.registered_by === staffId),
+  );
+  const totals = wasteTotals(rows);
+  const reasons = useMemo(
+    () => [...new Map(all.filter((r) => r.reason_id).map((r) => [r.reason_id!, r.reason_name ?? ""])).entries()],
+    [all],
+  );
+  const staff = useMemo(
+    () => [...new Map(all.filter((r) => r.registered_by).map((r) => [r.registered_by!, r.staff_name ?? ""])).entries()],
+    [all],
+  );
+  const single = filter.companyIds?.length === 1 ? filter.companyIds[0] : null;
 
   function exportCsv() {
     const header = [
       "Datum", "Tijd", "Medewerker", "Product", "Type", "Hoeveelheid",
-      "Eenheid", "Reden", "Afvalwaarde", "Locatie", "Opmerking",
+      "Eenheid", "Reden", "Waarde", "Bedrijf", "Opmerking",
     ];
-    const lines = active.map((r) => {
+    const lines = rows.map((r) => {
       const d = new Date(r.registered_at);
       return [
-        d.toLocaleDateString("nl-NL"), d.toLocaleTimeString("nl-NL"),
-        r.staffName ?? "", r.productName ?? r.recipeName ?? "",
-        r.productName ? "ingrediënt" : "halfproduct",
-        String(r.quantity), r.unitName ?? "", r.reasonName ?? "",
-        r.waste_value?.toFixed(2) ?? "", r.companyName ?? "", r.note ?? "",
+        d.toLocaleDateString("nl-NL", { timeZone: "Europe/Amsterdam" }),
+        d.toLocaleTimeString("nl-NL", { timeZone: "Europe/Amsterdam" }),
+        r.staff_name ?? "", r.item_name ?? "", r.item_kind, String(r.quantity), r.unit_name ?? "",
+        r.reason_name ?? "", r.waste_value != null ? Number(r.waste_value).toFixed(2) : "",
+        r.company_name ?? "", r.note ?? "",
       ];
     });
     const csv = [header, ...lines]
@@ -180,9 +145,64 @@ export default function AfvalPage() {
   }
 
   return (
-    <>
-      <Topbar title="Afval & personeelsmaaltijden" />
-      <main className="space-y-4 p-6">
+    <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-6">
+      <WasteQuickEntry
+        preferredCompanyId={single}
+        initialType={regType}
+        onSaved={() => setReload((n) => n + 1)}
+      />
+
+      {/* Filters: zelfde betekenis als op het dashboard */}
+      <div className="space-y-2 rounded-md border border-border bg-surface px-3 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-16 text-xs uppercase tracking-wide text-muted">Bedrijf</span>
+          {[{ id: null as string | null, name: "Alle bedrijven" }, ...companies].map((c) => {
+            const on = c.id === null ? filter.companyIds === null : single === c.id;
+            return (
+              <button
+                key={c.id ?? "alle"}
+                type="button"
+                onClick={() => navigate({ ...filter, companyIds: c.id ? [c.id] : null })}
+                className={cn(
+                  "h-10 rounded-full border px-4 text-sm",
+                  on ? "border-navy bg-navy font-medium text-white" : "border-border bg-background",
+                )}
+              >
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-16 text-xs uppercase tracking-wide text-muted">Periode</span>
+          {PERIOD_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => navigate({ ...filter, period: { key: p.key } })}
+              className={cn(
+                "h-10 rounded-full border px-4 text-sm",
+                filter.period.key === p.key
+                  ? "border-navy bg-navy font-medium text-white"
+                  : "border-border bg-background",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+          {filter.period.key === "dagen" && (
+            <span className="h-10 rounded-full border border-navy bg-navy px-4 py-2 text-sm font-medium text-white">
+              {periodLabel(filter.period)}
+            </span>
+          )}
+          <span className="text-xs text-muted">
+            {new Date(`${range.from}T12:00:00`).toLocaleDateString("nl-NL")} t/m{" "}
+            {new Date(`${range.to}T12:00:00`).toLocaleDateString("nl-NL")}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <nav className="flex gap-1 border-b border-border">
           {(
             [
@@ -192,155 +212,106 @@ export default function AfvalPage() {
           ).map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setRegType(key)}
+              type="button"
+              onClick={() => navigate(filter, key)}
               className={cn(
                 "border-b-2 px-3 py-2 text-sm",
                 regType === key
                   ? "border-teal font-medium text-teal"
-                  : "border-transparent text-muted hover:text-foreground"
+                  : "border-transparent text-muted hover:text-foreground",
               )}
             >
               {label}
             </button>
           ))}
         </nav>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted">
-            {regType === "afval"
-              ? "Wat is er weggegooid, waarom, en wat kostte dat. Losstaand van voorraad."
-              : "Wat is er intern door personeel gegeten, en wat kostte dat."}
-          </p>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={exportCsv}>
-              <Download className="h-4 w-4" />
-              Exporteren
-            </Button>
-            <Link href="/afval/nieuw">
-              <Button>
-                <Plus className="h-4 w-4" />
-                Registreren
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-3 py-2">
-          <div className="flex gap-1 rounded-md bg-background p-0.5">
-            {PERIODS.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs",
-                  period === p.key
-                    ? "bg-surface font-medium text-foreground shadow-sm"
-                    : "text-muted hover:text-foreground"
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          {regType === "afval" && (
+        <div className="flex flex-wrap gap-2">
+          {regType === "afval" && reasons.length > 0 && (
             <select
               value={reasonId}
               onChange={(e) => setReasonId(e.target.value)}
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
             >
               <option value="">Alle redenen</option>
-              {reasons.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
+              {reasons.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
               ))}
             </select>
           )}
-          <select
-            value={staffId}
-            onChange={(e) => setStaffId(e.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-          >
-            <option value="">Alle medewerkers</option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>{s.full_name}</option>
-            ))}
-          </select>
+          {staff.length > 0 && (
+            <select
+              value={staffId}
+              onChange={(e) => setStaffId(e.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            >
+              <option value="">Alle medewerkers</option>
+              {staff.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+          )}
+          <Button variant="secondary" onClick={exportCsv}>
+            <Download className="h-4 w-4" />
+            Exporteren
+          </Button>
         </div>
+      </div>
 
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                    <th className="px-4 py-2 font-medium">Datum/tijd</th>
-                    <th className="px-4 py-2 font-medium">Medewerker</th>
-                    <th className="px-4 py-2 font-medium">Product</th>
-                    <th className="px-4 py-2 font-medium">Type</th>
-                    <th className="px-4 py-2 text-right font-medium">Hoeveelheid</th>
-                    {regType === "afval" && (
-                      <th className="px-4 py-2 font-medium">Reden</th>
-                    )}
-                    <th className="px-4 py-2 text-right font-medium">
-                      {regType === "afval" ? "Afvalwaarde" : "Kosten"}
-                    </th>
-                    <th className="px-4 py-2 font-medium">Locatie</th>
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="px-4 py-2 font-medium">Datum/tijd</th>
+                  <th className="px-4 py-2 font-medium">Bedrijf</th>
+                  <th className="px-4 py-2 font-medium">Medewerker</th>
+                  <th className="px-4 py-2 font-medium">Product</th>
+                  <th className="px-4 py-2 text-right font-medium">Hoeveelheid</th>
+                  {regType === "afval" && <th className="px-4 py-2 font-medium">Reden</th>}
+                  <th className="px-4 py-2 text-right font-medium">
+                    {regType === "afval" ? "Afvalwaarde" : "Kosten"}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} className="border-t border-border">
+                    <td className="px-4 py-2 text-muted">{fmtDate(r.registered_at)}</td>
+                    <td className="px-4 py-2">{r.company_name ?? "—"}</td>
+                    <td className="px-4 py-2">{r.staff_name ?? "—"}</td>
+                    <td className="px-4 py-2 font-medium">
+                      {r.item_name ?? "—"}
+                      <span className="ml-2 text-xs font-normal text-muted">{r.item_kind}</span>
+                      {r.note && <span className="ml-2 text-xs font-normal text-muted">{r.note}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular">
+                      {Number(r.quantity).toLocaleString("nl-NL")} {r.unit_name ?? ""}
+                    </td>
+                    {regType === "afval" && <td className="px-4 py-2 text-muted">{r.reason_name ?? "—"}</td>}
+                    <td className="px-4 py-2 text-right tabular font-medium">
+                      {r.waste_value != null ? `€ ${Number(r.waste_value).toFixed(2)}` : "—"}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {active.map((r) => (
-                    <tr key={r.id} className="border-t border-border">
-                      <td className="px-4 py-2 text-muted">
-                        {new Date(r.registered_at).toLocaleString("nl-NL", {
-                          day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-4 py-2">{r.staffName ?? "—"}</td>
-                      <td className="px-4 py-2 font-medium">
-                        {r.productName ?? r.recipeName ?? "—"}
-                        {r.note && (
-                          <span className="ml-2 text-xs font-normal text-muted">{r.note}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-muted">
-                        {r.productName ? "ingrediënt" : "halfproduct"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular">
-                        {r.quantity} {r.unitName ?? ""}
-                      </td>
-                      {regType === "afval" && (
-                        <td className="px-4 py-2 text-muted">{r.reasonName ?? "—"}</td>
-                      )}
-                      <td className="px-4 py-2 text-right tabular font-medium">
-                        {r.waste_value != null ? `€ ${r.waste_value.toFixed(2)}` : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-muted">{r.companyName ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {active.length === 0 && (
-                    <tr>
-                      <td colSpan={regType === "afval" ? 8 : 7} className="px-4 py-8 text-center text-muted">
-                        {loading
-                          ? "Registraties laden…"
-                          : "Geen afvalregistraties in deze periode."}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-4 py-3">
-              <span className="text-sm text-muted">
-                {active.length} registratie(s)
-              </span>
-              <span className="tabular text-lg font-semibold text-danger">
-                € {totalValue.toFixed(2)}{" "}
-                {regType === "afval" ? "afvalwaarde" : "personeelskosten"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-    </>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={regType === "afval" ? 7 : 6} className="px-4 py-8 text-center text-muted">
+                      {loading ? "Registraties laden…" : "Geen registraties voor deze filters."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-4 py-3">
+            <span className="text-sm text-muted">{totals.count} registratie(s)</span>
+            <span className="tabular text-lg font-semibold text-danger">
+              € {totals.value.toFixed(2)} {regType === "afval" ? "afvalwaarde" : "personeelskosten"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </main>
   );
 }

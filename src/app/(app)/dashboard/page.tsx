@@ -385,7 +385,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-4">
-            <WasteWidget filters={filters} hidden={isHidden("afval")} onHide={hideWidget} />
+            <WasteWidget filters={filters} companyIds={companyIds} hidden={isHidden("afval")} onHide={hideWidget} />
             <UnmatchedIngredientsWidget
               lines={unmatched ?? []}
               loading={unmatched === null}
