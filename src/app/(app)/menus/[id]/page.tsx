@@ -359,6 +359,16 @@ export default function MenuDetailPage({
       sectionGroups.push(g);
     }
   }
+  // Onderdelen zonder regels (bv. een optie die nog gevuld moet worden)
+  // ook tonen, in de volgorde van de onderdelen.
+  for (const sec of sections) {
+    const key = sec.name.trim().toLowerCase();
+    if (!groupByName.has(key)) {
+      const g: [string, BreakdownLine[]] = [sec.name, []];
+      groupByName.set(key, g);
+      sectionGroups.push(g);
+    }
+  }
 
   // Optellen uit de regels zelf, zodat dit nooit uit de pas loopt met
   // een totaal dat nog opgehaald moet worden.
