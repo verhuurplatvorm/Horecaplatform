@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { DashboardFilterBar } from "@/components/dashboard/filter-bar";
+import { parseDashboardScope, type DashboardScope } from "@/lib/dashboard-links";
 import { TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
@@ -27,6 +30,53 @@ interface Candidate {
 }
 
 export default function ProductenOpschonenPage() {
+  return (
+    <Suspense fallback={null}>
+      <OpschonenRouter />
+    </Suspense>
+  );
+}
+
+/**
+ * Vanaf het dashboard twee aparte werkvoorraden:
+ *  ?toon=koppelingen  — niet-gekoppelde receptregels (per naam koppelen)
+ *  ?toon=importprijzen — leveranciersprijzen die bij import onzeker waren
+ * met dezelfde filters (bedrijf, actuele kaart) als de tegel.
+ */
+function OpschonenRouter() {
+  const params = useSearchParams();
+  const toon = params.get("toon");
+  const scope = parseDashboardScope(params);
+  if (toon === "koppelingen") return <UnmatchedLinesView scope={scope} />;
+  if (toon === "importprijzen") return <OpschonenPage focus="importprijzen" scope={scope} />;
+  return <OpschonenPage />;
+}
+
+function UnmatchedLinesView({ scope }: { scope: DashboardScope }) {
+  const [count, setCount] = useState<{ lines: number; names: number } | null>(null);
+  const onCount = useCallback((lines: number, names: number) => setCount({ lines, names }), []);
+  return (
+    <>
+      <Topbar title="Niet-gekoppelde receptregels" />
+      <main className="max-w-4xl space-y-4 p-6">
+        <ProductViewTabs />
+        <DashboardFilterBar
+          title="Niet-gekoppelde receptregels"
+          count={count ? count.lines : null}
+          scope={scope}
+          clearHref="/producten/opschonen"
+          note={count ? `${count.names} verschillende namen` : undefined}
+        />
+        <CostCleanup
+          unmatchedScope={{ companyIds: scope.companyIds, onlyCurrent: scope.onlyCurrent }}
+          onCount={onCount}
+        />
+      </main>
+    </>
+  );
+}
+
+function OpschonenPage({ focus, scope }: { focus?: "importprijzen"; scope?: DashboardScope } = {}) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,12 +98,26 @@ export default function ProductenOpschonenPage() {
     let cancelled = false;
     async function run() {
       const supabase = createClient();
-      const { data } = await supabase
-        .from("supplier_products")
-        .select("*, suppliers(name), products(name, base_unit)")
-        .eq("flagged_for_review", true)
-        .is("valid_to", null)
-        .order("created_at", { ascending: false });
+      // Vanaf het dashboard: precies de prijzen die de tegel telt.
+      let ids: string[] | null = null;
+      if (focus === "importprijzen") {
+        const { data: idRows } = await supabase.rpc("dashboard_flagged_price_ids", {
+          p_company_ids: scope?.companyIds ?? null,
+          p_only_current: Boolean(scope?.onlyCurrent),
+        });
+        ids = (idRows ?? []).map((r) => r.id);
+      }
+      let data: SupplierProduct[] | null = [];
+      if (ids === null || ids.length > 0) {
+        let query = supabase
+          .from("supplier_products")
+          .select("*, suppliers(name), products(name, base_unit)")
+          .eq("flagged_for_review", true)
+          .is("valid_to", null)
+          .order("created_at", { ascending: false });
+        if (ids) query = query.in("id", ids);
+        ({ data } = await query);
+      }
 
       if (cancelled) return;
       setFlaggedPrices(
@@ -73,7 +137,7 @@ export default function ProductenOpschonenPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken]);
+  }, [reloadToken, focus, scope?.companyIds, scope?.onlyCurrent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,14 +298,23 @@ export default function ProductenOpschonenPage() {
 
   return (
     <>
-      <Topbar title="Ingrediënten — te controleren" />
+      <Topbar title={focus ? "Importprijzen te controleren" : "Ingrediënten — te controleren"} />
       <main className="max-w-4xl space-y-4 p-6">
         <ProductViewTabs />
 
-        {/* Eerst wat de kostprijs onvolledig maakt, met voorrang voor actieve kaarten en buffetten. */}
-        <CostCleanup />
+        {focus === "importprijzen" && scope && (
+          <DashboardFilterBar
+            title="Importprijzen te controleren"
+            count={flaggedLoading ? null : flaggedPrices.length}
+            scope={scope}
+            clearHref="/producten/opschonen"
+          />
+        )}
 
-        {missingBridge.length > 0 && (
+        {/* Eerst wat de kostprijs onvolledig maakt, met voorrang voor actieve kaarten en buffetten. */}
+        {!focus && <CostCleanup />}
+
+        {!focus && missingBridge.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Gemiddeld gewicht/inhoud per stuk ontbreekt ({missingBridge.length})</CardTitle>
@@ -332,6 +405,7 @@ export default function ProductenOpschonenPage() {
           </CardContent>
         </Card>
 
+        {!focus && (<>
         <p className="text-sm text-muted">
           Ingrediënten waarvan de basiseenheid &quot;stuk&quot; is, terwijl de naam een gewicht of
           inhoud noemt (bv. &quot;... 2 KG&quot;) — vaak het gevolg van een eerdere onjuiste
@@ -418,6 +492,7 @@ export default function ProductenOpschonenPage() {
         {candidates.map((c) => (
           <CandidateCard key={c.product.id} candidate={c} units={units} onFixed={reload} />
         ))}
+        </>)}
       </main>
     </>
   );

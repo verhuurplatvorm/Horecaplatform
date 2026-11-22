@@ -38,9 +38,21 @@ function recipeHref(i: AttentionItem): string | null {
  * Een terugkerende ongekoppelde naam koppel je hier één keer, op de
  * recepten die je zelf aanvinkt.
  */
-export function CostCleanup() {
+export function CostCleanup({
+  unmatchedScope,
+  onCount,
+}: {
+  /**
+   * Vanaf het dashboard: alleen niet-gekoppelde receptregels, met precies
+   * de filters van de tegel (bedrijf, actuele kaart).
+   */
+  unmatchedScope?: { companyIds: string[] | null; onlyCurrent: boolean };
+  /** Aantal regels en namen, voor de filterbalk. */
+  onCount?: (lines: number, names: number) => void;
+} = {}) {
   const { activeCompanyIds } = useCompanyScope();
-  const companyId = activeCompanyIds[0] ?? null;
+  const companyId = unmatchedScope?.companyIds?.[0] ?? activeCompanyIds[0] ?? null;
+  const scopeKey = unmatchedScope ? JSON.stringify(unmatchedScope) : null;
   const [items, setItems] = useState<AttentionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,9 +65,15 @@ export function CostCleanup() {
   useEffect(() => {
     let cancelled = false;
     async function run() {
-      const res = companyId
-        ? await createClient().rpc("cost_attention_items", { p_company_id: companyId })
-        : null;
+      const scoped = scopeKey ? (JSON.parse(scopeKey) as { companyIds: string[] | null; onlyCurrent: boolean }) : null;
+      const res = scoped
+        ? await createClient().rpc("dashboard_unmatched_lines", {
+            p_company_ids: scoped.companyIds,
+            p_only_current: scoped.onlyCurrent,
+          })
+        : companyId
+          ? await createClient().rpc("cost_attention_items", { p_company_id: companyId })
+          : null;
       if (cancelled) return;
       if (res?.error) setError("Kan de aandachtspunten niet laden: " + res.error.message);
       else setItems((res?.data ?? []) as AttentionItem[]);
@@ -65,9 +83,12 @@ export function CostCleanup() {
     return () => {
       cancelled = true;
     };
-  }, [companyId, reload]);
+  }, [companyId, reload, scopeKey]);
 
   const groups = useMemo(() => groupAttentionItems(items), [items]);
+  useEffect(() => {
+    if (!loading) onCount?.(items.length, groups.length);
+  }, [loading, items.length, groups.length, onCount]);
   const counts = useMemo(() => {
     const c: Record<string, number> = { alle: groups.length };
     for (const g of groups) c[g.kind] = (c[g.kind] ?? 0) + 1;
@@ -81,7 +102,11 @@ export function CostCleanup() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Kostprijs onvolledig — op te schonen ({groups.length})</CardTitle>
+        <CardTitle>
+          {unmatchedScope
+            ? `Niet-gekoppelde receptregels — ${items.length} regels in ${groups.length} namen`
+            : `Kostprijs onvolledig — op te schonen (${groups.length})`}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted">
@@ -95,9 +120,11 @@ export function CostCleanup() {
           <p className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-success">{message}</p>
         )}
         {error && <p className="text-sm text-danger">{error}</p>}
-        {!companyId && <p className="text-sm text-muted">Kies een bedrijf om de inkoopprijzen te controleren.</p>}
+        {!companyId && !unmatchedScope && (
+          <p className="text-sm text-muted">Kies een bedrijf om de inkoopprijzen te controleren.</p>
+        )}
 
-        {groups.length > 0 && (
+        {groups.length > 0 && !unmatchedScope && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
             {(["alle", "koppeling", "prijs", "omrekening", "opbrengst"] as const).map((k) =>
               k === "alle" || counts[k] ? (
@@ -123,8 +150,10 @@ export function CostCleanup() {
 
         {loading ? (
           <p className="text-sm text-muted">Bezig met zoeken…</p>
-        ) : companyId && groups.length === 0 && !error ? (
-          <p className="text-sm text-muted">Alle kostprijzen zijn volledig.</p>
+        ) : (companyId || unmatchedScope) && groups.length === 0 && !error ? (
+          <p className="text-sm text-muted">
+            {unmatchedScope ? "Alle receptregels zijn gekoppeld." : "Alle kostprijzen zijn volledig."}
+          </p>
         ) : (
           <div className="divide-y divide-border rounded-md border border-border">
             {filtered.slice(0, limit).map((g) => (

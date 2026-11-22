@@ -34,10 +34,19 @@ interface Row {
 const euro = (n: number | null) =>
   n === null ? "—" : `€ ${Number(n).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function AgreedPriceDeviations() {
-  const [rows, setRows] = useState<Row[] | null>(null);
+export function AgreedPriceDeviations({
+  rows: givenRows,
+  days = 30,
+}: {
+  /** Vanaf het dashboard: precies de regels die de tegel telt. */
+  rows?: Row[];
+  days?: number;
+} = {}) {
+  const [loadedRows, setRows] = useState<Row[] | null>(null);
+  const rows = givenRows ?? loadedRows;
 
   useEffect(() => {
+    if (givenRows) return;
     let cancelled = false;
     createClient()
       .rpc("agreed_price_deviations", { p_days: 30 })
@@ -47,7 +56,7 @@ export function AgreedPriceDeviations() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [givenRows]);
 
   if (!rows || rows.length === 0) return null;
 
@@ -64,7 +73,7 @@ export function AgreedPriceDeviations() {
       </CardHeader>
       <CardContent className="p-0">
         <p className="px-5 pb-2 text-xs text-muted">
-          Factuurregels van de afgelopen 30 dagen die niet overeenkomen met de vaste prijslijst of
+          Factuurregels van de afgelopen {days} dagen die niet overeenkomen met de vaste prijslijst of
           contractprijs. Ze blijven een prijsalarm tot ze beoordeeld zijn, of tot een nieuwe prijslijst
           met deze prijs is ingevoerd.
         </p>

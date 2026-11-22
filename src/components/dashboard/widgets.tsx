@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { getCurrentGroupId } from "@/lib/supabase/current-group";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { cn } from "@/lib/utils";
+import { countUnmatchedNames, priceAlertCount, type PriceAlerts } from "@/lib/dashboard-data";
+import type { DashboardMarginProblemRow } from "@/lib/types/database";
 
 interface Filters {
   companyId: string | null;
@@ -173,79 +175,41 @@ export function PriceChangesWidget({
   );
 }
 
-/** Blok 4: gerechten met een foodcost boven de norm. */
+/**
+ * Blok 4: gerechten met een margeprobleem. De rijen komen van het
+ * dashboard (fetchMarginProblems), zodat blok en tegel precies hetzelfde
+ * tellen; "Alles bekijken" opent Gerechten met hetzelfde filter.
+ */
 export function MarginProblemsWidget({
-  filters,
+  rows,
+  loading,
+  href,
   onHide,
   hidden,
 }: {
-  filters: Filters;
+  rows: DashboardMarginProblemRow[];
+  loading: boolean;
+  href: string;
   onHide?: (id: string) => void;
   hidden?: boolean;
 }) {
-  const [rows, setRows] = useState<
-    {
-      recipe_id: string;
-      recipe_name: string;
-      category: string | null;
-      cost_price: number;
-      sales_price: number;
-      foodcost_pct: number;
-      margin_pct: number;
-    }[]
-  >([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    async function run() {
-      const supabase = createClient();
-      const groupId = await getCurrentGroupId(supabase);
-      let norm = 33;
-      if (groupId) {
-        const { data: group } = await supabase
-          .from("groups")
-          .select("foodcost_norm_pct")
-          .eq("id", groupId)
-          .maybeSingle();
-        if (group?.foodcost_norm_pct) norm = group.foodcost_norm_pct;
-      }
-      return supabase.rpc("dashboard_margin_problems_scoped", {
-        p_company_id: filters.companyId,
-        p_foodcost_norm: norm,
-        p_limit: 15,
-        p_only_current: Boolean(filters.onlyCurrent),
-      });
-    }
-    run()
-      .then(({ data }) => {
-        if (cancelled) return;
-        let list = data ?? [];
-        if (filters.category) list = list.filter((r) => r.category === filters.category);
-        setRows(list);
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [filters.companyId, filters.category, filters.onlyCurrent]);
-
+  const shown = rows.slice(0, 15);
+  const norm = rows[0]?.norm_pct ?? 33;
   return (
     <DashboardWidget
       id="marge"
       title="Gerechten met een margeprobleem"
-      count={rows.length}
-      href="/recepturen"
+      count={loading ? null : rows.length}
+      href={href}
       hidden={hidden}
       onHide={onHide}
     >
       <WidgetTable
         loading={loading}
-        empty="Alle gerechten zitten binnen de foodcostnorm."
-        headers={["Gerecht", "Map", "Kostprijs", "Verkoop excl.", "Foodcost", "Marge"]}
+        empty="Geen gerechten boven de foodcostnorm (met een volledige kostprijs)."
+        headers={["Gerecht", "Bedrijf", "Kostprijs", "Verkoop excl.", "Foodcost", "Marge"]}
       >
-        {rows.map((r) => (
+        {shown.map((r) => (
           <tr key={r.recipe_id} className="border-t border-border">
             <td className="px-4 py-2 font-medium">
               <Link
@@ -254,8 +218,9 @@ export function MarginProblemsWidget({
               >
                 {r.recipe_name}
               </Link>
+              {r.category && <span className="ml-1 text-xs text-muted">{r.category}</span>}
             </td>
-            <td className="px-4 py-2 text-muted">{r.category ?? "—"}</td>
+            <td className="px-4 py-2 text-muted">{r.company_name}</td>
             <td className="px-4 py-2 text-right tabular">€ {r.cost_price.toFixed(2)}</td>
             <td className="px-4 py-2 text-right tabular">€ {r.sales_price.toFixed(2)}</td>
             <td className="px-4 py-2 text-right tabular font-semibold text-danger">
@@ -267,111 +232,199 @@ export function MarginProblemsWidget({
           </tr>
         ))}
       </WidgetTable>
+      {!loading && (
+        <p className="border-t border-border px-4 py-2 text-xs text-muted">
+          Foodcost boven {norm}% en een volledige kostprijs. Gerechten met &ldquo;Kostprijs
+          onvolledig&rdquo; tellen hier niet mee.
+          {rows.length > shown.length && (
+            <>
+              {" "}
+              <Link href={href} className="text-teal hover:underline">
+                Alle {rows.length} bekijken →
+              </Link>
+            </>
+          )}
+        </p>
+      )}
     </DashboardWidget>
   );
 }
 
-/** Blok 6: receptregels die bij een import niet gekoppeld konden worden. */
-export function UnmatchedIngredientsWidget({
+/** Blok: prijsalarmen — zelfde gegevens als de tegel "Prijsalarmen". */
+export function PriceAlertsWidget({
+  data,
+  loading,
+  href,
   onHide,
   hidden,
-  onlyCurrent,
+  onDismissed,
 }: {
+  data: PriceAlerts;
+  loading: boolean;
+  href: string;
   onHide?: (id: string) => void;
   hidden?: boolean;
-  onlyCurrent?: boolean;
+  onDismissed: (priceRowId: string) => void;
 }) {
-  const [rows, setRows] = useState<
-    {
-      line_id: string;
-      unmatched_name: string;
-      quantity: number;
-      unit_name: string | null;
-      recipe_id: string;
-      recipe_name: string;
-      recipe_kind: string;
-      changed_at: string;
-    }[]
-  >([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      const supabase = createClient();
-      let query = supabase
-        .from("dashboard_unmatched_ingredients")
-        .select("*")
-        .order("changed_at", { ascending: false })
-        .limit(20);
-      if (onlyCurrent) {
-        const { data: ids } = await supabase.rpc("current_recipe_ids");
-        const recipeIds = [...new Set((ids ?? []).map((x) => x.recipe_id))];
-        if (recipeIds.length === 0) return [];
-        query = query.in("recipe_id", recipeIds);
-      }
-      const { data } = await query;
-      return data ?? [];
+  // Een onterecht alarm (bv. met een verkeerd gewicht gerekend) weghalen.
+  // De prijshistorie blijft bestaan; alleen het alarm verdwijnt.
+  async function dismissAlert(priceRowId: string) {
+    const { error } = await createClient()
+      .from("dismissed_price_alerts")
+      .upsert({ supplier_product_id: priceRowId }, { onConflict: "supplier_product_id" });
+    if (error) {
+      window.alert("Alarm weghalen is niet gelukt: " + error.message);
+      return;
     }
-    run().then((data) => {
-      if (cancelled) return;
-      setRows(data);
-      setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [onlyCurrent]);
-
+    onDismissed(priceRowId);
+  }
+  const total = priceAlertCount(data);
   return (
     <DashboardWidget
-      id="nietherkend"
-      title="Niet-herkende ingrediënten"
-      count={rows.length}
+      id="alarmen"
+      title="Prijsalarmen"
+      count={loading ? null : total}
+      href={href}
       hidden={hidden}
       onHide={onHide}
     >
       <WidgetTable
         loading={loading}
-        empty="Alle receptregels zijn gekoppeld aan een ingrediënt."
-        headers={["Ingevoerde naam", "Uit", "Hoeveelheid", "Datum", ""]}
+        empty="Geen prijsalarmen in deze periode."
+        headers={["Ingrediënt", "Leverancier", "Oud → nieuw", "Verschil", "Datum", ""]}
       >
-        {rows.map((r) => (
-          <tr key={r.line_id} className="border-t border-border">
-            <td className="px-4 py-2 font-medium">{r.unmatched_name}</td>
-            <td className="px-4 py-2 text-muted">
+        {data.alerts.slice(0, 25).map((r) => (
+          <tr key={r.price_row_id} className="border-t border-border">
+            <td className="px-4 py-2 font-medium">
               <Link
-                href={withReturnTo(
-                  r.recipe_kind === "halfproduct"
-                    ? `/halfproducten/${r.recipe_id}/bewerken`
-                    : `/recepturen/${r.recipe_id}/bewerken`
-                )}
+                href={withReturnTo(`/producten/${r.product_id}/bewerken`)}
                 className="hover:text-teal hover:underline"
               >
-                {r.recipe_name}
+                <TriangleAlert className="mr-1 inline h-3.5 w-3.5 text-copper" />
+                {r.product_name}
               </Link>
+            </td>
+            <td className="px-4 py-2 text-muted">{r.supplier_name ?? "—"}</td>
+            <td className="px-4 py-2 text-right tabular text-xs">
+              <span className="text-muted line-through">€ {r.old_price.toFixed(2)}</span> → €{" "}
+              {r.new_price.toFixed(2)}
             </td>
             <td className="px-4 py-2 text-right tabular">
-              {r.quantity} {r.unit_name ?? ""}
+              <span
+                className={cn(
+                  "inline-flex items-center gap-0.5 font-semibold",
+                  r.difference_pct > 0 ? "text-danger" : "text-success"
+                )}
+              >
+                {r.difference_pct > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                {Math.abs(r.difference_pct).toFixed(1)}%
+              </span>
             </td>
             <td className="px-4 py-2 text-right text-xs text-muted">
-              {new Date(r.changed_at).toLocaleDateString("nl-NL")}
+              {new Date(r.changed_on).toLocaleDateString("nl-NL")}
             </td>
-            <td className="px-4 py-2 text-right">
-              <Link
-                href={withReturnTo(
-                  r.recipe_kind === "halfproduct"
-                    ? `/halfproducten/${r.recipe_id}/bewerken`
-                    : `/recepturen/${r.recipe_id}/bewerken`
-                )}
-                className="text-xs text-teal hover:underline"
+            <td className="px-2 py-2 text-right">
+              <button
+                type="button"
+                onClick={() => dismissAlert(r.price_row_id)}
+                className="text-muted hover:text-danger"
+                title="Alarm verwijderen (de prijs zelf blijft staan)"
+                aria-label="Alarm verwijderen"
               >
-                Koppelen →
-              </Link>
+                <X className="h-4 w-4" />
+              </button>
             </td>
           </tr>
         ))}
       </WidgetTable>
+      {!loading && data.agreed.length > 0 && (
+        <p className="border-t border-border px-4 py-2 text-xs text-muted">
+          Plus {data.agreed.length} factuurregel{data.agreed.length === 1 ? "" : "s"} die afwijk
+          {data.agreed.length === 1 ? "t" : "en"} van een afgesproken prijs.{" "}
+          <Link href={href} className="text-teal hover:underline">
+            Bekijken →
+          </Link>
+        </p>
+      )}
+    </DashboardWidget>
+  );
+}
+
+export interface UnmatchedLine {
+  line_id: string;
+  recipe_id: string;
+  recipe_name: string;
+  recipe_kind: string;
+  name: string | null;
+  unit_name: string | null;
+}
+
+/**
+ * Blok 6: niet-gekoppelde receptregels (regels zonder ingrediënt of
+ * halfproduct). Zelfde rijen als de tegel; koppelen gebeurt in één keer
+ * per naam in Opschonen.
+ */
+export function UnmatchedIngredientsWidget({
+  lines,
+  loading,
+  href,
+  onHide,
+  hidden,
+}: {
+  lines: UnmatchedLine[];
+  loading: boolean;
+  href: string;
+  onHide?: (id: string) => void;
+  hidden?: boolean;
+}) {
+  const names = countUnmatchedNames(lines);
+  return (
+    <DashboardWidget
+      id="nietherkend"
+      title="Niet-gekoppelde receptregels"
+      count={loading ? null : lines.length}
+      href={href}
+      hidden={hidden}
+      onHide={onHide}
+    >
+      <WidgetTable
+        loading={loading}
+        empty="Alle receptregels zijn gekoppeld aan een ingrediënt of halfproduct."
+        headers={["Naam in recept", "Recept", "Eenheid", ""]}
+      >
+        {lines.slice(0, 20).map((r) => {
+          const recipeHref = withReturnTo(
+            r.recipe_kind === "halfproduct"
+              ? `/halfproducten/${r.recipe_id}/bewerken`
+              : `/recepturen/${r.recipe_id}/bewerken`
+          );
+          return (
+            <tr key={r.line_id} className="border-t border-border">
+              <td className="px-4 py-2 font-medium">{r.name ?? "—"}</td>
+              <td className="px-4 py-2 text-muted">
+                <Link href={recipeHref} className="hover:text-teal hover:underline">
+                  {r.recipe_name}
+                </Link>
+              </td>
+              <td className="px-4 py-2 text-muted">{r.unit_name ?? ""}</td>
+              <td className="px-4 py-2 text-right">
+                <Link href={recipeHref} className="text-xs text-teal hover:underline">
+                  Openen →
+                </Link>
+              </td>
+            </tr>
+          );
+        })}
+      </WidgetTable>
+      {!loading && lines.length > 0 && (
+        <p className="border-t border-border px-4 py-2 text-xs text-muted">
+          {lines.length} regel{lines.length === 1 ? "" : "s"} met {names} verschillende na
+          {names === 1 ? "am" : "men"}.{" "}
+          <Link href={href} className="text-teal hover:underline">
+            Per naam koppelen in Opschonen →
+          </Link>
+        </p>
+      )}
     </DashboardWidget>
   );
 }

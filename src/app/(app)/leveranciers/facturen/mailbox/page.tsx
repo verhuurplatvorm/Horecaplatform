@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteMailItemButton } from "@/components/invoices/delete-mail-item-button";
 import type { InboundInvoiceQueueItem } from "@/lib/types/database";
+import { DashboardFilterBar } from "@/components/dashboard/filter-bar";
+import { dashboardHref, parseDashboardScope } from "@/lib/dashboard-links";
 
 // Statusoverzicht van de Factuurmailbox: ELKE binnengekomen e-mailfactuur
 // staat hier, in welke status dan ook — niet alleen de afwijkingen. Dat is
@@ -20,6 +22,9 @@ const TABS: { key: string; label: string; statuses: InboundInvoiceQueueItem["sta
     label: "Open",
     statuses: ["nieuw_ontvangen", "wordt_verwerkt", "wacht_op_leverancier", "fout"],
   },
+  // Zelfde werkvoorraad als de dashboardtegel "E-mailfacturen te verwerken":
+  // nog geen factuur geworden (leverancier onbekend of fout).
+  { key: "verwerken", label: "Te verwerken", statuses: ["wacht_op_leverancier", "fout"] },
   { key: "controle", label: "Controle nodig", statuses: ["wacht_op_leverancier"] },
   { key: "verwerkt", label: "Verwerkt", statuses: ["verwerkt"] },
   { key: "bezig", label: "Wordt verwerkt", statuses: ["wordt_verwerkt", "nieuw_ontvangen"] },
@@ -54,18 +59,34 @@ const STATUS_BADGE: Record<InboundInvoiceQueueItem["status"], { label: string; c
 export default async function FactuurmailboxOverzichtPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; bedrijf?: string }>;
 }) {
-  const { tab } = await searchParams;
+  const sp = await searchParams;
+  const { tab } = sp;
   const activeTab = TABS.find((t) => t.key === tab) ?? TABS[0];
+  const scope = parseDashboardScope(sp);
 
   const supabase = await createClient();
-  const { data: items, error } = await supabase
+  // "Te verwerken" gebruikt exact de definitie van de dashboardtegel.
+  const { data: mailIdRows } = await supabase.rpc("dashboard_mail_ids", {
+    p_company_ids: scope.companyIds,
+  });
+  const mailIds = (mailIdRows ?? []).map((r) => r.id);
+  const base = supabase
     .from("inbound_invoice_queue")
     .select("*, suppliers:matched_supplier_id(name)")
-    .in("status", activeTab.statuses)
-    .order("received_at", { ascending: false })
-    .limit(200);
+    .order("received_at", { ascending: false });
+  const { data: rawItems, error } =
+    activeTab.key === "verwerken"
+      ? mailIds.length
+        ? await base.in("id", mailIds)
+        : { data: [], error: null }
+      : await base.in("status", activeTab.statuses).limit(200);
+  const items = (rawItems ?? []).filter(
+    (i) => !scope.companyIds || !i.company_id || scope.companyIds.includes(i.company_id)
+  );
+  const tabHref = (key: string) =>
+    dashboardHref("/leveranciers/facturen/mailbox", { companyIds: scope.companyIds, onlyCurrent: false }, { tab: key });
 
   return (
     <>
@@ -79,7 +100,17 @@ export default async function FactuurmailboxOverzichtPage({
           Facturen-scherm bevestigt.
         </p>
 
-        {activeTab.key === "controle" && (
+        {activeTab.key === "verwerken" && (
+          <DashboardFilterBar
+            title="E-mailfacturen te verwerken"
+            count={mailIds.length}
+            scope={scope}
+            menuRelevant={false}
+            clearHref="/leveranciers/facturen/mailbox"
+          />
+        )}
+
+        {(activeTab.key === "controle" || activeTab.key === "verwerken") && (
           <div className="space-y-1">
             <RetryWaitingButton />
             <p className="text-xs text-muted">
@@ -93,7 +124,7 @@ export default async function FactuurmailboxOverzichtPage({
           {TABS.map((t) => (
             <Link
               key={t.key}
-              href={`/leveranciers/facturen/mailbox?tab=${t.key}`}
+              href={tabHref(t.key)}
               className={
                 "px-3 py-2 text-sm " +
                 (t.key === activeTab.key
@@ -102,6 +133,7 @@ export default async function FactuurmailboxOverzichtPage({
               }
             >
               {t.label}
+              {t.key === "verwerken" && ` (${mailIds.length})`}
             </Link>
           ))}
         </div>

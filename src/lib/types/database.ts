@@ -1583,6 +1583,62 @@ export type Database = {
         };
         Returns: PriceComparisonRow[];
       };
+      dashboard_counts: {
+        Args: { p_company_ids: string[] | null; p_only_current?: boolean; p_days?: number };
+        Returns: {
+          price_alerts: number;
+          agreed_deviations: number;
+          margin_problems: number;
+          unmatched_lines: number;
+          unmatched_names: number;
+          flagged_prices: number;
+          invoices_to_check: number;
+          mail_to_process: number;
+        }[];
+      };
+      dashboard_margin_problem_rows: {
+        Args: { p_company_ids: string[] | null; p_only_current?: boolean; p_category?: string | null };
+        Returns: DashboardMarginProblemRow[];
+      };
+      dashboard_price_alert_rows: {
+        Args: { p_company_ids: string[] | null; p_only_current?: boolean; p_days?: number };
+        Returns: DashboardPriceAlertRow[];
+      };
+      dashboard_agreed_deviation_rows: {
+        Args: { p_company_ids: string[] | null; p_only_current?: boolean; p_days?: number };
+        Returns: DashboardAgreedDeviationRow[];
+      };
+      dashboard_unmatched_lines: {
+        Args: { p_company_ids: string[] | null; p_only_current?: boolean };
+        Returns: {
+          line_id: string;
+          recipe_id: string;
+          recipe_name: string;
+          recipe_kind: string;
+          kind: "koppeling";
+          name: string | null;
+          product_id: null;
+          sub_recipe_id: null;
+          unit_name: string | null;
+          active_sources: string[];
+        }[];
+      };
+      dashboard_flagged_price_ids: {
+        Args: { p_company_ids: string[] | null; p_only_current?: boolean };
+        Returns: { id: string }[];
+      };
+      dashboard_invoice_ids: {
+        Args: { p_company_ids: string[] | null };
+        Returns: { id: string }[];
+      };
+      dashboard_mail_ids: {
+        Args: { p_company_ids: string[] | null };
+        Returns: { id: string }[];
+      };
+      current_recipe_ids_scoped: {
+        Args: { p_company_ids: string[] | null };
+        Returns: { recipe_id: string }[];
+      };
       contract_price_overlaps: {
         Args: Record<string, never>;
         Returns: { id: string; other_id: string }[];
@@ -2531,4 +2587,51 @@ export type EventMenuActualRow = {
   total_cost: number | null;
   note: string | null;
   sort_order: number;
+};
+
+// ---------------------------------------------------------------------
+// Dashboard: één definitie per teller (migratie 0148)
+// ---------------------------------------------------------------------
+
+export type DashboardMarginProblemRow = {
+  recipe_id: string;
+  recipe_name: string;
+  category: string | null;
+  company_id: string;
+  company_name: string;
+  cost_price: number;
+  sales_price: number;
+  foodcost_pct: number;
+  margin_pct: number;
+  norm_pct: number;
+};
+
+export type DashboardPriceAlertRow = {
+  price_row_id: string;
+  product_id: string;
+  product_name: string;
+  supplier_name: string | null;
+  company_id: string | null;
+  old_price: number;
+  new_price: number;
+  difference_eur: number;
+  difference_pct: number;
+  changed_on: string;
+};
+
+export type DashboardAgreedDeviationRow = {
+  row_id: string;
+  batch_id: string;
+  invoice_number: string | null;
+  invoice_date: string;
+  supplier_name: string;
+  product_id: string | null;
+  product_name: string | null;
+  description: string | null;
+  invoice_price: number;
+  ref_price: number;
+  ref_source: "contract" | "prijslijst";
+  diff_pct: number | null;
+  impact: number | null;
+  reasons: string[];
 };

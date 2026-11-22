@@ -16,30 +16,58 @@ import {
   normalizeComparisonRow,
   statusOf,
 } from "@/lib/price-comparison";
+import { DashboardFilterBar } from "@/components/dashboard/filter-bar";
+import { dashboardHref, parseDashboardScope } from "@/lib/dashboard-links";
 
 export default async function FacturenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; bedrijf?: string }>;
 }) {
-  const { tab } = await searchParams;
+  const sp = await searchParams;
+  const { tab } = sp;
   const showAll = tab === "alles";
+  // Bedrijf uit de URL (vanaf het dashboard); zonder = alle bedrijven.
+  const scope = parseDashboardScope(sp);
+  const fromDashboard = Boolean(sp.bedrijf);
   const supabase = await createClient();
-  const { data: allBatches, error } = await supabase
-    .from("price_import_batches")
-    .select(
-      "id, original_filename, invoice_number, invoice_date, total_incl_vat, status, iban_mismatch, supplier_id, total_rows, matched_rows, unmatched_rows, suppliers(name)"
-    )
-    .eq("source_kind", "factuur")
-    .order("created_at", { ascending: false })
-    .limit(100);
 
-  const { data: mailItems } = await supabase
-    .from("inbound_invoice_queue")
-    .select("id, original_filename, sender_email, received_at, status, mailbox_id")
-    .in("status", ["wacht_op_leverancier", "fout"])
-    .order("received_at", { ascending: false })
-    .limit(10);
+  // Zelfde definitie als de dashboardtegels (migratie 0148).
+  const [{ data: toCheckIds }, { data: mailIds }] = await Promise.all([
+    supabase.rpc("dashboard_invoice_ids", { p_company_ids: scope.companyIds }),
+    supabase.rpc("dashboard_mail_ids", { p_company_ids: scope.companyIds }),
+  ]);
+  const checkIds = (toCheckIds ?? []).map((r) => r.id);
+  const mailIdList = (mailIds ?? []).map((r) => r.id);
+
+  const select =
+    "id, original_filename, invoice_number, invoice_date, total_incl_vat, status, iban_mismatch, supplier_id, company_id, total_rows, matched_rows, unmatched_rows, suppliers(name)";
+  // "Te controleren": alle facturen die de teller telt (geen limiet van 100).
+  // "Alle facturen": de laatste 100, binnen het gekozen bedrijf.
+  const { data: allBatches, error } = showAll
+    ? await supabase
+        .from("price_import_batches")
+        .select(select)
+        .eq("source_kind", "factuur")
+        .order("created_at", { ascending: false })
+        .limit(100)
+    : checkIds.length
+      ? await supabase
+          .from("price_import_batches")
+          .select(select)
+          .in("id", checkIds)
+          .order("created_at", { ascending: false })
+      : { data: [], error: null };
+
+  const { data: mailItems } = mailIdList.length
+    ? await supabase
+        .from("inbound_invoice_queue")
+        .select("id, original_filename, sender_email, received_at, status, mailbox_id")
+        .in("id", mailIdList)
+        .order("received_at", { ascending: false })
+        .limit(10)
+    : { data: [] };
+  const mailHref = dashboardHref("/leveranciers/facturen/mailbox", { companyIds: scope.companyIds, onlyCurrent: false }, { tab: "verwerken" });
 
   // Prijscontrole per factuur (alleen lezen): één vergelijking over de
   // periode van de getoonde facturen.
@@ -69,12 +97,17 @@ export default async function FacturenPage({
     }
   }
 
-  const toCheckCount = (allBatches ?? []).filter(
-    (b) => b.status === "wacht_op_controle"
-  ).length;
+  const toCheckCount = checkIds.length;
   const batches = showAll
-    ? allBatches
-    : (allBatches ?? []).filter((b) => b.status === "wacht_op_controle");
+    ? (allBatches ?? []).filter(
+        (b) =>
+          !scope.companyIds ||
+          !b.company_id ||
+          scope.companyIds.includes(b.company_id)
+      )
+    : allBatches;
+  const tabHref = (t?: string) =>
+    dashboardHref("/leveranciers/facturen", { companyIds: scope.companyIds, onlyCurrent: false }, t ? { tab: t } : {});
 
   return (
     <>
@@ -105,11 +138,29 @@ export default async function FacturenPage({
           </Link>
         </div>
 
-        {mailItems && mailItems.length > 0 && (
+        {fromDashboard && !showAll && (
+          <DashboardFilterBar
+            title="Facturen ter controle"
+            count={toCheckCount}
+            scope={scope}
+            menuRelevant={false}
+            clearHref="/leveranciers/facturen"
+          />
+        )}
+
+        {mailIdList.length > 0 && mailItems && (
           <Card className="border-warning/40">
             <CardContent className="space-y-2 p-4">
-              <p className="text-sm font-medium">
-                {mailItems.length} e-mailfactu{mailItems.length === 1 ? "ur wacht" : "ren wachten"} op jou
+              <p className="flex items-center justify-between text-sm font-medium">
+                <span>
+                  {mailIdList.length} e-mailfactu{mailIdList.length === 1 ? "ur" : "ren"} te verwerken
+                  <span className="ml-1 font-normal text-muted">(apart van de facturen ter controle)</span>
+                </span>
+                {mailIdList.length > mailItems.length && (
+                  <Link href={mailHref} className="text-xs font-normal text-teal hover:underline">
+                    Alle {mailIdList.length} bekijken →
+                  </Link>
+                )}
               </p>
               <ul className="divide-y divide-border text-sm">
                 {mailItems.map((m) => (
@@ -136,13 +187,13 @@ export default async function FacturenPage({
 
         <div className="flex gap-1 text-sm">
           <Link
-            href="/leveranciers/facturen"
+            href={tabHref()}
             className={`rounded-md px-3 py-1.5 ${!showAll ? "bg-teal text-white" : "bg-surface text-muted hover:text-foreground"}`}
           >
-            Te controleren ({toCheckCount})
+            Facturen ter controle ({toCheckCount})
           </Link>
           <Link
-            href="/leveranciers/facturen?tab=alles"
+            href={tabHref("alles")}
             className={`rounded-md px-3 py-1.5 ${showAll ? "bg-teal text-white" : "bg-surface text-muted hover:text-foreground"}`}
           >
             Alle facturen

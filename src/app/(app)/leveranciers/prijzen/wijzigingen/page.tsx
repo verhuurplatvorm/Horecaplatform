@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { DashboardFilterBar } from "@/components/dashboard/filter-bar";
+import { parseDashboardScope, type DashboardScope } from "@/lib/dashboard-links";
+import { fetchPriceAlerts, priceAlertCount, type PriceAlerts } from "@/lib/dashboard-data";
+import { withReturnTo } from "@/lib/use-return-navigation";
 import { TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +26,116 @@ type DirectionFilter = "alle" | "duurder" | "goedkoper" | "ongewijzigd";
 type SortKey = "datum" | "grootste_stijging" | "grootste_daling";
 
 export default function PrijswijzigingenPage() {
+  return (
+    <Suspense fallback={null}>
+      <WijzigingenRouter />
+    </Suspense>
+  );
+}
+
+/** Vanaf het dashboard: ?filter=alarmen met bedrijf, periode, kaart en leverancier. */
+function WijzigingenRouter() {
+  const params = useSearchParams();
+  if (params.get("filter") === "alarmen") return <PriceAlarmsView scope={parseDashboardScope(params)} />;
+  return <PrijswijzigingenList />;
+}
+
+function PriceAlarmsView({ scope }: { scope: DashboardScope }) {
+  const [data, setData] = useState<PriceAlerts | null>(null);
+  const key = JSON.stringify(scope);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPriceAlerts(createClient(), JSON.parse(key) as DashboardScope)
+      .then((d) => !cancelled && setData(d))
+      .catch(() => !cancelled && setData({ alerts: [], agreed: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  return (
+    <>
+      <Topbar title="Prijsalarmen" />
+      <main className="space-y-4 p-6">
+        <DashboardFilterBar
+          title="Prijsalarmen"
+          count={data ? priceAlertCount(data) : null}
+          scope={scope}
+          clearHref="/leveranciers/prijzen/wijzigingen"
+          note={
+            data
+              ? `${data.alerts.length} prijswijziging${data.alerts.length === 1 ? "" : "en"} boven de alarmgrens + ${data.agreed.length} afwijking${data.agreed.length === 1 ? "" : "en"} van afgesproken prijzen`
+              : undefined
+          }
+        />
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                    <th className="px-5 py-2 font-medium">Ingrediënt</th>
+                    <th className="px-5 py-2 font-medium">Leverancier</th>
+                    <th className="px-5 py-2 text-right font-medium">Oud → nieuw</th>
+                    <th className="px-5 py-2 text-right font-medium">Verschil</th>
+                    <th className="px-5 py-2 text-right font-medium">Datum</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.alerts ?? []).map((r) => (
+                    <tr key={r.price_row_id} className="border-t border-border">
+                      <td className="px-5 py-2 font-medium">
+                        <Link
+                          href={withReturnTo(`/producten/${r.product_id}/bewerken`)}
+                          className="hover:text-teal hover:underline"
+                        >
+                          {r.product_name}
+                        </Link>
+                      </td>
+                      <td className="px-5 py-2 text-muted">{r.supplier_name ?? "—"}</td>
+                      <td className="tabular px-5 py-2 text-right text-xs">
+                        <span className="text-muted line-through">€ {r.old_price.toFixed(2)}</span> → €{" "}
+                        {r.new_price.toFixed(2)}
+                      </td>
+                      <td
+                        className={cn(
+                          "tabular px-5 py-2 text-right font-semibold",
+                          r.difference_pct > 0 ? "text-danger" : "text-success",
+                        )}
+                      >
+                        {r.difference_pct > 0 ? "+" : ""}
+                        {r.difference_pct.toFixed(1)}%
+                      </td>
+                      <td className="px-5 py-2 text-right text-xs text-muted">
+                        {new Date(r.changed_on).toLocaleDateString("nl-NL")}
+                      </td>
+                    </tr>
+                  ))}
+                  {data && data.alerts.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-6 text-center text-muted">
+                        Geen prijswijzigingen boven de alarmgrens met deze filters.
+                      </td>
+                    </tr>
+                  )}
+                  {!data && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-6 text-center text-muted">
+                        Laden…
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+        {data && <AgreedPriceDeviations rows={data.agreed} days={scope.days ?? 30} />}
+      </main>
+    </>
+  );
+}
+
+function PrijswijzigingenList() {
   const [changes, setChanges] = useState<EnrichedChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [direction, setDirection] = useState<DirectionFilter>("alle");

@@ -6,9 +6,10 @@ import { FileCheck2, RotateCcw } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import {
   MarginProblemsWidget,
-  PriceChangesWidget,
+  PriceAlertsWidget,
   UnmatchedIngredientsWidget,
   WasteWidget,
+  type UnmatchedLine,
 } from "@/components/dashboard/widgets";
 import { PriceCheckWidget } from "@/components/dashboard/price-check-widget";
 import { HaccpWidget } from "@/components/dashboard/haccp-widget";
@@ -17,20 +18,21 @@ import { StickerQuickButton } from "@/components/stickers/sticker-quick-button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { dashboardHref, scopeCompanyIds, type DashboardScope } from "@/lib/dashboard-links";
+import {
+  countUnmatchedNames,
+  fetchMarginProblems,
+  fetchPriceAlerts,
+  priceAlertCount,
+  type PriceAlerts,
+} from "@/lib/dashboard-data";
+import type { DashboardMarginProblemRow } from "@/lib/types/database";
 
-interface Summary {
-  price_alerts: number;
-  cost_problems: number;
-  unmatched_ingredients: number;
-  invoices_to_check: number;
-  upcoming_menus: number;
+/** Werkvoorraden zonder periode: aantallen uit dezelfde functies als de bestemmingspagina's. */
+interface QueueCounts {
   flagged_prices: number;
-  recipe_count: number;
-  halfproduct_count: number;
-  product_count: number;
-  supplier_count: number;
-  menu_count: number;
-  menu_card_count: number;
+  invoices_to_check: number;
+  mail_to_process: number;
 }
 
 const PERIODS = [
@@ -49,10 +51,16 @@ const PERIODS = [
  * ophoudt.
  */
 export default function DashboardPage() {
-  const { activeCompanyIds } = useCompanyScope();
+  const { scope, activeCompanyIds, loading: companiesLoading } = useCompanyScope();
   const referenceCompanyId = activeCompanyIds[0] ?? null;
+  // Groepsweergave = alle bedrijven (null); anders precies de gekozen bedrijven.
+  const companyIds = scopeCompanyIds(scope, activeCompanyIds);
+  const companyKey = companyIds ? companyIds.join(",") : "alle";
 
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [queueState, setQueueState] = useState<{ key: string; queues: QueueCounts; unmatched: UnmatchedLine[] } | null>(null);
+  // Per filtercombinatie bewaard: een oud antwoord telt niet als "geladen".
+  const [marginState, setMarginState] = useState<{ key: string; rows: DashboardMarginProblemRow[] } | null>(null);
+  const [alertState, setAlertState] = useState<{ key: string; data: PriceAlerts } | null>(null);
   const [days, setDays] = useState(30);
   const [supplierName, setSupplierName] = useState<string | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -110,13 +118,80 @@ export default function DashboardPage() {
     }
   }
 
+  // Werkvoorraden en niet-gekoppelde regels (geen periode).
+  const queueKey = `${companyKey}|${onlyCurrent}`;
+  useEffect(() => {
+    if (companiesLoading) return;
+    let cancelled = false;
+    const ids = companyKey === "alle" ? null : companyKey.split(",");
+    const supabase = createClient();
+    Promise.all([
+      supabase.rpc("dashboard_flagged_price_ids", { p_company_ids: ids, p_only_current: onlyCurrent }),
+      supabase.rpc("dashboard_invoice_ids", { p_company_ids: ids }),
+      supabase.rpc("dashboard_mail_ids", { p_company_ids: ids }),
+      supabase.rpc("dashboard_unmatched_lines", { p_company_ids: ids, p_only_current: onlyCurrent }),
+    ]).then(([flagged, invoices, mail, lines]) => {
+      // Alleen het antwoord van de laatst gekozen filters telt (geen oude
+      // antwoorden die een nieuwere teller overschrijven).
+      if (cancelled) return;
+      setQueueState({
+        key: queueKey,
+        queues: {
+          flagged_prices: flagged.data?.length ?? 0,
+          invoices_to_check: invoices.data?.length ?? 0,
+          mail_to_process: mail.data?.length ?? 0,
+        },
+        unmatched: ((lines.data ?? []) as UnmatchedLine[]).sort((a, b) =>
+          (a.name ?? "").localeCompare(b.name ?? "", "nl"),
+        ),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [queueKey, companyKey, onlyCurrent, companiesLoading]);
+  const queues = queueState?.key === queueKey ? queueState.queues : null;
+  const unmatched = queueState?.key === queueKey ? queueState.unmatched : null;
+
+  // Margeproblemen: dezelfde rijen voor tegel, blok en de Gerechten-pagina.
+  const marginKey = `${companyKey}|${onlyCurrent}|${category ?? ""}`;
+  useEffect(() => {
+    if (companiesLoading) return;
+    let cancelled = false;
+    fetchMarginProblems(createClient(), {
+      companyIds: companyKey === "alle" ? null : companyKey.split(","),
+      onlyCurrent,
+      category,
+    })
+      .then((rows) => !cancelled && setMarginState({ key: marginKey, rows }))
+      .catch(() => !cancelled && setMarginState({ key: marginKey, rows: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [marginKey, companyKey, onlyCurrent, category, companiesLoading]);
+  const marginRows = marginState?.key === marginKey ? marginState.rows : null;
+
+  // Prijsalarmen: periode en leverancier tellen mee.
+  const alertKey = `${companyKey}|${onlyCurrent}|${days}|${supplierName ?? ""}`;
+  useEffect(() => {
+    if (companiesLoading) return;
+    let cancelled = false;
+    fetchPriceAlerts(createClient(), {
+      companyIds: companyKey === "alle" ? null : companyKey.split(","),
+      onlyCurrent,
+      days,
+      supplierName,
+    })
+      .then((data) => !cancelled && setAlertState({ key: alertKey, data }))
+      .catch(() => !cancelled && setAlertState({ key: alertKey, data: { alerts: [], agreed: [] } }));
+    return () => {
+      cancelled = true;
+    };
+  }, [alertKey, companyKey, onlyCurrent, days, supplierName, companiesLoading]);
+  const alerts = alertState?.key === alertKey ? alertState.data : null;
+
   useEffect(() => {
     const supabase = createClient();
-    supabase
-      .rpc("dashboard_summary_scoped", { p_company_id: referenceCompanyId, p_only_current: onlyCurrent })
-      .then(({ data }) => {
-        if (data && data.length > 0) setSummary(data[0] as Summary);
-      });
     supabase
       .from("suppliers")
       .select("name")
@@ -132,9 +207,18 @@ export default function DashboardPage() {
           [...new Set((data ?? []).map((r) => r.category).filter(Boolean) as string[])].sort()
         );
       });
-  }, [referenceCompanyId, onlyCurrent]);
+  }, []);
 
   const filters = { companyId: referenceCompanyId, days, supplierName, category, onlyCurrent };
+  const queueScope: DashboardScope = { companyIds, onlyCurrent: false };
+  const hrefs = {
+    alerts: dashboardHref("/leveranciers/prijzen/wijzigingen", { companyIds, onlyCurrent, days, supplierName }, { filter: "alarmen" }),
+    margin: dashboardHref("/recepturen", { companyIds, onlyCurrent, category }, { filter: "margeprobleem" }),
+    unmatched: dashboardHref("/producten/opschonen", { companyIds, onlyCurrent }, { toon: "koppelingen" }),
+    flagged: dashboardHref("/producten/opschonen", { companyIds, onlyCurrent }, { toon: "importprijzen" }),
+    invoices: dashboardHref("/leveranciers/facturen", queueScope),
+    mail: dashboardHref("/leveranciers/facturen/mailbox", queueScope, { tab: "verwerken" }),
+  };
   const isHidden = (id: string) => hiddenWidgets.includes(id);
 
   return (
@@ -143,10 +227,10 @@ export default function DashboardPage() {
       <main className="space-y-4 p-6">
         <StickerQuickButton big />
         <Link
-          href="/leveranciers/facturen"
+          href={hrefs.invoices}
           className={cn(
             "flex items-center justify-between rounded-lg border px-5 py-4 transition-colors",
-            (summary?.invoices_to_check ?? 0) > 0
+            (queues?.invoices_to_check ?? 0) > 0
               ? "border-copper/40 bg-copper/5 hover:bg-copper/10"
               : "border-border bg-surface hover:bg-background"
           )}
@@ -156,23 +240,46 @@ export default function DashboardPage() {
             <div>
               <p className="text-base font-semibold">Facturen controleren</p>
               <p className="text-xs text-muted">
-                {(summary?.invoices_to_check ?? 0) > 0
-                  ? `${summary?.invoices_to_check === 1 ? "1 factuur wacht" : `${summary?.invoices_to_check} facturen wachten`} op controle — kijk alleen de afwijkingen na`
-                  : "Alles is gecontroleerd"}
+                {(queues?.invoices_to_check ?? 0) > 0
+                  ? `${queues?.invoices_to_check === 1 ? "1 factuur wacht" : `${queues?.invoices_to_check} facturen wachten`} op controle — kijk alleen de afwijkingen na`
+                  : "Alle facturen zijn gecontroleerd"}
+                {(queues?.mail_to_process ?? 0) > 0 &&
+                  ` · daarnaast ${queues?.mail_to_process} e-mailfactu${queues?.mail_to_process === 1 ? "ur" : "ren"} te verwerken`}
               </p>
             </div>
           </div>
           <span className="tabular text-3xl font-semibold text-copper">
-            {summary?.invoices_to_check ?? "—"}
+            {queues?.invoices_to_check ?? "—"}
           </span>
         </Link>
 
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Attention label="Prijsalarmen" value={summary?.price_alerts} href="/leveranciers/prijzen/wijzigingen" />
-          <Attention label="Margeproblemen" value={summary?.cost_problems} href="/recepturen" />
-          <Attention label="Niet herkend" value={summary?.unmatched_ingredients} href="/producten/opschonen" />
-          <Attention label="Prijzen te controleren" value={summary?.flagged_prices} href="/producten/opschonen" />
-          <Attention label="Facturen" value={summary?.invoices_to_check} href="/leveranciers/facturen" />
+          <Attention
+            label="Prijsalarmen"
+            value={alerts ? priceAlertCount(alerts) : undefined}
+            hint={`laatste ${days} dagen`}
+            href={hrefs.alerts}
+          />
+          <Attention
+            label="Gerechten met een margeprobleem"
+            value={marginRows?.length}
+            hint={onlyCurrent ? "actuele kaart" : "alle gerechten"}
+            href={hrefs.margin}
+          />
+          <Attention
+            label="Niet-gekoppelde receptregels"
+            value={unmatched?.length}
+            hint={unmatched ? `${countUnmatchedNames(unmatched)} namen` : undefined}
+            href={hrefs.unmatched}
+          />
+          <Attention
+            label="Importprijzen te controleren"
+            value={queues?.flagged_prices}
+            hint="onzeker bij import"
+            href={hrefs.flagged}
+          />
+          <Attention label="Facturen ter controle" value={queues?.invoices_to_check} href={hrefs.invoices} />
+          <Attention label="E-mailfacturen te verwerken" value={queues?.mail_to_process} href={hrefs.mail} />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm">
@@ -252,13 +359,40 @@ export default function DashboardPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-4">
-            <PriceChangesWidget widgetId="alarmen" title="Prijsalarmen" direction="alle" alertsOnly filters={filters} hidden={isHidden("alarmen")} onHide={hideWidget} />
-            <MarginProblemsWidget filters={filters} hidden={isHidden("marge")} onHide={hideWidget} />
+            <PriceAlertsWidget
+              data={alerts ?? { alerts: [], agreed: [] }}
+              loading={alerts === null}
+              href={hrefs.alerts}
+              hidden={isHidden("alarmen")}
+              onHide={hideWidget}
+              onDismissed={(id) =>
+                setAlertState(
+                  (prev) =>
+                    prev && {
+                      ...prev,
+                      data: { ...prev.data, alerts: prev.data.alerts.filter((a) => a.price_row_id !== id) },
+                    },
+                )
+              }
+            />
+            <MarginProblemsWidget
+              rows={marginRows ?? []}
+              loading={marginRows === null}
+              href={hrefs.margin}
+              hidden={isHidden("marge")}
+              onHide={hideWidget}
+            />
           </div>
 
           <div className="space-y-4">
             <WasteWidget filters={filters} hidden={isHidden("afval")} onHide={hideWidget} />
-            <UnmatchedIngredientsWidget onlyCurrent={onlyCurrent} hidden={isHidden("nietherkend")} onHide={hideWidget} />
+            <UnmatchedIngredientsWidget
+              lines={unmatched ?? []}
+              loading={unmatched === null}
+              href={hrefs.unmatched}
+              hidden={isHidden("nietherkend")}
+              onHide={hideWidget}
+            />
 
           </div>
         </div>
@@ -269,9 +403,9 @@ export default function DashboardPage() {
 
 /** Tegel in de samenvatting; kleurt alleen als er daadwerkelijk iets te doen is. */
 function Attention({
-  label, value, href, neutral,
+  label, value, href, neutral, hint,
 }: {
-  label: string; value: number | undefined; href: string; neutral?: boolean;
+  label: string; value: number | undefined; href: string; neutral?: boolean; hint?: string;
 }) {
   const needsAction = !neutral && (value ?? 0) > 0;
   return (
@@ -288,6 +422,7 @@ function Attention({
       <p className={cn("tabular text-2xl font-semibold", needsAction ? "text-copper" : "text-foreground")}>
         {value ?? "—"}
       </p>
+      {hint && <p className="text-[11px] text-muted">{hint}</p>}
     </Link>
   );
 }

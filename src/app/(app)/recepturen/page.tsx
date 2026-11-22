@@ -5,7 +5,10 @@ import type { CostStatus } from "@/lib/costing/status";
 import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { MarginProblemsList } from "@/components/dashboard/margin-problems-list";
+import { parseDashboardScope } from "@/lib/dashboard-links";
 import {
   Archive,
   ArchiveRestore,
@@ -88,6 +91,31 @@ const DEFAULT_COLUMNS: ColumnKey[] = [
 ];
 
 export default function RecepturenPage() {
+  return (
+    <Suspense fallback={null}>
+      <RecepturenRouter />
+    </Suspense>
+  );
+}
+
+/** Vanaf het dashboard: ?filter=margeprobleem (met bedrijf, kaart, categorie). */
+function RecepturenRouter() {
+  const params = useSearchParams();
+  if (params.get("filter") === "margeprobleem") {
+    return (
+      <>
+        <Topbar title="Recepten (Gerechten)" />
+        <RecipeTabs active="alle" />
+        <main className="p-4 md:p-6">
+          <MarginProblemsList scope={parseDashboardScope(params)} clearHref="/recepturen" />
+        </main>
+      </>
+    );
+  }
+  return <RecepturenList />;
+}
+
+function RecepturenList() {
   const {
     activeCompanyIds,
     scope,
