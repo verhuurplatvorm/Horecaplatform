@@ -190,7 +190,7 @@ as $$
     left join public.current_product_cost cpc
            on cpc.product_id = l.product_id and cpc.company_id = p_company_id
     where cpc.price_per_base_unit is null
-       or public.convert_quantity(l.product_id, 1, l.unit_id, p.base_unit_id) is null
+       or public.convert_quantity(l.product_id, 1, l.unit_id, p.base_unit_id, true) is null
   ),
   recipe_lines as (
     select l.*, r.name, r.recipe_kind, r.yield_quantity, r.base_unit_id,
@@ -315,7 +315,7 @@ as $$
     and not m.is_template
     and (m.service_date is null or m.service_date >= current_date)
     and (cpc.price_per_base_unit is null
-         or public.convert_quantity(l.product_id, 1, l.unit_id, p.base_unit_id) is null);
+         or public.convert_quantity(l.product_id, 1, l.unit_id, p.base_unit_id, true) is null);
 $$;
 
 grant execute on function public.cost_attention_items(uuid) to authenticated;
