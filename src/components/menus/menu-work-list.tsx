@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { containerLabel, formatDistribution } from "@/lib/party/party-calc";
 import { RecipeBreakdown, type BreakdownColumn } from "@/components/menus/recipe-breakdown";
+import type { PartyCapacityAdjustment } from "@/lib/types/database";
 
 /** Eén rij uit get_event_menu_party_plan (centrale rekenregel in de database). */
 export interface PartyPlanRow {
@@ -101,6 +102,29 @@ export function MenuWorkList({
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [reloadKey, setReloadKey] = useState(0);
+  // Praktijk boven theorie: werkelijk aantal vormen per partijregel.
+  const [practice, setPractice] = useState<{ lineId: string; value: string } | null>(null);
+  const [practiceBusy, setPracticeBusy] = useState(false);
+  const [practiceError, setPracticeError] = useState<string | null>(null);
+  const [adjustments, setAdjustments] = useState<Map<string, PartyCapacityAdjustment>>(new Map());
+
+  async function applyPractice(p: PartyPlanRow, actual: number) {
+    setPracticeBusy(true);
+    setPracticeError(null);
+    const supabase = createClient();
+    const { error } = await supabase.rpc("set_party_actual_containers", {
+      p_line_id: p.line_id,
+      p_actual: actual,
+    });
+    setPracticeBusy(false);
+    if (error) {
+      setPracticeError(error.message);
+      return;
+    }
+    setPractice(null);
+    setReloadKey((k) => k + 1);
+  }
   const toggleOpen = (key: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -206,6 +230,20 @@ export function MenuWorkList({
       }));
       if (!cancelled) setParty(plans);
 
+      // Laatste praktijkaanpassing per partijregel, als geheugensteun.
+      if (plans.length > 0) {
+        const { data: adj } = await supabase
+          .from("party_capacity_adjustments")
+          .select("*")
+          .in("line_id", plans.map((p) => p.line_id))
+          .order("adjusted_at", { ascending: false });
+        const latest = new Map<string, PartyCapacityAdjustment>();
+        for (const a of (adj ?? []) as PartyCapacityAdjustment[]) {
+          if (a.line_id && !latest.has(a.line_id)) latest.set(a.line_id, a);
+        }
+        if (!cancelled) setAdjustments(latest);
+      }
+
       // Wat er gemaakt moet worden, inclusief alle halfproducten, rekent de
       // database uit (get_event_menu_production, migratie 0135). Die rekent
       // elke hoeveelheid om naar de eenheid van het recept: 40 ml ijs p.p.
@@ -263,7 +301,7 @@ export function MenuWorkList({
     return () => {
       cancelled = true;
     };
-  }, [menuId, personCount, companyId]);
+  }, [menuId, personCount, companyId, reloadKey]);
 
   const byLocation = new Map<string, WorkItem[]>();
   for (const i of items) {
@@ -349,8 +387,74 @@ export function MenuWorkList({
                           </>
                         )}
                       </p>
+                      {adjustments.has(p.line_id) && practice?.lineId !== p.line_id && (() => {
+                        const a = adjustments.get(p.line_id)!;
+                        return (
+                          <p className="mt-0.5 text-xs text-teal">
+                            Praktijk: {a.actual_containers} i.p.v. {a.planned_containers}{" "}
+                            {containerLabel(p.container, 2)} · {fmt(Number(a.old_capacity))} →{" "}
+                            {fmt(Number(a.new_capacity))} {unit} per {containerLabel(p.container, 1)} (
+                            {new Date(a.adjusted_at).toLocaleDateString("nl-NL")})
+                          </p>
+                        );
+                      })()}
+                      {practice?.lineId === p.line_id && (() => {
+                        const actual = Math.floor(Number(practice.value));
+                        const valid = actual >= 1 && actual !== p.containers;
+                        const newCap = valid ? Math.ceil((p.produced / actual) * 10) / 10 : null;
+                        return (
+                          <div className="mt-2 space-y-2 rounded-md border border-teal/40 bg-teal/5 p-3 text-sm print:hidden">
+                            <label className="flex flex-wrap items-center gap-2">
+                              <span>
+                                Wat er gemaakt is ({fmt(p.produced)} {unit}) was genoeg voor
+                              </span>
+                              <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                autoFocus
+                                value={practice.value}
+                                onChange={(e) => setPractice({ lineId: p.line_id, value: e.target.value })}
+                                className="input h-9! w-20! text-center"
+                              />
+                              <span>{containerLabel(p.container, 2)}</span>
+                            </label>
+                            {newCap !== null && (
+                              <p>
+                                Nieuw gewicht per {containerLabel(p.container, 1)}:{" "}
+                                <strong>
+                                  {fmt(newCap)} {unit}
+                                </strong>{" "}
+                                (was {fmt(p.capacity)} {unit}). Dit wordt ook aangepast in het recept
+                                &quot;{p.recipe_name}&quot;, dus ook voor volgende menu&apos;s.
+                              </p>
+                            )}
+                            {practiceError && <p className="text-danger">{practiceError}</p>}
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                disabled={!valid || practiceBusy}
+                                onClick={() => applyPractice(p, actual)}
+                              >
+                                {practiceBusy ? "Doorvoeren…" : "Doorvoeren in recept"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setPractice(null);
+                                  setPracticeError(null);
+                                }}
+                              >
+                                Annuleren
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {open.has(p.line_id) && (
                         <RecipeBreakdown
+                          key={`${p.line_id}:${p.capacity}`}
                           recipeId={p.recipe_id}
                           columns={partyColumns(p)}
                           note={
@@ -361,9 +465,23 @@ export function MenuWorkList({
                         />
                       )}
                     </div>
-                    <span className="tabular whitespace-nowrap font-medium">
-                      {p.containers} {containerLabel(p.container, p.containers)}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="tabular whitespace-nowrap font-medium">
+                        {p.containers} {containerLabel(p.container, p.containers)}
+                      </span>
+                      {practice?.lineId !== p.line_id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPracticeError(null);
+                            setPractice({ lineId: p.line_id, value: String(p.containers) });
+                          }}
+                          className="whitespace-nowrap text-xs text-muted hover:text-teal print:hidden"
+                        >
+                          Praktijk aanpassen
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}

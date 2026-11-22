@@ -1147,6 +1147,12 @@ export type Database = {
         Update: Partial<KitchenStation>;
         Relationships: [];
       };
+      party_capacity_adjustments: {
+        Row: PartyCapacityAdjustment;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       event_menu_work_done: {
         Row: EventMenuWorkDone;
         Insert: Partial<EventMenuWorkDone> & { menu_id: string; item_key: string };
@@ -1273,6 +1279,10 @@ export type Database = {
       get_event_menu_party_plan: {
         Args: { p_menu_id: string; p_company_id: string };
         Returns: EventMenuPartyPlanRow[];
+      };
+      set_party_actual_containers: {
+        Args: { p_line_id: string; p_actual: number };
+        Returns: { old_capacity: number; new_capacity: number; capacity_unit: string | null }[];
       };
       kitchen_list: {
         Args: { p_card_ids: string[]; p_portions?: Record<string, number> | null };
@@ -2334,6 +2344,21 @@ export type KitchenStation = {
 };
 
 /** Laatst geopende items per gebruiker (migratie 0128). */
+export type PartyCapacityAdjustment = {
+  id: string;
+  menu_id: string | null;
+  line_id: string | null;
+  recipe_id: string;
+  planned_containers: number;
+  actual_containers: number;
+  produced: number;
+  old_capacity: number;
+  new_capacity: number;
+  capacity_unit_id: string | null;
+  adjusted_by: string | null;
+  adjusted_at: string;
+};
+
 export type EventMenuWorkDone = {
   menu_id: string;
   item_key: string;
