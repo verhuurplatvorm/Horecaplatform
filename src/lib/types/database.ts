@@ -327,6 +327,15 @@ export type EventMenuSection = {
   is_selected?: boolean;
 }
 
+export type EventMenuOrderMark = {
+  menu_id: string;
+  item_id: string;
+  kind: "besteld" | "niet_in_huis";
+  packages: number | null;
+  marked_by: string | null;
+  marked_at: string;
+};
+
 export type EventMenuCharge = {
   id: string;
   menu_id: string;
@@ -1003,6 +1012,12 @@ export type Database = {
         Row: EventMenu;
         Insert: Partial<EventMenu>;
         Update: Partial<EventMenu>;
+        Relationships: [];
+      };
+      event_menu_order_marks: {
+        Row: EventMenuOrderMark;
+        Insert: Partial<EventMenuOrderMark> & { menu_id: string; item_id: string; kind: EventMenuOrderMark["kind"] };
+        Update: Partial<EventMenuOrderMark>;
         Relationships: [];
       };
       event_menu_charges: {

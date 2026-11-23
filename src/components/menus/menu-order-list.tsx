@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Columns3, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import type { EventMenuOrderMark } from "@/lib/types/database";
 
 interface Need {
   halfproduct_id: string | null;
@@ -49,18 +50,49 @@ interface OrderRow {
 
 const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 2 });
 
-function storageKey(menuId: string) {
-  return `bestellijst-niet-in-huis:${menuId}`;
-}
+/** Kolommen die je aan/uit kunt zetten (keuze per apparaat onthouden). */
+const COLUMNS = [
+  { key: "benodigd", label: "Benodigd" },
+  { key: "verpakking", label: "Verpakking" },
+  { key: "bestellen", label: "Te bestellen" },
+  { key: "prijs", label: "Inkoopprijs", financial: true },
+  { key: "totaal", label: "Totaal", financial: true },
+  { key: "besteld", label: "Besteld door" },
+] as const;
+type ColumnKey = (typeof COLUMNS)[number]["key"];
+const COLUMNS_KEY = "bestellijst:kolommen";
+const HIDE_DONE_KEY = "bestellijst:verberg-besteld";
 
-function readOutOfStock(menuId: string): Set<string> {
+function readLocal<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
   try {
-    const raw = window.localStorage.getItem(storageKey(menuId));
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
   } catch {
-    return new Set();
+    return fallback;
   }
 }
+function writeLocal(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // geen opslag: keuze geldt alleen voor dit scherm
+  }
+}
+
+interface Mark extends EventMenuOrderMark {
+  byName: string | null;
+}
+const markKey = (kind: Mark["kind"], id: string) => `${kind}:${id}`;
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("nl-NL", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Amsterdam",
+  });
 
 /**
  * Bestellijst.
@@ -68,8 +100,10 @@ function readOutOfStock(menuId: string): Set<string> {
  * Halfproducten liggen meestal op voorraad. Ze staan daarom bovenaan als
  * herinnering met de hoeveelheid die nodig is. Is een halfproduct niet in
  * huis, dan klik je het aan: zijn ingrediënten tellen dan mee in de
- * bestellijst (bij elkaar opgeteld met de rest). De keuze wordt per menu in
- * deze browser onthouden.
+ * bestellijst (bij elkaar opgeteld met de rest).
+ *
+ * "Besteld" en "niet in huis" staan in de database (event_menu_order_marks),
+ * zodat collega's zien wat er al besteld is, door wie en wanneer.
  *
  * De behoefte komt uit de database (get_event_menu_order_needs, migratie
  * 0136): omrekenen en partijgerechten lopen daar. Inkoop rekent BRUTO.
@@ -89,20 +123,100 @@ export function MenuOrderList({
   const [halfMeta, setHalfMeta] = useState<
     Map<string, { name: string; unitName: string | null }>
   >(new Map());
-  const [outOfStock, setOutOfStock] = useState<Set<string>>(new Set());
+  const [marks, setMarks] = useState<Map<string, Mark>>(new Map());
+  const [markError, setMarkError] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [shownCols, setShownCols] = useState<ColumnKey[]>(() =>
+    readLocal<ColumnKey[]>(COLUMNS_KEY, COLUMNS.map((c) => c.key)),
+  );
+  const [hideDone, setHideDone] = useState<boolean>(() => readLocal<boolean>(HIDE_DONE_KEY, false));
+  const [colMenu, setColMenu] = useState(false);
+  const show = (k: ColumnKey) =>
+    shownCols.includes(k) && (showPrices || !COLUMNS.find((c) => c.key === k && "financial" in c));
+
+  const outOfStock = useMemo(
+    () => new Set([...marks.values()].filter((m) => m.kind === "niet_in_huis").map((m) => m.item_id)),
+    [marks],
+  );
+
+  // Afvinkstatus ophalen (gedeeld met collega's).
+  async function loadMarks() {
+    const supabase = createClient();
+    const { data } = await supabase.from("event_menu_order_marks").select("*").eq("menu_id", menuId);
+    const list = (data as EventMenuOrderMark[]) ?? [];
+    const ids = [...new Set(list.map((m) => m.marked_by).filter((x): x is string => !!x))];
+    const names = new Map<string, string>();
+    if (ids.length) {
+      const { data: ppl } = await supabase.from("user_profiles").select("id, full_name").in("id", ids);
+      for (const u of ppl ?? []) names.set(u.id, u.full_name);
+    }
+    return new Map(
+      list.map((m) => [markKey(m.kind, m.item_id), { ...m, byName: m.marked_by ? names.get(m.marked_by) ?? null : null }]),
+    );
+  }
+  useEffect(() => {
+    let cancelled = false;
+    void loadMarks().then((m) => {
+      if (!cancelled) setMarks(m);
+    });
+    // Elke minuut verversen, zodat je ziet wat een collega net heeft afgevinkt.
+    const t = setInterval(() => {
+      void loadMarks().then((m) => {
+        if (!cancelled) setMarks(m);
+      });
+    }, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuId]);
+
+  async function setMark(kind: Mark["kind"], items: { id: string; packages?: number | null }[], on: boolean) {
+    const supabase = createClient();
+    setMarkError(null);
+    // Direct tonen; daarna opslaan.
+    setMarks((prev) => {
+      const next = new Map(prev);
+      for (const it of items) {
+        if (on)
+          next.set(markKey(kind, it.id), {
+            menu_id: menuId,
+            item_id: it.id,
+            kind,
+            packages: it.packages ?? null,
+            marked_by: null,
+            marked_at: new Date().toISOString(),
+            byName: "jij",
+          });
+        else next.delete(markKey(kind, it.id));
+      }
+      return next;
+    });
+    const { error } = on
+      ? await supabase.from("event_menu_order_marks").upsert(
+          items.map((it) => ({ menu_id: menuId, item_id: it.id, kind, packages: it.packages ?? null })),
+          { onConflict: "menu_id,item_id,kind" },
+        )
+      : await supabase
+          .from("event_menu_order_marks")
+          .delete()
+          .eq("menu_id", menuId)
+          .eq("kind", kind)
+          .in("item_id", items.map((it) => it.id));
+    if (error) setMarkError("Opslaan mislukt: " + error.message);
+    setMarks(await loadMarks());
+  }
 
   function toggleOutOfStock(id: string) {
-    setOutOfStock((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        window.localStorage.setItem(storageKey(menuId), JSON.stringify([...next]));
-      } catch {
-        // geen opslag beschikbaar: keuze geldt alleen voor dit scherm
-      }
+    void setMark("niet_in_huis", [{ id }], !outOfStock.has(id));
+  }
+
+  function toggleCol(k: ColumnKey) {
+    setShownCols((prev) => {
+      const next = prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k];
+      writeLocal(COLUMNS_KEY, next);
       return next;
     });
   }
@@ -125,7 +239,6 @@ export function MenuOrderList({
         .filter((n) => n.quantity_in_base > 0);
       if (cancelled) return;
       if (list.length === 0) {
-        setOutOfStock(readOutOfStock(menuId));
         setNeeds([]);
         setLoading(false);
         return;
@@ -204,7 +317,6 @@ export function MenuOrderList({
       }
 
       if (!cancelled) {
-        setOutOfStock(readOutOfStock(menuId));
         setNeeds(list);
         setProducts(productMap);
         setHalfMeta(halfMap);
@@ -288,6 +400,7 @@ export function MenuOrderList({
       "Leverancier","Ingrediënt","Benodigd","Eenheid",
       "Inhoud verpakking","Te bestellen","Besteld totaal",
       ...(showPrices ? ["Inkoopprijs", "Totaalbedrag"] : []),
+      "Besteld door", "Besteld op",
     ];
     const lines = rows.map((r) => [
       r.supplierName ?? "geen leverancier", r.name,
@@ -297,6 +410,11 @@ export function MenuOrderList({
       ...(showPrices
         ? [r.purchasePrice?.toFixed(2) ?? "", r.lineTotal?.toFixed(2) ?? ""]
         : []),
+      marks.get(markKey("besteld", r.productId))?.byName ?? "",
+      (() => {
+        const m = marks.get(markKey("besteld", r.productId));
+        return m ? when(m.marked_at) : "";
+      })(),
     ]);
     const csv = [header, ...lines]
       .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"))
@@ -317,19 +435,62 @@ export function MenuOrderList({
   }
 
   const empty = rows.length === 0 && halfproducts.length === 0;
+  const orderedCount = rows.filter((r) => marks.has(markKey("besteld", r.productId))).length;
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Bestellijst</CardTitle>
+        <CardTitle>
+          Bestellijst
+          {rows.length > 0 && (
+            <span
+              className={cn(
+                "ml-3 text-sm font-normal",
+                orderedCount === rows.length ? "text-teal" : "text-muted",
+              )}
+            >
+              {orderedCount} van {rows.length} besteld
+            </span>
+          )}
+        </CardTitle>
         {rows.length > 0 && (
-          <Button variant="secondary" size="sm" onClick={exportCsv}>
-            <Download className="h-3.5 w-3.5" />
-            Exporteren per leverancier
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={hideDone}
+                onChange={(e) => {
+                  setHideDone(e.target.checked);
+                  writeLocal(HIDE_DONE_KEY, e.target.checked);
+                }}
+              />
+              Bestelde verbergen
+            </label>
+            <div className="relative">
+              <Button variant="secondary" size="sm" onClick={() => setColMenu((v) => !v)}>
+                <Columns3 className="h-3.5 w-3.5" />
+                Kolommen
+              </Button>
+              {colMenu && (
+                <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-border bg-surface p-2 shadow-lg">
+                  {COLUMNS.filter((c) => showPrices || !("financial" in c)).map((c) => (
+                    <label key={c.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-background">
+                      <input type="checkbox" checked={shownCols.includes(c.key)} onChange={() => toggleCol(c.key)} />
+                      {c.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <Button variant="secondary" size="sm" onClick={exportCsv}>
+              <Download className="h-3.5 w-3.5" />
+              Exporteren per leverancier
+            </Button>
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-4 p-0">
+        {markError && <p className="px-5 text-sm text-danger">{markError}</p>}
         {empty ? (
           <p className="px-5 py-8 text-center text-muted">
             {loading
@@ -383,6 +544,14 @@ export function MenuOrderList({
                             <span className="ml-2 text-sm tabular text-muted">
                               {fmt(h.needed)} {h.unitName} nodig
                             </span>
+                            {missing && (() => {
+                              const mk = marks.get(markKey("niet_in_huis", h.id));
+                              return mk ? (
+                                <span className="ml-2 text-xs text-copper">
+                                  niet in huis volgens {mk.byName ?? "collega"} · {when(mk.marked_at)}
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                           <button
                             type="button"
@@ -394,7 +563,7 @@ export function MenuOrderList({
                                 : "border-border text-muted hover:text-foreground"
                             )}
                           >
-                            {missing ? "Niet in huis — ingrediënten besteld" : "In huis"}
+                            {missing ? "Niet in huis — ingrediënten op de lijst" : "In huis"}
                           </button>
                         </div>
                         {isOpen && (
@@ -420,46 +589,95 @@ export function MenuOrderList({
               </div>
             )}
 
-            {[...bySupplier.entries()].map(([supplier, list]) => (
+            {[...bySupplier.entries()].map(([supplier, list]) => {
+              const done = list.filter((r) => marks.has(markKey("besteld", r.productId)));
+              const allDone = done.length === list.length;
+              const visible = hideDone ? list.filter((r) => !marks.has(markKey("besteld", r.productId))) : list;
+              return (
               <div key={supplier}>
-                <p className="border-y border-border bg-background px-5 py-2 text-sm font-medium">
-                  {supplier}
-                </p>
+                <div className="flex flex-wrap items-center gap-3 border-y border-border bg-background px-5 py-2">
+                  <p className="text-sm font-medium">{supplier}</p>
+                  <span className={cn("text-xs", allDone ? "text-teal" : "text-muted")}>
+                    {done.length}/{list.length} besteld
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void setMark(
+                        "besteld",
+                        list.map((r) => ({ id: r.productId, packages: r.packagesToOrder })),
+                        !allDone,
+                      )
+                    }
+                    className="ml-auto rounded-md border border-border px-3 py-1 text-xs hover:bg-surface"
+                  >
+                    {allDone ? "Alles weer open" : "Alles van deze leverancier besteld"}
+                  </button>
+                </div>
+                {visible.length === 0 ? (
+                  <p className="px-5 py-2 text-xs text-teal">Alles besteld.</p>
+                ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                        <th className="w-12 px-4 py-2 font-medium">Besteld</th>
                         <th className="px-4 py-2 font-medium">Ingrediënt</th>
-                        <th className="px-4 py-2 font-medium">Benodigd</th>
-                        <th className="px-4 py-2 font-medium">Verpakking</th>
-                        <th className="px-4 py-2 font-medium">Te bestellen</th>
-                        {showPrices && (
-                          <>
-                            <th className="px-4 py-2 font-medium">Inkoopprijs</th>
-                            <th className="px-4 py-2 font-medium">Totaal</th>
-                          </>
-                        )}
+                        {show("benodigd") && <th className="px-4 py-2 font-medium">Benodigd</th>}
+                        {show("verpakking") && <th className="px-4 py-2 font-medium">Verpakking</th>}
+                        {show("bestellen") && <th className="px-4 py-2 font-medium">Te bestellen</th>}
+                        {show("prijs") && <th className="px-4 py-2 font-medium">Inkoopprijs</th>}
+                        {show("totaal") && <th className="px-4 py-2 font-medium">Totaal</th>}
+                        {show("besteld") && <th className="px-4 py-2 font-medium">Besteld door</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {list.map((r) => (
-                        <tr key={r.productId} className="border-t border-border">
+                      {visible.map((r) => {
+                        const m = marks.get(markKey("besteld", r.productId));
+                        // Na het bestellen meer/minder nodig (bv. gasten gewijzigd)?
+                        const changed =
+                          m && m.packages !== null && r.packagesToOrder !== null && Number(m.packages) !== r.packagesToOrder;
+                        return (
+                        <tr key={r.productId} className={cn("border-t border-border", m && "bg-teal/5")}>
                           <td className="px-4 py-2">
-                            <span className="font-medium">{r.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => void setMark("besteld", [{ id: r.productId, packages: r.packagesToOrder }], !m)}
+                              className={cn(
+                                "flex h-8 w-8 items-center justify-center rounded-md border-2",
+                                m ? "border-teal bg-teal text-white" : "border-border bg-surface hover:border-teal",
+                              )}
+                              aria-label={m ? "Besteld — klik om terug te zetten" : "Afvinken als besteld"}
+                            >
+                              {m && <Check className="h-5 w-5" />}
+                            </button>
+                          </td>
+                          <td className="px-4 py-2">
+                            <span className={cn("font-medium", m && "text-muted line-through decoration-teal/50")}>{r.name}</span>
                             {r.forHalfproducts.length > 0 && (
                               <span className="block text-xs text-muted">
                                 incl. voor {[...new Set(r.forHalfproducts)].join(", ")}
                               </span>
                             )}
+                            {changed && (
+                              <span className="block text-xs text-copper">
+                                Besteld: {Number(m!.packages)}× — nu nodig: {r.packagesToOrder}×
+                              </span>
+                            )}
                           </td>
+                          {show("benodigd") && (
                           <td className="px-4 py-2 tabular">
                             {fmt(r.needed)} {r.baseUnitName}
                           </td>
+                          )}
+                          {show("verpakking") && (
                           <td className="px-4 py-2 text-muted">
                             {r.packagingUnitCount
                               ? `${fmt(r.packagingUnitCount)} ${r.baseUnitName ?? ""}`
                               : "onbekend"}
                           </td>
+                          )}
+                          {show("bestellen") && (
                           <td className="px-4 py-2 tabular">
                             {r.packagesToOrder !== null ? (
                               <>
@@ -472,23 +690,39 @@ export function MenuOrderList({
                               <span className="text-copper">verpakking onbekend</span>
                             )}
                           </td>
-                          {showPrices && (
-                            <>
-                              <td className="px-4 py-2 tabular text-muted">
-                                {r.purchasePrice != null ? `€ ${r.purchasePrice.toFixed(2)}` : "—"}
-                              </td>
-                              <td className="px-4 py-2 tabular font-medium">
-                                {r.lineTotal != null ? `€ ${r.lineTotal.toFixed(2)}` : "—"}
-                              </td>
-                            </>
+                          )}
+                          {show("prijs") && (
+                            <td className="px-4 py-2 tabular text-muted">
+                              {r.purchasePrice != null ? `€ ${r.purchasePrice.toFixed(2)}` : "—"}
+                            </td>
+                          )}
+                          {show("totaal") && (
+                            <td className="px-4 py-2 tabular font-medium">
+                              {r.lineTotal != null ? `€ ${r.lineTotal.toFixed(2)}` : "—"}
+                            </td>
+                          )}
+                          {show("besteld") && (
+                            <td className="px-4 py-2 text-xs text-muted">
+                              {m ? (
+                                <>
+                                  {m.byName ?? "onbekend"}
+                                  <span className="block">{when(m.marked_at)}</span>
+                                </>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
                           )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
-            ))}
+              );
+            })}
             <div className="flex items-center justify-between border-t border-border px-5 py-3">
               <span className="text-sm text-muted">
                 {rows.length} ingrediënt(en)
