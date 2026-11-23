@@ -114,6 +114,8 @@ export type Product = {
   tax_rate: number | null;
   default_loss_percentage: number | null;
   preferred_supplier_id: string | null;
+  /** Basisvoorraad: altijd in huis, niet op de bestellijst. */
+  always_in_stock?: boolean;
   manual_price_per_base_unit: number | null;
   is_provisional: boolean;
   item_category: "food" | "verpakking" | "schoonmaak" | "keukenmateriaal" | "overig" | "onbekend";
@@ -330,7 +332,7 @@ export type EventMenuSection = {
 export type EventMenuOrderMark = {
   menu_id: string;
   item_id: string;
-  kind: "besteld" | "niet_in_huis";
+  kind: "besteld" | "niet_in_huis" | "in_huis";
   packages: number | null;
   marked_by: string | null;
   marked_at: string;

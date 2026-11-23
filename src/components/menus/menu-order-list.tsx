@@ -22,6 +22,8 @@ interface ProductInfo {
   packagingUnitCount: number | null;
   supplierName: string | null;
   purchasePrice: number | null;
+  /** Basisvoorraad: altijd in huis. */
+  alwaysInStock: boolean;
 }
 
 interface HalfproductInfo {
@@ -46,6 +48,7 @@ interface OrderRow {
   lineTotal: number | null;
   /** Halfproducten (niet in huis) waarvoor dit ingrediënt ook nodig is */
   forHalfproducts: string[];
+  alwaysInStock: boolean;
 }
 
 const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 2 });
@@ -258,9 +261,9 @@ export function MenuOrderList({
           productIds.length
             ? supabase
                 .from("products")
-                .select("id, name, custom_name, base_unit_id")
+                .select("id, name, custom_name, base_unit_id, always_in_stock")
                 .in("id", productIds)
-            : Promise.resolve({ data: [] as { id: string; name: string; custom_name: string | null; base_unit_id: string | null }[] }),
+            : Promise.resolve({ data: [] as { id: string; name: string; custom_name: string | null; base_unit_id: string | null; always_in_stock: boolean }[] }),
           productIds.length
             ? supabase
                 .from("supplier_products")
@@ -306,6 +309,7 @@ export function MenuOrderList({
           packagingUnitCount: pr?.packaging_unit_count ?? null,
           supplierName: pr?.supplier ?? null,
           purchasePrice: pr?.purchase_price ?? null,
+          alwaysInStock: !!p.always_in_stock,
         });
       }
       const halfMap = new Map<string, { name: string; unitName: string | null }>();
@@ -383,6 +387,7 @@ export function MenuOrderList({
         lineTotal:
           packages !== null && p?.purchasePrice != null ? packages * p.purchasePrice : null,
         forHalfproducts: forHalf.get(productId) ?? [],
+        alwaysInStock: p?.alwaysInStock ?? false,
       });
     }
     return out.sort(
@@ -392,7 +397,30 @@ export function MenuOrderList({
     );
   }, [needs, products, halfMeta, outOfStock]);
 
-  const total = rows.reduce((s, r) => s + (r.lineTotal ?? 0), 0);
+  // Basisvoorraad en "in huis" hoeven niet besteld: tellen niet mee.
+  const isInHouse = (r: OrderRow) => r.alwaysInStock || marks.has(markKey("in_huis", r.productId));
+  const total = rows.filter((r) => !isInHouse(r)).reduce((s, r) => s + (r.lineTotal ?? 0), 0);
+
+  /** Ingrediënt als basisvoorraad (altijd in huis) markeren, voor alle bestellijsten. */
+  async function setAlwaysInStock(productId: string, on: boolean) {
+    setMarkError(null);
+    setProducts((prev) => {
+      const next = new Map(prev);
+      const p = next.get(productId);
+      if (p) next.set(productId, { ...p, alwaysInStock: on });
+      return next;
+    });
+    const { error } = await createClient().from("products").update({ always_in_stock: on }).eq("id", productId);
+    if (error) {
+      setMarkError("Opslaan mislukt (rechten op ingrediënten nodig): " + error.message);
+      setProducts((prev) => {
+        const next = new Map(prev);
+        const p = next.get(productId);
+        if (p) next.set(productId, { ...p, alwaysInStock: !on });
+        return next;
+      });
+    }
+  }
 
   /** Per leverancier gegroepeerd exporteren — de basis voor een conceptbestelling. */
   function exportCsv() {
@@ -400,7 +428,7 @@ export function MenuOrderList({
       "Leverancier","Ingrediënt","Benodigd","Eenheid",
       "Inhoud verpakking","Te bestellen","Besteld totaal",
       ...(showPrices ? ["Inkoopprijs", "Totaalbedrag"] : []),
-      "Besteld door", "Besteld op",
+      "Status", "Besteld door", "Besteld op",
     ];
     const lines = rows.map((r) => [
       r.supplierName ?? "geen leverancier", r.name,
@@ -410,6 +438,13 @@ export function MenuOrderList({
       ...(showPrices
         ? [r.purchasePrice?.toFixed(2) ?? "", r.lineTotal?.toFixed(2) ?? ""]
         : []),
+      r.alwaysInStock
+        ? "altijd in huis"
+        : marks.has(markKey("in_huis", r.productId))
+          ? "in huis"
+          : marks.has(markKey("besteld", r.productId))
+            ? "besteld"
+            : "open",
       marks.get(markKey("besteld", r.productId))?.byName ?? "",
       (() => {
         const m = marks.get(markKey("besteld", r.productId));
@@ -428,14 +463,18 @@ export function MenuOrderList({
   }
 
   const bySupplier = new Map<string, OrderRow[]>();
+  const basisRows = rows.filter((r) => r.alwaysInStock);
   for (const r of rows) {
+    if (r.alwaysInStock) continue;
     const key = r.supplierName ?? "Geen leverancier gekoppeld";
     if (!bySupplier.has(key)) bySupplier.set(key, []);
     bySupplier.get(key)!.push(r);
   }
 
   const empty = rows.length === 0 && halfproducts.length === 0;
-  const orderedCount = rows.filter((r) => marks.has(markKey("besteld", r.productId))).length;
+  const toArrange = rows.filter((r) => !r.alwaysInStock);
+  const isDone = (r: OrderRow) => marks.has(markKey("besteld", r.productId)) || marks.has(markKey("in_huis", r.productId));
+  const orderedCount = toArrange.filter(isDone).length;
 
   return (
     <Card>
@@ -446,10 +485,10 @@ export function MenuOrderList({
             <span
               className={cn(
                 "ml-3 text-sm font-normal",
-                orderedCount === rows.length ? "text-teal" : "text-muted",
+                orderedCount === toArrange.length ? "text-teal" : "text-muted",
               )}
             >
-              {orderedCount} van {rows.length} besteld
+              {orderedCount} van {toArrange.length} geregeld (besteld of in huis)
             </span>
           )}
         </CardTitle>
@@ -590,15 +629,15 @@ export function MenuOrderList({
             )}
 
             {[...bySupplier.entries()].map(([supplier, list]) => {
-              const done = list.filter((r) => marks.has(markKey("besteld", r.productId)));
+              const done = list.filter(isDone);
               const allDone = done.length === list.length;
-              const visible = hideDone ? list.filter((r) => !marks.has(markKey("besteld", r.productId))) : list;
+              const visible = hideDone ? list.filter((r) => !isDone(r)) : list;
               return (
               <div key={supplier}>
                 <div className="flex flex-wrap items-center gap-3 border-y border-border bg-background px-5 py-2">
                   <p className="text-sm font-medium">{supplier}</p>
                   <span className={cn("text-xs", allDone ? "text-teal" : "text-muted")}>
-                    {done.length}/{list.length} besteld
+                    {done.length}/{list.length} geregeld
                   </span>
                   <button
                     type="button"
@@ -615,7 +654,7 @@ export function MenuOrderList({
                   </button>
                 </div>
                 {visible.length === 0 ? (
-                  <p className="px-5 py-2 text-xs text-teal">Alles besteld.</p>
+                  <p className="px-5 py-2 text-xs text-teal">Alles geregeld.</p>
                 ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -634,12 +673,14 @@ export function MenuOrderList({
                     <tbody>
                       {visible.map((r) => {
                         const m = marks.get(markKey("besteld", r.productId));
+                        const inHuis = marks.get(markKey("in_huis", r.productId));
                         // Na het bestellen meer/minder nodig (bv. gasten gewijzigd)?
                         const changed =
                           m && m.packages !== null && r.packagesToOrder !== null && Number(m.packages) !== r.packagesToOrder;
                         return (
-                        <tr key={r.productId} className={cn("border-t border-border", m && "bg-teal/5")}>
+                        <tr key={r.productId} className={cn("border-t border-border", (m || inHuis) && "bg-teal/5")}>
                           <td className="px-4 py-2">
+                            <div className="flex items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => void setMark("besteld", [{ id: r.productId, packages: r.packagesToOrder }], !m)}
@@ -651,9 +692,34 @@ export function MenuOrderList({
                             >
                               {m && <Check className="h-5 w-5" />}
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => void setMark("in_huis", [{ id: r.productId }], !inHuis)}
+                              className={cn(
+                                "h-8 whitespace-nowrap rounded-md border px-2 text-xs",
+                                inHuis ? "border-teal bg-teal/10 font-medium text-teal" : "border-border text-muted hover:text-foreground",
+                              )}
+                              title="Deze keer in huis: hoeft niet besteld"
+                            >
+                              in huis
+                            </button>
+                            </div>
                           </td>
                           <td className="px-4 py-2">
-                            <span className={cn("font-medium", m && "text-muted line-through decoration-teal/50")}>{r.name}</span>
+                            <span className={cn("font-medium", (m || inHuis) && "text-muted line-through decoration-teal/50")}>{r.name}</span>
+                            {inHuis && (
+                              <span className="ml-2 text-xs text-teal">
+                                in huis · {inHuis.byName ?? "collega"}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void setAlwaysInStock(r.productId, true)}
+                              className="ml-2 text-xs text-muted underline decoration-dotted hover:text-teal"
+                              title="Basisvoorraad: staat voortaan in elke bestellijst bij 'altijd in huis'"
+                            >
+                              altijd in huis
+                            </button>
                             {r.forHalfproducts.length > 0 && (
                               <span className="block text-xs text-muted">
                                 incl. voor {[...new Set(r.forHalfproducts)].join(", ")}
@@ -723,12 +789,37 @@ export function MenuOrderList({
               </div>
               );
             })}
+            {basisRows.length > 0 && (
+              <details className="border-t border-border">
+                <summary className="cursor-pointer bg-background px-5 py-2 text-sm font-medium">
+                  Basisvoorraad — altijd in huis ({basisRows.length})
+                  <span className="ml-2 text-xs font-normal text-muted">hoeft niet besteld; telt niet mee in het bedrag</span>
+                </summary>
+                <ul className="divide-y divide-border">
+                  {basisRows.map((r) => (
+                    <li key={r.productId} className="flex flex-wrap items-center gap-3 px-5 py-2 text-sm">
+                      <span className="flex-1">{r.name}</span>
+                      <span className="tabular text-muted">
+                        {fmt(r.needed)} {r.baseUnitName}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void setAlwaysInStock(r.productId, false)}
+                        className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:text-foreground"
+                      >
+                        geen basis meer
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             <div className="flex items-center justify-between border-t border-border px-5 py-3">
               <span className="text-sm text-muted">
                 {rows.length} ingrediënt(en)
                 {outOfStock.size > 0 &&
                   ` · incl. ${halfproducts.filter((h) => outOfStock.has(h.id)).length} halfproduct(en) niet in huis`}
-                {showPrices && " · bedragen zijn inkoop van hele verpakkingen"}
+                {showPrices && " · bedrag = te bestellen (excl. in huis en basisvoorraad), hele verpakkingen"}
               </span>
               {showPrices && (
                 <span className="tabular text-lg font-semibold">€ {total.toFixed(2)}</span>
