@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { containerLabel, formatDistribution, partyLineFigures } from "@/lib/party/party-calc";
 import { A4PrintArea, A4PrintButton } from "@/components/print/a4-print";
+import { downloadListPdf, pdfFileName } from "@/lib/pdf/list-pdf";
+import { FileDown } from "lucide-react";
 import { RecipeBreakdown, type BreakdownColumn } from "@/components/menus/recipe-breakdown";
 import type { PartyCapacityAdjustment } from "@/lib/types/database";
 
@@ -318,6 +320,47 @@ export function MenuWorkList({
     byLocation.get(i.location)!.push(i);
   }
 
+  /** Werklijst als A4-PDF (te printen op elke printer). */
+  async function exportPdf() {
+    const nl = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 1 });
+    const title = `Productiewerklijst${printTitle ? ` — ${printTitle}` : ""}`;
+    const sections = [];
+    if (party.length > 0) {
+      sections.push({
+        heading: "Partijgerechten — productie per vorm",
+        columns: ["Gerecht", "Netto nodig", "Keuken maakt", "Verdeling", "Verwacht over"],
+        rows: party.map((p) => {
+          const f = partyLineFigures(p, false);
+          return [p.recipe_name, f.needed, f.produced, f.distribution, f.leftover ?? "—"];
+        }),
+        checkbox: true,
+        checked: party.map((p) => done.has(p.line_id)),
+        alignRight: [1, 2],
+      });
+    }
+    for (const [loc, list] of byLocation) {
+      sections.push({
+        heading: loc,
+        note: `${list.filter((i) => done.has(i.key)).length}/${list.length} gereed`,
+        columns: ["Maken", "Hoeveelheid", "Soort / bereiding"],
+        rows: list.map((i) => [
+          i.name,
+          `${nl(i.quantity)} ${i.unitName ?? ""}`.trim(),
+          [i.isHalfproduct ? "halfproduct" : "gerecht", i.preparation].filter(Boolean).join(" · "),
+        ]),
+        checkbox: true,
+        checked: list.map((i) => done.has(i.key)),
+        alignRight: [1],
+      });
+    }
+    await downloadListPdf({
+      fileName: pdfFileName(`werklijst ${printTitle ?? ""}`),
+      title,
+      subtitle: `${personCount} personen${serviceDate ? ` · ${new Date(serviceDate).toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}` : ""}`,
+      sections,
+    });
+  }
+
   return (
     <A4PrintArea
       title={printTitle ? `Productiewerklijst — ${printTitle}` : undefined}
@@ -342,6 +385,10 @@ export function MenuWorkList({
               </Button>
             )}
             <A4PrintButton />
+            <Button variant="secondary" size="sm" onClick={() => void exportPdf()}>
+              <FileDown className="h-3.5 w-3.5" />
+              PDF
+            </Button>
           </div>
         )}
       </CardHeader>

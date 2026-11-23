@@ -9,6 +9,8 @@ import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { A4PrintArea, A4PrintButton } from "@/components/print/a4-print";
+import { downloadListPdf, pdfFileName } from "@/lib/pdf/list-pdf";
+import { FileDown } from "lucide-react";
 import type { EventMenuOrderMark } from "@/lib/types/database";
 
 interface Need {
@@ -480,6 +482,70 @@ export function MenuOrderList({
   const isDone = (r: OrderRow) => marks.has(markKey("besteld", r.productId)) || marks.has(markKey("in_huis", r.productId));
   const orderedCount = toArrange.filter(isDone).length;
 
+  /** Bestellijst als A4-PDF, met de gekozen kolommen en de afvinkstatus. */
+  async function exportPdf() {
+    const cols = COLUMNS.filter((c) => show(c.key));
+    const cell = (r: OrderRow, k: ColumnKey): string => {
+      const m = marks.get(markKey("besteld", r.productId));
+      switch (k) {
+        case "benodigd":
+          return `${fmt(r.needed)} ${r.baseUnitName ?? ""}`.trim();
+        case "verpakking":
+          return r.packagingUnitCount ? `${fmt(r.packagingUnitCount)} ${r.baseUnitName ?? ""}`.trim() : "onbekend";
+        case "bestellen":
+          return r.packagesToOrder !== null
+            ? `${r.packagesToOrder}× = ${fmt(r.orderedQuantity ?? 0)} ${r.baseUnitName ?? ""}`.trim()
+            : "verpakking onbekend";
+        case "prijs":
+          return r.purchasePrice != null ? `€ ${r.purchasePrice.toFixed(2)}` : "—";
+        case "totaal":
+          return r.lineTotal != null ? `€ ${r.lineTotal.toFixed(2)}` : "—";
+        case "besteld":
+          return m ? `${m.byName ?? ""} ${when(m.marked_at)}`.trim() : marks.has(markKey("in_huis", r.productId)) ? "in huis" : "";
+      }
+    };
+    const sections = [];
+    if (halfproducts.length > 0) {
+      sections.push({
+        heading: "Halfproducten — check of ze in huis zijn",
+        columns: ["Halfproduct", "Nodig", "Status"],
+        rows: halfproducts.map((h) => [h.name, `${fmt(h.needed)} ${h.unitName ?? ""}`.trim(), outOfStock.has(h.id) ? "niet in huis" : "in huis"]),
+        checkbox: true,
+        checked: halfproducts.map((h) => !outOfStock.has(h.id)),
+        alignRight: [1],
+      });
+    }
+    for (const [supplier, list] of bySupplier) {
+      sections.push({
+        heading: supplier,
+        note: `${list.filter(isDone).length}/${list.length} geregeld`,
+        columns: ["Ingrediënt", ...cols.map((c) => c.label)],
+        rows: list.map((r) => [
+          r.name + (marks.has(markKey("in_huis", r.productId)) ? " (in huis)" : ""),
+          ...cols.map((c) => cell(r, c.key)),
+        ]),
+        checkbox: true,
+        checked: list.map(isDone),
+        alignRight: cols.map((c, i) => (["benodigd", "prijs", "totaal"].includes(c.key) ? i + 1 : -1)).filter((i) => i >= 0),
+      });
+    }
+    if (basisRows.length > 0) {
+      sections.push({
+        heading: "Basisvoorraad — altijd in huis",
+        columns: ["Ingrediënt", "Nodig"],
+        rows: basisRows.map((r) => [r.name, `${fmt(r.needed)} ${r.baseUnitName ?? ""}`.trim()]),
+        alignRight: [1],
+      });
+    }
+    await downloadListPdf({
+      fileName: pdfFileName(`bestellijst ${printTitle ?? ""}`),
+      title: `Bestellijst${printTitle ? ` — ${printTitle}` : ""}`,
+      subtitle: `${orderedCount} van ${toArrange.length} geregeld (besteld of in huis)`,
+      sections,
+      footer: showPrices ? `Te bestellen (excl. in huis en basisvoorraad): € ${total.toFixed(2)}` : undefined,
+    });
+  }
+
   return (
     <A4PrintArea title={printTitle ? `Bestellijst — ${printTitle}` : undefined}>
     <Card>
@@ -500,6 +566,10 @@ export function MenuOrderList({
         {rows.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 print:hidden">
             <A4PrintButton />
+            <Button variant="secondary" size="sm" onClick={() => void exportPdf()}>
+              <FileDown className="h-3.5 w-3.5" />
+              PDF
+            </Button>
             <label className="flex items-center gap-1.5 text-sm text-muted">
               <input
                 type="checkbox"
