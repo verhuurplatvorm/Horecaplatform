@@ -14,6 +14,7 @@ import {
   writeStickerFormat,
   type StickerLabelData,
 } from "@/components/stickers/sticker-label";
+import { A4_SHORTCUT_TARGET, STICKER_DEVICE_KEY } from "@/components/print/a4-print";
 
 // Eigen Chrome-profiel: start altijd als apart venster mét de printinstelling,
 // ook als gewone Chrome al open staat (anders negeert Chrome de instelling).
@@ -131,6 +132,7 @@ export default function StickerPrinterPage() {
                 formaat bij stap 2.
               </li>
             </ol>
+            <A4Setup />
           </CardContent>
         </Card>
 
@@ -169,5 +171,71 @@ export default function StickerPrinterPage() {
         <StickerPrintArea data={sample} format={format} count={1} />
       )}
     </>
+  );
+}
+
+/**
+ * A4-lijsten (werklijst, bestellijst) op een stickerapparaat: het sticker-
+ * venster print altijd naar de Argox. Een tweede snelkoppeling met een eigen
+ * Chrome-profiel zónder kiosk-printing toont wel het printvenster; daar kies
+ * je één keer de netwerkprinter en Chrome onthoudt hem.
+ */
+function A4Setup() {
+  const [isDevice, setIsDevice] = useState(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(STICKER_DEVICE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="space-y-3 border-t border-border pt-4">
+      <p className="font-medium">Werklijst en bestellijst op A4 (netwerkprinter)</p>
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={isDevice}
+          onChange={(e) => {
+            try {
+              if (e.target.checked) window.localStorage.setItem(STICKER_DEVICE_KEY, "1");
+              else window.localStorage.removeItem(STICKER_DEVICE_KEY);
+            } catch {
+              /* geen opslag */
+            }
+            setIsDevice(e.target.checked);
+          }}
+        />
+        <span>
+          <strong>Dit venster print stickers</strong> (kiosk-printing). Aanvinken in het stickervenster:
+          dan waarschuwt &quot;Printen (A4)&quot; in plaats van een A4-lijst op stickerpapier te printen.
+        </span>
+      </label>
+      <p>
+        Maak op dit apparaat een tweede snelkoppeling <strong>Culilogic A4</strong> met dit doel (eigen
+        profiel, zónder kiosk-printing). Log daar één keer in, print iets en kies in het printvenster de
+        netwerkprinter — Chrome onthoudt die keuze voor de volgende keer.
+      </p>
+      <div className="flex items-start gap-2">
+        <code className="flex-1 break-all rounded bg-background p-2 text-xs">{A4_SHORTCUT_TARGET}</code>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() =>
+            void navigator.clipboard?.writeText(A4_SHORTCUT_TARGET).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            })
+          }
+        >
+          {copied ? "Gekopieerd" : "Kopiëren"}
+        </Button>
+      </div>
+      <p className="text-xs text-muted">
+        Op een gewone pc of laptop (zonder stickerprinter) hoeft dit niet: daar opent &quot;Printen (A4)&quot;
+        het normale printvenster.
+      </p>
+    </div>
   );
 }

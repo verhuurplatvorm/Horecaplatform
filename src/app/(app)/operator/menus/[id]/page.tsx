@@ -138,11 +138,13 @@ export default function OperatorMenuPage({
                 personCount={menu.person_count}
                 serviceDate={menu.service_date}
                 companyId={referenceCompanyId}
+                printTitle={menu.name}
               />
             ) : (
               <MenuOrderList
                 menuId={menu.id}
                 showPrices={can("menukaarten").canViewFinancial}
+                printTitle={`${menu.name} · ${menu.person_count} personen`}
               />
             )}
           </>

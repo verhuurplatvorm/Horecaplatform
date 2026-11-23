@@ -1390,10 +1390,16 @@ export default function MenuDetailPage({
             serviceDate={menu.service_date}
             companyId={referenceCompanyId}
             canViewFinancial={canViewFinancial}
+            printTitle={menu.name}
           />
         )}
 
-        {tab === "bestellijst" && <MenuOrderList menuId={id} />}
+        {tab === "bestellijst" && (
+          <MenuOrderList
+            menuId={id}
+            printTitle={`${menu.name} · ${menu.person_count} personen${menu.service_date ? ` · ${new Date(menu.service_date).toLocaleDateString("nl-NL")}` : ""}`}
+          />
+        )}
 
         {tab === "nacalculatie" && (
           <MenuNacalculatie

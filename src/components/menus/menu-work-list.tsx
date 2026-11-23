@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Printer, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { containerLabel, formatDistribution, partyLineFigures } from "@/lib/party/party-calc";
+import { A4PrintArea, A4PrintButton } from "@/components/print/a4-print";
 import { RecipeBreakdown, type BreakdownColumn } from "@/components/menus/recipe-breakdown";
 import type { PartyCapacityAdjustment } from "@/lib/types/database";
 
@@ -91,6 +92,7 @@ export function MenuWorkList({
   serviceDate,
   companyId,
   canViewFinancial = false,
+  printTitle,
 }: {
   menuId: string;
   personCount: number;
@@ -98,6 +100,8 @@ export function MenuWorkList({
   companyId: string | null;
   /** Productiekosten alleen tonen met financiële rechten (operator: nooit). */
   canViewFinancial?: boolean;
+  /** Kop op de A4-afdruk (naam van het menu/de boeking). */
+  printTitle?: string;
 }) {
   const [items, setItems] = useState<WorkItem[]>([]);
   const [party, setParty] = useState<PartyPlanRow[]>([]);
@@ -315,6 +319,10 @@ export function MenuWorkList({
   }
 
   return (
+    <A4PrintArea
+      title={printTitle ? `Productiewerklijst — ${printTitle}` : undefined}
+      subtitle={`${personCount} personen${serviceDate ? ` · ${new Date(serviceDate).toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}` : ""}`}
+    >
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>
@@ -333,10 +341,7 @@ export function MenuWorkList({
                 Vinkjes wissen
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={() => window.print()}>
-              <Printer className="h-3.5 w-3.5" />
-              Printen
-            </Button>
+            <A4PrintButton />
           </div>
         )}
       </CardHeader>
@@ -579,5 +584,6 @@ export function MenuWorkList({
         )}
       </CardContent>
     </Card>
+    </A4PrintArea>
   );
 }

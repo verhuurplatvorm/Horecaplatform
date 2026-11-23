@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { A4PrintArea, A4PrintButton } from "@/components/print/a4-print";
 import type { EventMenuOrderMark } from "@/lib/types/database";
 
 interface Need {
@@ -114,8 +115,11 @@ const when = (iso: string) =>
 export function MenuOrderList({
   menuId,
   showPrices = true,
+  printTitle,
 }: {
   menuId: string;
+  /** Kop op de A4-afdruk (naam van het menu/de boeking). */
+  printTitle?: string;
   /** false voor rollen zonder financiële rechten (bv. Operator): geen inkoopprijzen. */
   showPrices?: boolean;
 }) {
@@ -477,6 +481,7 @@ export function MenuOrderList({
   const orderedCount = toArrange.filter(isDone).length;
 
   return (
+    <A4PrintArea title={printTitle ? `Bestellijst — ${printTitle}` : undefined}>
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>
@@ -493,7 +498,8 @@ export function MenuOrderList({
           )}
         </CardTitle>
         {rows.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <A4PrintButton />
             <label className="flex items-center gap-1.5 text-sm text-muted">
               <input
                 type="checkbox"
@@ -648,7 +654,7 @@ export function MenuOrderList({
                         !allDone,
                       )
                     }
-                    className="ml-auto rounded-md border border-border px-3 py-1 text-xs hover:bg-surface"
+                    className="ml-auto rounded-md border border-border px-3 py-1 text-xs hover:bg-surface print:hidden"
                   >
                     {allDone ? "Alles weer open" : "Alles van deze leverancier besteld"}
                   </button>
@@ -715,7 +721,7 @@ export function MenuOrderList({
                             <button
                               type="button"
                               onClick={() => void setAlwaysInStock(r.productId, true)}
-                              className="ml-2 text-xs text-muted underline decoration-dotted hover:text-teal"
+                              className="ml-2 text-xs text-muted underline decoration-dotted hover:text-teal print:hidden"
                               title="Basisvoorraad: staat voortaan in elke bestellijst bij 'altijd in huis'"
                             >
                               altijd in huis
@@ -829,5 +835,6 @@ export function MenuOrderList({
         )}
       </CardContent>
     </Card>
+    </A4PrintArea>
   );
 }
