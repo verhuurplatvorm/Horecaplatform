@@ -14,10 +14,10 @@ import { useCompanyScope } from "@/components/company-context";
 import { usePermissions } from "@/components/permissions/permissions-context";
 import { createClient } from "@/lib/supabase/client";
 import type { EventMenu, EventMenuFolder } from "@/lib/types/database";
-import { fetchEventMenuCostStatus } from "@/lib/recipes/costs";
 import type { CostStatus } from "@/lib/costing/status";
 import { CostAmount, CostIncompleteBadge } from "@/components/costing/cost-status";
 import { foodcostPct as calcFoodcostPct, menuSales } from "@/lib/menus/sales";
+import { toCostStatus } from "@/lib/costing/status";
 import type { EventMenuCharge } from "@/lib/types/database";
 
 /** "Actueel" = menu's zonder map (standaard in beeld). */
@@ -52,6 +52,7 @@ export default function MenusPage() {
   const [columnFilterActive, setColumnFilterActive] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [costsLoading, setCostsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,44 +73,54 @@ export default function MenusPage() {
       }
       const companyName = new Map((companies ?? []).map((c) => [c.id, c.name]));
 
-      const withCost = await Promise.all(
-        (menus as EventMenu[]).map(async (m) => {
-          let totalCost: number | null = null;
-          let costStatus: CostStatus | null = null;
-          if (canViewFinancial && referenceCompanyId) {
-            const [{ data }, status] = await Promise.all([
-              supabase.rpc("calculate_event_menu_cost", {
-                p_menu_id: m.id,
-                p_company_id: referenceCompanyId,
-              }),
-              fetchEventMenuCostStatus(supabase, m.id, referenceCompanyId),
-            ]);
-            totalCost = (data as number | null) ?? null;
-            costStatus = status;
-          }
-          const sales = menuSales({
-            personCount: m.person_count,
-            minPersons: m.min_persons ?? null,
-            pricePerPerson: m.sales_price_per_person,
-            vatRate: m.vat_rate,
-            sections: (secRows ?? [])
-              .filter((x) => x.menu_id === m.id)
-              .map((x) => ({ name: x.name, option_price_pp: x.option_price_pp ?? null, is_selected: x.is_selected ?? true })),
-            charges: ((chRows as EventMenuCharge[]) ?? []).filter((c) => c.menu_id === m.id),
-          });
-          return {
-            ...m,
-            companyName: m.company_id ? companyName.get(m.company_id) ?? null : null,
-            totalCost,
-            costStatus,
-            foodExcl: sales.foodExcl,
-          };
-        })
+      // 1. Menu's direct tonen (snel); kostprijs volgt in één verzoek.
+      const base: MenuRow[] = (menus as EventMenu[]).map((m) => {
+        const sales = menuSales({
+          personCount: m.person_count,
+          minPersons: m.min_persons ?? null,
+          pricePerPerson: m.sales_price_per_person,
+          vatRate: m.vat_rate,
+          sections: (secRows ?? [])
+            .filter((x) => x.menu_id === m.id)
+            .map((x) => ({ name: x.name, option_price_pp: x.option_price_pp ?? null, is_selected: x.is_selected ?? true })),
+          charges: ((chRows as EventMenuCharge[]) ?? []).filter((c) => c.menu_id === m.id),
+        });
+        return {
+          ...m,
+          companyName: m.company_id ? companyName.get(m.company_id) ?? null : null,
+          totalCost: null,
+          costStatus: null,
+          foodExcl: sales.foodExcl,
+        };
+      });
+      if (cancelled) return;
+      setRows(base);
+      setLoading(false);
+
+      // 2. Kostprijs + controle van alle menu's in één keer.
+      if (!canViewFinancial || !referenceCompanyId) return;
+      setCostsLoading(true);
+      const { data: overview } = await supabase.rpc("event_menus_overview", {
+        p_company_id: referenceCompanyId,
+      });
+      if (cancelled) return;
+      const byId = new Map(
+        ((overview ?? []) as { menu_id: string; total_cost: number | null; is_complete: boolean; issues: unknown }[]).map(
+          (o) => [o.menu_id, o],
+        ),
       );
-      if (!cancelled) {
-        setRows(withCost);
-        setLoading(false);
-      }
+      setRows((prev) =>
+        prev.map((r) => {
+          const o = byId.get(r.id);
+          if (!o) return r;
+          return {
+            ...r,
+            totalCost: o.total_cost === null ? null : Number(o.total_cost),
+            costStatus: toCostStatus({ is_complete: o.is_complete, issues: o.issues }),
+          };
+        }),
+      );
+      setCostsLoading(false);
     }
     run();
     return () => {
@@ -360,7 +371,17 @@ export default function MenusPage() {
             setSelectedIds((prev) => (ids.every((id) => prev.has(id)) ? new Set() : new Set(ids)))
           }
           onRowClick={(r) => router.push(`/menus/${r.id}`)}
-          emptyLabel={loading ? "Menu's laden…" : "Nog geen menu's of buffetten."}
+          emptyLabel={
+            loading
+              ? "Menu's laden…"
+              : searching
+                ? "Geen menu's gevonden."
+                : rows.length === 0
+                  ? "Nog geen menu's of buffetten."
+                  : activeFolder === ACTUEEL
+                    ? "Alles staat in mappen — kies links een map of zoek bovenaan."
+                    : "Deze map is leeg. Vink menu's aan en kies \"verplaatsen naar\" om ze hierheen te zetten."
+          }
           columns={[
             { key: "naam", label: "Naam", width: 220, sticky: true, value: (r) => r.name },
             { key: "type", label: "Type", width: 120, value: (r) => r.menu_type },
@@ -398,9 +419,12 @@ export default function MenusPage() {
                     width: 110,
                     align: "right" as const,
                     value: (r: MenuRow) => costPerPerson(r),
-                    render: (r: MenuRow) => {
-                      return <CostAmount amount={costPerPerson(r)} status={r.costStatus} />;
-                    },
+                    render: (r: MenuRow) =>
+                      costsLoading && !r.costStatus ? (
+                        <span className="text-muted">…</span>
+                      ) : (
+                        <CostAmount amount={costPerPerson(r)} status={r.costStatus} />
+                      ),
                   },
                   {
                     key: "totaal",
@@ -408,7 +432,12 @@ export default function MenusPage() {
                     width: 120,
                     align: "right" as const,
                     value: (r: MenuRow) => r.totalCost,
-                    render: (r: MenuRow) => <CostAmount amount={r.totalCost} status={r.costStatus} />,
+                    render: (r: MenuRow) =>
+                      costsLoading && !r.costStatus ? (
+                        <span className="text-muted">…</span>
+                      ) : (
+                        <CostAmount amount={r.totalCost} status={r.costStatus} />
+                      ),
                   },
                   {
                     key: "fc",

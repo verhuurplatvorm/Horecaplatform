@@ -1379,6 +1379,10 @@ export type Database = {
         Args: { p_company_id: string };
         Returns: HaccpTodayRow[];
       };
+      event_menus_overview: {
+        Args: { p_company_id: string };
+        Returns: { menu_id: string; total_cost: number | null; is_complete: boolean; issues: unknown }[];
+      };
       event_menu_copy: {
         Args: {
           p_source_id: string;
