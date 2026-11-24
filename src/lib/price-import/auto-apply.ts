@@ -88,7 +88,8 @@ export async function autoApplyInvoiceBatch(
       .eq("supplier_id", batch.supplier_id)
       .is("valid_to", null)
       .in("product_id", productIds.slice(i, i + 200));
-    q = batch.company_id ? q.eq("company_id", batch.company_id) : q.is("company_id", null);
+    // Prijzen gelden voor de hele groep (Het Strand en Zomers samen).
+    q = q.is("company_id", null);
     const { data } = await q;
     for (const sp of data ?? []) existing.set(sp.product_id as string, Number(sp.purchase_price));
   }
