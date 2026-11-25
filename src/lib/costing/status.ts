@@ -7,7 +7,7 @@
  * wordt getoond. Database-tegenhanger: recipe_cost_status (migratie 0146).
  */
 
-export type CostIssueKind = "koppeling" | "prijs" | "omrekening" | "opbrengst" | "leeg";
+export type CostIssueKind = "koppeling" | "prijs" | "omrekening" | "opbrengst" | "leeg" | "hoeveelheid";
 
 export interface CostIssue {
   line_id: string | null;
@@ -37,6 +37,7 @@ export const ISSUE_LABEL: Record<CostIssueKind, string> = {
   omrekening: "eenheid niet om te rekenen",
   opbrengst: "halfproduct zonder opbrengst",
   leeg: "nog geen ingrediënten",
+  hoeveelheid: "hoeveelheid nog invullen",
 };
 
 /** Eén regel tekst, bv. "Pizza saus › Tomaat: geen inkoopprijs". */

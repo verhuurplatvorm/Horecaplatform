@@ -22,6 +22,7 @@ const KIND_TITLE: Record<CostIssueKind, string> = {
   omrekening: "Eenheid niet om te rekenen",
   opbrengst: "Halfproduct zonder opbrengst",
   leeg: "Nog geen ingrediënten",
+  hoeveelheid: "Hoeveelheid nog invullen",
 };
 
 const PAGE = 25;
