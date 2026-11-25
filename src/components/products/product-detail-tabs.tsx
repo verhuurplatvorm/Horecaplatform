@@ -52,7 +52,7 @@ export function ProductDetailTabs({
   return (
     <div className="space-y-4">
       {/* Vaste kop: altijd zichtbaar, ongeacht de tab */}
-      <div className="sticky top-0 z-30 -mx-6 border-b border-border bg-background px-6 pb-3 pt-4">
+      <div className="sticky top-[calc(var(--app-header-h,0px)+4rem)] z-20 -mx-6 border-b border-border bg-background px-6 pb-3 pt-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-[16rem] flex-[1_1_20rem]">
             <p className="flex items-center gap-1.5 text-lg font-semibold text-foreground">

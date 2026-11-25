@@ -7,6 +7,7 @@ import { PageActionsProvider } from "@/components/layout/page-actions";
 import { TouchArea } from "@/components/touch/touch-keyboard";
 import { RecentBar } from "@/components/layout/recent-bar";
 import { OperatorGuard } from "@/components/operator/operator-guard";
+import { AppHeader } from "@/components/layout/app-header";
 
 export default function AppLayout({
   children,
@@ -21,9 +22,11 @@ export default function AppLayout({
           {/* Touchscherm-modus + schermtoetsenbord op alle schermen */}
           <TouchArea>
           <div className="flex min-h-screen flex-col bg-background">
-            <TopTabBar />
-            <RecentBar />
-            <OperatorGuard />
+            <AppHeader>
+              <TopTabBar />
+              <RecentBar />
+              <OperatorGuard />
+            </AppHeader>
             <div className="flex flex-1">
               <Sidebar />
               <div className="min-w-0 flex-1">{children}</div>

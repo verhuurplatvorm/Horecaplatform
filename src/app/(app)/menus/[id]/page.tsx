@@ -444,7 +444,7 @@ export default function MenuDetailPage({
       <Topbar title="Menu's & buffetten" />
       <main className="max-w-7xl space-y-4 p-6">
         {/* Vaste kop: naam, personen en kostprijs blijven in beeld. */}
-        <div className="sticky top-0 z-30 -mx-6 border-b border-border bg-background px-6 pb-3 pt-4">
+        <div className="sticky top-[calc(var(--app-header-h,0px)+4rem)] z-20 -mx-6 border-b border-border bg-background px-6 pb-3 pt-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-lg font-semibold">{menu.name}</p>
