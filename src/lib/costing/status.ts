@@ -7,7 +7,7 @@
  * wordt getoond. Database-tegenhanger: recipe_cost_status (migratie 0146).
  */
 
-export type CostIssueKind = "koppeling" | "prijs" | "omrekening" | "opbrengst";
+export type CostIssueKind = "koppeling" | "prijs" | "omrekening" | "opbrengst" | "leeg";
 
 export interface CostIssue {
   line_id: string | null;
@@ -36,6 +36,7 @@ export const ISSUE_LABEL: Record<CostIssueKind, string> = {
   prijs: "geen inkoopprijs",
   omrekening: "eenheid niet om te rekenen",
   opbrengst: "halfproduct zonder opbrengst",
+  leeg: "nog geen ingrediënten",
 };
 
 /** Eén regel tekst, bv. "Pizza saus › Tomaat: geen inkoopprijs". */
@@ -106,6 +107,8 @@ export function formCostStatus(args: {
   for (const row of args.rows) {
     const isEmpty = !row.refId && !row.unmatchedName && !row.quantity.trim();
     if (isEmpty) continue;
+    // Niet-gekoppelde regel met hoeveelheid 0 kost niets: blokkeert niet (zoals in de database).
+    if (!row.refId && Number(row.quantity.replace(",", ".")) === 0) continue;
     if (!row.refId) {
       issues.push({
         ...base,

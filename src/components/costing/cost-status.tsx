@@ -15,7 +15,9 @@ export function CostIncompleteBadge({ status, className = "" }: { status: CostSt
       className={`inline-flex items-center gap-1 whitespace-nowrap rounded bg-copper/10 px-1.5 py-0.5 text-xs font-medium text-copper ${className}`}
     >
       <TriangleAlert className="h-3 w-3" />
-      Kostprijs onvolledig
+      {status.issues.length > 0 && status.issues.every((i) => i.kind === "leeg")
+        ? "Nog geen ingrediënten"
+        : "Kostprijs onvolledig"}
     </span>
   );
 }
@@ -35,6 +37,9 @@ export function CostAmount({
 }) {
   const text = amount !== null && amount !== undefined ? `€ ${amount.toFixed(decimals)}` : "—";
   if (!status || status.isComplete) return <>{text}</>;
+  if (status.issues.length > 0 && status.issues.every((i) => i.kind === "leeg")) {
+    return <span className="text-muted">—</span>;
+  }
   return (
     <span className="inline-flex flex-col items-start leading-tight">
       <span className="text-[10px] uppercase tracking-wide text-copper">Bekende kosten</span>
