@@ -93,6 +93,8 @@ export function formCostStatus(args: {
     refName: string | null;
     unmatchedName: string | null;
     quantity: string;
+    /** Notitie; 'nog invullen' + hoeveelheid 0 = hoeveelheid ontbreekt. */
+    note?: string | null;
     unitName: string | null;
     /** Kosten van de regel zoals het formulier ze rekent (null = niet te rekenen). */
     cost: number | null;
@@ -108,8 +110,10 @@ export function formCostStatus(args: {
   for (const row of args.rows) {
     const isEmpty = !row.refId && !row.unmatchedName && !row.quantity.trim();
     if (isEmpty) continue;
+    const qty = row.quantity.trim() ? Number(row.quantity.replace(",", ".")) : null;
+    const openQty = qty === null || (qty === 0 && /nog invullen/i.test(row.note ?? ""));
     // Niet-gekoppelde regel met hoeveelheid 0 kost niets: blokkeert niet (zoals in de database).
-    if (!row.refId && Number(row.quantity.replace(",", ".")) === 0) continue;
+    if (!row.refId && qty === 0 && !openQty) continue;
     if (!row.refId) {
       issues.push({
         ...base,
@@ -118,6 +122,18 @@ export function formCostStatus(args: {
         name: row.unmatchedName ?? row.refName,
         product_id: null,
         sub_recipe_id: null,
+        unit_name: row.unitName,
+      });
+      continue;
+    }
+    if (openQty) {
+      issues.push({
+        ...base,
+        line_id: row.lineId ?? null,
+        kind: "hoeveelheid",
+        name: row.refName,
+        product_id: row.type === "ingrediënt" ? row.refId : null,
+        sub_recipe_id: row.type === "halfproduct" ? row.refId : null,
         unit_name: row.unitName,
       });
       continue;

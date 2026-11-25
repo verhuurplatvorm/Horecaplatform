@@ -2,6 +2,8 @@
 -- Gekoppelde regel zonder hoeveelheid kreeg "eenheid niet om te rekenen";
 -- nu een eigen melding. Niet-gekoppelde regel zonder hoeveelheid blijft een
 -- koppelprobleem (alleen een expliciete 0 wordt genegeerd, zie 0160).
+-- Hoeveelheid 0 met notitie 'nog invullen' telt als nog niet ingevuld
+-- (quantity is verplicht in recipe_ingredients).
 
 create or replace function public.recipe_own_cost_issues(p_company_id uuid, p_recipe_ids uuid[])
 returns table(recipe_id uuid, line_id uuid, kind text, name text, product_id uuid, sub_recipe_id uuid, unit_name text)
@@ -15,7 +17,7 @@ as $function$
   left join public.units uf on uf.id = ri.unit_id
   where ri.recipe_id = any(p_recipe_ids)
     and ri.product_id is null and ri.sub_recipe_id is null
-    and (ri.quantity is null or ri.quantity <> 0)
+    and (ri.quantity is null or ri.quantity <> 0 or ri.note ilike '%nog invullen%')
 
   union all
 
@@ -31,7 +33,7 @@ as $function$
          x.pname, x.product_id, null::uuid, x.uname
   from (
     select ri.recipe_id, ri.id, ri.product_id, p.name as pname, uf.name as uname,
-           cpc.price_per_base_unit as price, ri.quantity as raw_qty,
+           cpc.price_per_base_unit as price, case when ri.quantity is null or (ri.quantity = 0 and ri.note ilike '%nog invullen%') then null else ri.quantity end as raw_qty,
            case
              when ri.quantity is null then null
              when ri.unit_id = p.base_unit_id then ri.quantity
@@ -55,7 +57,7 @@ as $function$
     left join public.units ua on ua.id = p.avg_unit_id
     where ri.recipe_id = any(p_recipe_ids)
   ) x
-  where x.price is null or x.qty is null
+  where x.price is null or x.qty is null or x.raw_qty is null
 
   union all
 
@@ -64,7 +66,7 @@ as $function$
          y.sname, null::uuid, y.sub_recipe_id, y.uname
   from (
     select ri.recipe_id, ri.id, ri.sub_recipe_id, s.name as sname, uf.name as uname,
-           s.yield_quantity as yield, ri.quantity as raw_qty,
+           s.yield_quantity as yield, case when ri.quantity is null or (ri.quantity = 0 and ri.note ilike '%nog invullen%') then null else ri.quantity end as raw_qty,
            case
              when ri.quantity is null then null
              when ri.unit_id = s.base_unit_id then ri.quantity
@@ -85,5 +87,5 @@ as $function$
     left join public.units up on up.id = s.piece_unit_id
     where ri.recipe_id = any(p_recipe_ids)
   ) y
-  where y.yield is null or y.yield <= 0 or y.qty is null;
+  where y.yield is null or y.yield <= 0 or y.qty is null or y.raw_qty is null;
 $function$;

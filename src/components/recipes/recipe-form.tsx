@@ -1023,6 +1023,7 @@ export function RecipeForm({
           refName: row.refName,
           unmatchedName: row.unmatchedName,
           quantity: row.quantity,
+          note: row.note,
           unitName: row.unitId ? unitsById.get(row.unitId)?.name ?? null : null,
           cost: lineCosts[i],
           hasPrice: row.type === "ingrediënt" && row.refId ? productPrices.get(row.refId)?.hasPrice : undefined,
