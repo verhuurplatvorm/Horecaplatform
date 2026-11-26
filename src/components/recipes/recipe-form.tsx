@@ -1332,6 +1332,8 @@ export function RecipeForm({
   const [textEditOpen, setTextEditOpen] = useState(false);
   const [multiplyOpen, setMultiplyOpen] = useState(false);
   const [multiplyFactor, setMultiplyFactor] = useState("2");
+  const [targetYield, setTargetYield] = useState("");
+  const [targetUnitId, setTargetUnitId] = useState<string>("");
   const [multiplyMessage, setMultiplyMessage] = useState<string | null>(null);
 
   function isEmptyRow(r: IngredientRow) {
@@ -1654,8 +1656,27 @@ export function RecipeForm({
     setBaseUnitId(nextUnitId);
   }
 
-  function applyMultiply() {
-    const factor = Number(multiplyFactor.replace(",", "."));
+  /** Schalen naar een nieuwe standaard-opbrengst, bv. 14,9 l → 10 l. */
+  function applyTargetYield() {
+    const target = Number(targetYield.replace(",", "."));
+    const current = Number(String(yieldQuantity).replace(",", "."));
+    const base = baseUnitId ? unitsById.get(baseUnitId) : undefined;
+    const tu = unitsById.get(targetUnitId || baseUnitId || "");
+    if (!Number.isFinite(target) || target <= 0) {
+      setMultiplyMessage("Vul een nieuwe opbrengst groter dan 0 in.");
+      return;
+    }
+    if (!(current > 0) || !base || !tu) {
+      setMultiplyMessage("Dit halfproduct heeft nog geen opbrengst; vul die eerst in.");
+      return;
+    }
+    const targetInBase =
+      tu.id === base.id ? target : (target * Number(tu.factor_to_base)) / Number(base.factor_to_base);
+    applyMultiply(targetInBase / current, targetInBase);
+  }
+
+  function applyMultiply(forcedFactor?: number, forcedYield?: number) {
+    const factor = forcedFactor ?? Number(multiplyFactor.replace(",", "."));
     if (!Number.isFinite(factor) || factor <= 0) {
       setMultiplyMessage("Vul een getal groter dan 0 in.");
       return;
@@ -1670,10 +1691,12 @@ export function RecipeForm({
     // Bij een halfproduct schaalt de opbrengst mee, anders klopt de prijs
     // per kilo/liter niet meer.
     if (recipeKind === "halfproduct" && Number(yieldQuantity) > 0) {
-      setYieldQuantity(String(Math.round(Number(yieldQuantity) * factor * 10000) / 10000));
+      setYieldQuantity(String(Math.round((forcedYield ?? Number(yieldQuantity) * factor) * 10000) / 10000));
     }
     setMultiplyMessage(
-      `Alle hoeveelheden zijn × ${factor.toLocaleString("nl-NL")} gedaan. Controleer en klik op Opslaan; Annuleren zet alles terug.`
+      forcedYield !== undefined
+        ? `Receptuur omgerekend naar ${Math.round(forcedYield * 1000) / 1000} ${baseUnitName ?? ""} opbrengst (× ${(Math.round(factor * 10000) / 10000).toLocaleString("nl-NL")}). Klik op Opslaan om dit als nieuwe standaard vast te zetten; Annuleren zet alles terug.`
+        : `Alle hoeveelheden zijn × ${factor.toLocaleString("nl-NL")} gedaan. Controleer en klik op Opslaan; Annuleren zet alles terug.`
     );
     setMultiplyOpen(false);
   }
@@ -2508,7 +2531,7 @@ export function RecipeForm({
                 size="sm"
                 onClick={() => setMultiplyOpen((v) => !v)}
               >
-                Receptuur vermenigvuldigen
+                Receptuur schalen
               </Button>
             )}
           </div>
@@ -2767,8 +2790,52 @@ export function RecipeForm({
           })()}
 
           {multiplyOpen && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-2 text-sm">
-              <span>Alle hoeveelheden (en de opbrengst) vermenigvuldigen met</span>
+            <div className="space-y-2 rounded-md border border-border bg-background p-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span>
+                Nieuwe standaard-opbrengst
+                {Number(yieldQuantity) > 0 && baseUnitName
+                  ? ` (nu ${String(yieldQuantity).replace(".", ",")} ${baseUnitName})`
+                  : ""}
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={targetYield}
+                onChange={(e) => setTargetYield(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyTargetYield();
+                  }
+                }}
+                placeholder="bv. 10"
+                className="h-8 w-24 rounded-md border border-border bg-surface px-2"
+                aria-label="Nieuwe opbrengst"
+              />
+              <select
+                value={targetUnitId || baseUnitId || ""}
+                onChange={(e) => setTargetUnitId(e.target.value)}
+                className="h-8 rounded-md border border-border bg-surface px-2"
+                aria-label="Eenheid nieuwe opbrengst"
+              >
+                {units
+                  .filter((u) => {
+                    const b = baseUnitId ? unitsById.get(baseUnitId) : undefined;
+                    return b ? u.id === b.id || (b.dimension !== "aantal" && u.dimension === b.dimension) : false;
+                  })
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+              </select>
+              <Button type="button" size="sm" onClick={applyTargetYield}>
+                Omrekenen
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span>Of alle hoeveelheden (en de opbrengst) vermenigvuldigen met</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -2777,12 +2844,13 @@ export function RecipeForm({
                 className="h-8 w-20 rounded-md border border-border bg-surface px-2"
                 aria-label="Vermenigvuldigingsfactor"
               />
-              <Button type="button" size="sm" onClick={applyMultiply}>
+              <Button type="button" size="sm" onClick={() => applyMultiply()}>
                 Toepassen
               </Button>
               <Button type="button" size="sm" variant="secondary" onClick={() => setMultiplyOpen(false)}>
                 Sluiten
               </Button>
+            </div>
             </div>
           )}
           {multiplyMessage && <p className="text-xs text-teal">{multiplyMessage}</p>}
