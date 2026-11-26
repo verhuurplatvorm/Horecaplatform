@@ -338,7 +338,7 @@ function ChangeTable({
 
 /** Prijs per basiseenheid compact: kleine bedragen (g/ml) als € per 1000. */
 function perKgOrBase(p: number): string {
-  return p < 0.1 ? `€ ${(p * 1000).toFixed(2)}/1000` : `€ ${p.toFixed(4)}`;
+  return p < 0.1 ? `€ ${(p * 1000).toFixed(2)}/1000` : `€ ${p.toFixed(2)}`;
 }
 
 function ImpactTable({

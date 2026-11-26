@@ -48,6 +48,7 @@ import type {
   RecipeStatus,
   Unit,
 } from "@/lib/types/database";
+import { formatUnitPrice, round2 } from "@/lib/units/format";
 
 let rowUidCounter = 0;
 /** Vaste sleutel per regel in het scherm (niet opgeslagen), zodat een regel
@@ -880,7 +881,7 @@ export function RecipeForm({
       // Niet overschrijven wat de kok net typt (bv. "7," tijdens het typen).
       if (Number.isFinite(typed) && yieldQuantity.trim() !== "" && Math.abs(typed - target) <= Math.max(1e-6, Math.abs(target) * 1e-6)) return;
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setYieldQuantity(target.toFixed(3).replace(/\.?0+$/, ""));
+      setYieldQuantity(target.toFixed(2).replace(/\.?0+$/, ""));
     }
   }, [computedYieldFromIngredients, recipeKind, yieldManual, yieldAutoReliable, lossPct, yieldQuantity, lossReady]);
 
@@ -1625,11 +1626,11 @@ export function RecipeForm({
     const next = nextUnitId ? unitsById.get(nextUnitId) : null;
     if (prev && next && prev.dimension === next.dimension && Number(yieldQuantity) > 0) {
       const converted = (Number(yieldQuantity) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
-      setYieldQuantity(String(Math.round(converted * 10000) / 10000));
+      setYieldQuantity(String(round2(converted)));
     }
     if (prev && next && prev.dimension === next.dimension && Number(manualBegin.replace(",", ".")) > 0) {
       const b = (Number(manualBegin.replace(",", ".")) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
-      setManualBegin(String(Math.round(b * 10000) / 10000));
+      setManualBegin(String(round2(b)));
     }
     // Gram ↔ milliliter: bij benadering 1 op 1 (zelfde aanname als bij het
     // optellen van de ingrediënten), zodat het getal blijft staan.
@@ -1638,11 +1639,11 @@ export function RecipeForm({
     if (prev && next && bothMeasures) {
       if (Number(yieldQuantity) > 0) {
         const converted = (Number(yieldQuantity) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
-        setYieldQuantity(String(Math.round(converted * 10000) / 10000));
+        setYieldQuantity(String(round2(converted)));
       }
       if (Number(manualBegin.replace(",", ".")) > 0) {
         const b = (Number(manualBegin.replace(",", ".")) * Number(prev.factor_to_base)) / Number(next.factor_to_base);
-        setManualBegin(String(Math.round(b * 10000) / 10000));
+        setManualBegin(String(round2(b)));
       }
     }
     if (prev && next && prev.dimension !== next.dimension && !bothMeasures) {
@@ -1685,17 +1686,17 @@ export function RecipeForm({
       prev.map((r) => {
         const q = parseFloat(r.quantity);
         if (!Number.isFinite(q)) return r;
-        return { ...r, quantity: String(Math.round(q * factor * 10000) / 10000) };
+        return { ...r, quantity: String(round2(q * factor)) };
       })
     );
     // Bij een halfproduct schaalt de opbrengst mee, anders klopt de prijs
     // per kilo/liter niet meer.
     if (recipeKind === "halfproduct" && Number(yieldQuantity) > 0) {
-      setYieldQuantity(String(Math.round((forcedYield ?? Number(yieldQuantity) * factor) * 10000) / 10000));
+      setYieldQuantity(String(round2(forcedYield ?? Number(yieldQuantity) * factor)));
     }
     setMultiplyMessage(
       forcedYield !== undefined
-        ? `Receptuur omgerekend naar ${Math.round(forcedYield * 1000) / 1000} ${baseUnitName ?? ""} opbrengst (× ${(Math.round(factor * 10000) / 10000).toLocaleString("nl-NL")}). Klik op Opslaan om dit als nieuwe standaard vast te zetten; Annuleren zet alles terug.`
+        ? `Receptuur omgerekend naar ${round2(forcedYield)} ${baseUnitName ?? ""} opbrengst (× ${round2(factor).toLocaleString("nl-NL")}). Klik op Opslaan om dit als nieuwe standaard vast te zetten; Annuleren zet alles terug.`
         : `Alle hoeveelheden zijn × ${factor.toLocaleString("nl-NL")} gedaan. Controleer en klik op Opslaan; Annuleren zet alles terug.`
     );
     setMultiplyOpen(false);
@@ -2193,12 +2194,12 @@ export function RecipeForm({
                       <button
                         type="button"
                         onClick={() =>
-                          setYieldQuantity(String(Math.round(computedYieldFromIngredients * 1000) / 1000))
+                          setYieldQuantity(String(round2(computedYieldFromIngredients)))
                         }
                         className="whitespace-nowrap text-xs text-teal underline"
                       >
                         = som ingrediënten (
-                        {(Math.round(computedYieldFromIngredients * 1000) / 1000).toLocaleString("nl-NL")}{" "}
+                        {round2(computedYieldFromIngredients).toLocaleString("nl-NL")}{" "}
                         {baseUnitName})
                       </button>
                     )}
@@ -2556,7 +2557,7 @@ export function RecipeForm({
                 ? Math.round((1 - endQty / begin) * 1000) / 10
                 : null;
             const unitLabel = baseUnitName ?? "eenheid";
-            const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 3 });
+            const fmt = (n: number) => n.toLocaleString("nl-NL", { maximumFractionDigits: 2 });
             const yieldUnitObj = baseUnitId ? unitsById.get(baseUnitId) : null;
             const yieldIsCount = yieldUnitObj?.dimension === "aantal";
             const stukUnit = units.find((u) => u.key === "stuk");
@@ -2575,7 +2576,7 @@ export function RecipeForm({
               } else {
                 setYieldManual(true);
               }
-              setYieldQuantity(String(Math.round(begin * (1 - pct / 100) * 1000) / 1000));
+              setYieldQuantity(String(round2(begin * (1 - pct / 100))));
             }
             return (
               <div className="space-y-2 rounded-md border border-border bg-background p-3">
@@ -2776,7 +2777,7 @@ export function RecipeForm({
                       {costIncomplete && <p className="text-xs text-copper">Kostprijs onvolledig</p>}
                       {!costIncomplete && costPerBaseUnit !== null && (
                         <p className="tabular text-xs text-muted">
-                          € {costPerBaseUnit.toFixed(4)} per {unitLabel}
+                          {formatUnitPrice(costPerBaseUnit, unitLabel, "per")}
                           {costPerLargerUnit !== null && largerUnit
                             ? ` · € ${costPerLargerUnit.toFixed(2)} per ${largerUnit.name}`
                             : ""}
@@ -3004,7 +3005,7 @@ export function RecipeForm({
             <div>
               <p className="text-sm text-muted">Ingrediëntkosten</p>
               <p className="text-lg font-medium text-foreground">
-                € {ingredientAndHalfproductCost.toFixed(4)}
+                € {ingredientAndHalfproductCost.toFixed(2)}
               </p>
             </div>
             <div>
@@ -3019,7 +3020,7 @@ export function RecipeForm({
                   className="input h-8 w-20"
                 />
                 <span className="text-xs text-muted">
-                  = € {wasteAmount.toFixed(4)}
+                  = € {wasteAmount.toFixed(2)}
                 </span>
               </div>
             </div>
@@ -3071,8 +3072,7 @@ export function RecipeForm({
               </strong>{" "}
               opbrengst ={" "}
               <strong>
-                € {(totalCost / yieldQuantityNum).toFixed(4)} per{" "}
-                {baseUnitName ?? "basiseenheid"}
+                {formatUnitPrice(totalCost / yieldQuantityNum, baseUnitName ?? "basiseenheid", "per")}
               </strong>
             </p>
           )}
@@ -3080,7 +3080,7 @@ export function RecipeForm({
           <div className="grid grid-cols-1 gap-4 border-t border-border pt-3 sm:grid-cols-3">
             <Stat
               label={costIncomplete ? "Bekende kosten" : "Totale kostprijs"}
-              value={`€ ${totalCost.toFixed(4)}`}
+              value={`€ ${totalCost.toFixed(2)}`}
               emphasis={!costIncomplete}
             />
             {isPartyDish ? (
@@ -3110,8 +3110,8 @@ export function RecipeForm({
             ) : (
               <>
                 <Stat
-                  label={`Prijs per ${baseUnitName ?? "basiseenheid"}`}
-                  value={costPerBaseUnit !== null && !costIncomplete ? `€ ${costPerBaseUnit.toFixed(4)}` : "—"}
+                  label="Prijs per eenheid"
+                  value={costPerBaseUnit !== null && !costIncomplete ? formatUnitPrice(costPerBaseUnit, baseUnitName) : "—"}
                   emphasis
                 />
                 {largerUnit && (
@@ -3923,7 +3923,7 @@ function IngredientLine({
               <TrendingDown className="h-3 w-3 shrink-0 text-success" aria-label="Prijs recent gedaald" />
             )}
             <span className={isIncomplete ? "text-copper" : "text-foreground"}>
-              {cost !== null ? `€ ${cost.toFixed(4)}` : isIncomplete ? "onvolledig" : "—"}
+              {cost !== null ? `€ ${cost.toFixed(2)}` : isIncomplete ? "onvolledig" : "—"}
             </span>
           </div>
         )}
@@ -3994,7 +3994,7 @@ function IngredientLine({
             <span>
               {packagingDescription ?? "onbekende verpakking"}
               {canViewFinancial && purchasePrice != null && ` · € ${purchasePrice.toFixed(2)} inkoop`}
-              {canViewFinancial && pricePerUnit !== null && ` · € ${pricePerUnit.toFixed(4)} / ${unitName ?? "eenh."}`}
+              {canViewFinancial && pricePerUnit !== null && ` · ${formatUnitPrice(pricePerUnit, unitName ?? "eenh.")}`}
             </span>
           )}
           {conversionNote && (
@@ -4136,7 +4136,7 @@ function UsageList({
             {r.quantity} {r.unit_name ?? ""}
             {r.company_name && ` · ${r.company_name}`}
             {r.cost_contribution !== null &&
-              ` · € ${r.cost_contribution.toFixed(4)}`}
+              ` · € ${r.cost_contribution.toFixed(2)}`}
           </span>
         </li>
       ))}

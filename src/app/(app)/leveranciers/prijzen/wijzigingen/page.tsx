@@ -14,8 +14,10 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { PriceChangeHistory } from "@/lib/types/database";
 import { AgreedPriceDeviations } from "@/components/price-import/agreed-price-deviations";
+import { formatUnitPrice } from "@/lib/units/format";
 
 interface EnrichedChange extends PriceChangeHistory {
+  baseUnit: string | null;
   productName: string;
   supplierName: string;
   companyName: string | null;
@@ -163,7 +165,7 @@ function PrijswijzigingenList() {
 
       const [{ data: products }, { data: suppliers }, { data: companies }] =
         await Promise.all([
-          supabase.from("products").select("id, name").in("id", productIds),
+          supabase.from("products").select("id, name, base_unit").in("id", productIds),
           supabase.from("suppliers").select("id, name").in("id", supplierIds),
           companyIds.length
             ? supabase.from("companies").select("id, name").in("id", companyIds)
@@ -172,12 +174,14 @@ function PrijswijzigingenList() {
       if (cancelled) return;
 
       const productMap = new Map((products ?? []).map((p) => [p.id, p.name]));
+      const unitMap = new Map((products ?? []).map((p) => [p.id, (p as { base_unit?: string | null }).base_unit ?? null]));
       const supplierMap = new Map((suppliers ?? []).map((s) => [s.id, s.name]));
       const companyMap = new Map((companies ?? []).map((c) => [c.id, c.name]));
 
       const enriched: EnrichedChange[] = data.map((d) => ({
         ...d,
         productName: productMap.get(d.product_id) ?? "onbekend ingrediënt",
+        baseUnit: unitMap.get(d.product_id) ?? null,
         supplierName: supplierMap.get(d.supplier_id) ?? "onbekende leverancier",
         companyName: d.company_id ? companyMap.get(d.company_id) ?? null : null,
         deltaPct:
@@ -298,10 +302,10 @@ function PrijswijzigingenList() {
                     <td className="px-5 py-3 text-muted">{c.supplierName}</td>
                     <td className="px-5 py-3 text-muted">{c.companyName ?? "groepsbreed"}</td>
                     <td className="px-5 py-3 tabular text-muted">
-                      € {c.old_price_per_base_unit?.toFixed(4)}
+                      {formatUnitPrice(c.old_price_per_base_unit, c.baseUnit)}
                     </td>
                     <td className="px-5 py-3 tabular">
-                      € {c.new_price_per_base_unit?.toFixed(4)}
+                      {formatUnitPrice(c.new_price_per_base_unit, c.baseUnit)}
                     </td>
                     <td className="px-5 py-3 tabular text-muted">
                       {c.old_purchase_price !== null && (

@@ -26,7 +26,7 @@ const eur = (n: number | null | undefined) =>
     ? "—"
     : `€ ${n.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (n: number | null | undefined) =>
-  n == null ? "" : n.toLocaleString("nl-NL", { maximumFractionDigits: 3 });
+  n == null ? "" : n.toLocaleString("nl-NL", { maximumFractionDigits: 2 });
 
 /**
  * Nacalculatie: wat er werkelijk is gebruikt (totaal, niet per persoon) per
@@ -162,7 +162,7 @@ export function MenuNacalculatie({
         recipe_id: ref?.recipe_id ?? null,
         product_id: ref?.product_id ?? null,
         unit_id: ref?.unit_id ?? null,
-        quantity_total: Math.round(q * 1000) / 1000,
+        quantity_total: Math.round(q * 100) / 100,
       };
     });
     const { error: err } = await createClient()

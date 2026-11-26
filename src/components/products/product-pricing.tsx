@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PackagingHint } from "@/components/products/packaging-hint";
 import { isUnitKey, type KeyBridge, type UnitKey } from "@/lib/packaging";
+import { formatUnitPrice } from "@/lib/units/format";
 
 interface PriceRow {
   id: string;
@@ -166,7 +167,7 @@ export function ProductPricing({
                         : ""
                     )}
                   >
-                    € {r.pricePerBaseUnit.toFixed(4)} / {baseUnitName ?? ""}
+                    {formatUnitPrice(r.pricePerBaseUnit, baseUnitName)}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-muted">
@@ -190,7 +191,7 @@ export function ProductPricing({
                 <td className="px-5 py-3 text-muted">—</td>
                 <td className="px-5 py-3 text-muted">—</td>
                 <td className="px-5 py-3 tabular">
-                  € {manualPrice.toFixed(4)} / {baseUnitName ?? ""}
+                  {formatUnitPrice(manualPrice, baseUnitName)}
                 </td>
                 <td className="px-5 py-3 text-muted">—</td>
                 <td className="px-5 py-3 text-xs text-muted">
@@ -210,7 +211,7 @@ export function ProductPricing({
 </div>
         {rows.length > 0 && manualPrice !== null && (
           <p className="px-5 pb-4 pt-2 text-xs text-muted">
-            Dit ingrediënt heeft ook een eigen kostprijs (€ {manualPrice.toFixed(4)} /{" "}
+            Dit ingrediënt heeft ook een eigen kostprijs ({formatUnitPrice(manualPrice, baseUnitName)}{" "}
             {baseUnitName ?? "basiseenheid"}), maar die is niet actief: een
             leveranciersprijs gaat altijd voor.
           </p>
@@ -413,17 +414,17 @@ function PriceChangeForm({
       <div className="flex items-center gap-2 text-sm">
         {diff > 0 ? (
           <span className="flex items-center gap-1 text-danger">
-            <TrendingUp className="h-4 w-4" /> +€{diff.toFixed(4)} ({diffPct.toFixed(1)}%) duurder
+            <TrendingUp className="h-4 w-4" /> +{formatUnitPrice(diff, baseUnitName)} ({diffPct.toFixed(1)}%) duurder
           </span>
         ) : diff < 0 ? (
           <span className="flex items-center gap-1 text-success">
-            <TrendingDown className="h-4 w-4" /> €{diff.toFixed(4)} ({diffPct.toFixed(1)}%) goedkoper
+            <TrendingDown className="h-4 w-4" /> {formatUnitPrice(diff, baseUnitName)} ({diffPct.toFixed(1)}%) goedkoper
           </span>
         ) : (
           <span className="text-muted">Ongewijzigd</span>
         )}
         <span className="text-muted">
-          (€ {newPricePerBaseUnit.toFixed(4)} / {baseUnitName ?? ""})
+          ({formatUnitPrice(newPricePerBaseUnit, baseUnitName)})
         </span>
       </div>
 
@@ -456,7 +457,7 @@ function PriceChangeForm({
                     )}
                   >
                     {i.delta > 0 ? "+" : ""}
-                    €{i.delta.toFixed(4)}
+                    €{i.delta.toFixed(2)}
                     {i.new_foodcost_pct !== null &&
                       ` · foodcost ${i.new_foodcost_pct.toFixed(1)}%`}
                   </span>

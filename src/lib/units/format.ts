@@ -41,3 +41,34 @@ export function largerUnitHint(
   if (!BIGGER[(unit ?? "").trim().toLowerCase()]) return null;
   return formatAmount(q, unit);
 }
+
+const PRICE_BIGGER: Record<string, string> = {
+  g: "kg",
+  gr: "kg",
+  gram: "kg",
+  ml: "liter",
+  milliliter: "liter",
+};
+
+/**
+ * Prijs per basiseenheid met 2 decimalen. Gram en milliliter worden per kg /
+ * liter getoond, anders zou er € 0.00 staan.
+ *   formatUnitPrice(0.00569, "gram")  → "€ 5.69 / kg"
+ *   formatUnitPrice(1.074, "stuk", "per") → "€ 1.07 per stuk"
+ */
+export function formatUnitPrice(
+  pricePerBase: number | null | undefined,
+  unit: string | null | undefined,
+  sep: "/" | "per" = "/",
+): string {
+  if (pricePerBase == null || !Number.isFinite(pricePerBase)) return "—";
+  const u = (unit ?? "").trim();
+  const big = PRICE_BIGGER[u.toLowerCase()];
+  const value = big ? pricePerBase * 1000 : pricePerBase;
+  return `€ ${value.toFixed(2)} ${sep} ${big ?? (u || "eenheid")}`;
+}
+
+/** Getal afronden op 2 decimalen (voor berekende hoeveelheden). */
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}

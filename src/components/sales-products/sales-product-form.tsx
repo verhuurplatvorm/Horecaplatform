@@ -414,7 +414,7 @@ export function SalesProductForm({
                   placeholder="Aantal"
                 />
                 <span className="tabular w-24 text-right text-xs font-medium text-foreground">
-                  {lineCosts[i] !== null ? `€ ${lineCosts[i]!.toFixed(4)}` : "—"}
+                  {lineCosts[i] !== null ? `€ ${lineCosts[i]!.toFixed(2)}` : "—"}
                 </span>
                 <button
                   type="button"
@@ -434,7 +434,7 @@ export function SalesProductForm({
           <div>
             <p className="text-sm text-muted">Kostprijs</p>
             <p className="tabular text-xl font-semibold text-foreground">
-              € {totalCost.toFixed(4)}
+              € {totalCost.toFixed(2)}
             </p>
           </div>
           <div>

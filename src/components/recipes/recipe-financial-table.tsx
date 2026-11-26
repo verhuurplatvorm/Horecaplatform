@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompanyScope } from "@/components/company-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { formatUnitPrice } from "@/lib/units/format";
 
 interface BreakdownRow {
   sort_order: number;
@@ -223,11 +224,11 @@ export function RecipeFinancialTable({
                       </td>
                       <td className="px-3 py-2 tabular">
                         {e?.pricePerBaseUnit != null
-                          ? `€ ${e.pricePerBaseUnit.toFixed(4)} / ${e.baseUnitName ?? ""}`
+                          ? formatUnitPrice(e.pricePerBaseUnit, e.baseUnitName)
                           : "—"}
                       </td>
                       <td className="px-3 py-2 tabular font-medium">
-                        {r.line_cost !== null ? `€ ${r.line_cost.toFixed(4)}` : "—"}
+                        {r.line_cost !== null ? `€ ${r.line_cost.toFixed(2)}` : "—"}
                       </td>
                       <td className="px-3 py-2 tabular text-muted">
                         {share !== null ? `${share.toFixed(1)}%` : "—"}
@@ -303,7 +304,7 @@ export function RecipeFinancialTable({
               </strong>{" "}
               opbrengst ={" "}
               <strong>
-                € {costPerUnit.toFixed(4)} per {baseUnitName}
+                {formatUnitPrice(costPerUnit, baseUnitName, "per")}
               </strong>
             </p>
           ) : (

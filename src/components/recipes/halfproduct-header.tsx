@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toCostStatus, type CostStatus } from "@/lib/costing/status";
 import { CostIncompleteBadge } from "@/components/costing/cost-status";
+import { formatUnitPrice } from "@/lib/units/format";
 
 /**
  * Vaste balk boven het halfproductscherm: wat een kok als eerste wil zien
@@ -162,7 +163,7 @@ export function HalfproductHeader({
     if (canViewFinancial) header.push("Kostprijs");
     const lines = rows.map((r) => {
       const base = [r.ingredient_name ?? "", String(r.quantity), r.unit_name ?? ""];
-      if (canViewFinancial) base.push(r.line_cost?.toFixed(4) ?? "");
+      if (canViewFinancial) base.push(r.line_cost?.toFixed(2) ?? "");
       return base;
     });
     const csv = [[`Halfproduct: ${name}`], [], header, ...lines]
@@ -204,7 +205,7 @@ export function HalfproductHeader({
             )}
             {canViewFinancial && costPerUnit !== null && baseUnitName && costStatus?.isComplete !== false && (
               <span className="font-medium text-foreground">
-                € {costPerUnit.toFixed(4)} per {baseUnitName}
+                {formatUnitPrice(costPerUnit, baseUnitName, "per")}
               </span>
             )}
           </p>

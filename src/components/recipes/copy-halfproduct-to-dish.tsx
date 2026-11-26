@@ -90,7 +90,7 @@ export function CopyHalfproductToDish({
         yield_quantity:
           original.yield_quantity == null
             ? null
-            : Math.round((Number(original.yield_quantity) / n) * 1000) / 1000,
+            : Math.round((Number(original.yield_quantity) / n) * 100) / 100,
         vat_rate: original.vat_rate,
       })
       .select("id")
@@ -113,7 +113,7 @@ export function CopyHalfproductToDish({
               quantity:
                 l.quantity == null
                   ? null
-                  : Math.round((Number(l.quantity) / n) * 10000) / 10000,
+                  : Math.round((Number(l.quantity) / n) * 100) / 100,
             };
           }),
         );

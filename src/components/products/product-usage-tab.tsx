@@ -172,7 +172,7 @@ export function ProductUsageTab({ productId }: { productId: string }) {
                     {canViewFinancial && (
                       <>
                         <td className="px-5 py-3 tabular">
-                          {r.lineCost !== null ? `€ ${r.lineCost.toFixed(4)}` : "—"}
+                          {r.lineCost !== null ? `€ ${r.lineCost.toFixed(2)}` : "—"}
                         </td>
                         <td className="px-5 py-3 tabular text-muted">
                           {share !== null ? `${share.toFixed(1)}%` : "—"}

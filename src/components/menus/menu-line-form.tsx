@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { useCompanyScope } from "@/components/company-context";
 import type { Unit } from "@/lib/types/database";
+import { formatUnitPrice } from "@/lib/units/format";
 
 interface Hit {
   id: string;
@@ -268,7 +269,7 @@ export function MenuLineForm({
                       <>
                         {" · "}
                         <span className="font-medium text-foreground">
-                          € {unitPrice.toFixed(4)} per {priceUnitName}
+                          {formatUnitPrice(unitPrice, priceUnitName, "per")}
                         </span>
                       </>
                     )}

@@ -292,7 +292,7 @@ export function HalfproductIngredientenModule({
                   <strong>
                     {resultingDisplayQuantity !== null
                       ? resultingDisplayQuantity.toLocaleString("nl-NL", {
-                          maximumFractionDigits: 3,
+                          maximumFractionDigits: 2,
                         })
                       : "—"}{" "}
                     {displayUnitName}
@@ -351,7 +351,7 @@ export function HalfproductIngredientenModule({
                   )}
                 </td>
                 <td className="px-2 py-3 tabular">
-                  {(line.quantity * effectiveScale).toLocaleString("nl-NL", { maximumFractionDigits: 3 })}
+                  {(line.quantity * effectiveScale).toLocaleString("nl-NL", { maximumFractionDigits: 2 })}
                   {line.quantity_in_recipe_unit !== null &&
                     line.unit_name !== unitName &&
                     unitName && (
@@ -367,7 +367,7 @@ export function HalfproductIngredientenModule({
                 <td className="px-2 py-3 text-muted">{line.unit_name ?? "—"}</td>
                 {!hideCosts && (
                   <td className="px-2 py-3 tabular text-muted">
-                    {line.line_cost !== null ? `€ ${(line.line_cost * effectiveScale).toFixed(4)}` : "—"}
+                    {line.line_cost !== null ? `€ ${(line.line_cost * effectiveScale).toFixed(2)}` : "—"}
                   </td>
                 )}
               </tr>
@@ -395,7 +395,7 @@ export function HalfproductIngredientenModule({
               {standardYield ? (
                 <span className="font-semibold text-foreground">
                   {((standardYield * effectiveScale) / displayFactor).toLocaleString("nl-NL", {
-                    maximumFractionDigits: 3,
+                    maximumFractionDigits: 2,
                   })}{" "}
                   {displayUnitName ?? ""}
                 </span>

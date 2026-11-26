@@ -434,7 +434,7 @@ export default function MenuImportPage({
           : null,
         recipe_id: recipeId,
         product_id: productId,
-        quantity_per_person: Math.round(qtyPp * 10000) / 10000,
+        quantity_per_person: Math.round(qtyPp * 100) / 100,
         unit_id: r.unitId || null,
         is_fixed: r.isFixed,
         note:

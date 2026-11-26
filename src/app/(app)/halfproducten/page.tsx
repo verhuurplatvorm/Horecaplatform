@@ -1,6 +1,6 @@
 "use client";
 
-import { formatAmount } from "@/lib/units/format";
+import { formatUnitPrice, formatAmount } from "@/lib/units/format";
 import Link from "next/link";
 import { withReturnTo } from "@/lib/use-return-navigation";
 import { useEffect, useState } from "react";
@@ -1023,7 +1023,7 @@ export default function HalfproductenPage() {
                             {r.costStatus?.isComplete === false ? (
                               <CostIncompleteBadge status={r.costStatus} />
                             ) : r.costPerBaseUnit !== null ? (
-                              `€ ${r.costPerBaseUnit.toFixed(4)}`
+                              formatUnitPrice(r.costPerBaseUnit, r.unitName)
                             ) : (
                               "—"
                             )}
