@@ -249,6 +249,10 @@ export function RecipeForm({
   const [wastePercentage, setWastePercentage] = useState(
     initialRecipe?.waste_percentage?.toString() ?? "0"
   );
+  const [contributionMargin, setContributionMargin] = useState(
+    initialRecipe?.contribution_margin != null ? String(initialRecipe.contribution_margin) : ""
+  );
+  const [marginEdited, setMarginEdited] = useState(initialRecipe?.contribution_margin != null);
   const [marginFreeCosts, setMarginFreeCosts] = useState(
     initialRecipe?.margin_free_costs?.toString() ?? "0"
   );
@@ -1082,6 +1086,25 @@ export function RecipeForm({
       : null;
   const advisedPriceInclVat =
     advisedPrice !== null ? advisedPrice * (1 + Number(vatRate) / 100) : null;
+  // Adviesprijs via contributiemarge: kostprijs + gewenste marge (excl. btw),
+  // daarna btw over het eindresultaat.
+  // Zonder eigen marge: standaard de marge die bij het foodcost% hoort.
+  const defaultMargin =
+    advisedPrice !== null && Number.isFinite(advisedPrice) ? Math.round((advisedPrice - totalCost) * 100) / 100 : null;
+  const marginIsDefault = !marginEdited;
+  const contributionMarginNum = marginIsDefault
+    ? defaultMargin ?? NaN
+    : contributionMargin.trim() === ""
+      ? NaN
+      : Number(String(contributionMargin).replace(",", "."));
+  const marginPriceInclVat =
+    !costIncomplete && Number.isFinite(contributionMarginNum)
+      ? (totalCost + contributionMarginNum) * (1 + Number(vatRate) / 100)
+      : null;
+  const marginPriceFoodcostPct =
+    marginPriceInclVat !== null && marginPriceInclVat > 0
+      ? (totalCost / (marginPriceInclVat / (1 + Number(vatRate) / 100))) * 100
+      : null;
 
   function updateRow(index: number, patch: Partial<IngredientRow>) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -1771,6 +1794,10 @@ export function RecipeForm({
       vat_rate: Number(vatRate),
       waste_percentage: wastePercentage ? Number(wastePercentage) : 0,
       margin_free_costs: marginFreeCosts ? Number(marginFreeCosts) : 0,
+      contribution_margin:
+        recipeKind === "gerecht" && !marginIsDefault && Number.isFinite(contributionMarginNum)
+          ? Math.round(contributionMarginNum * 100) / 100
+          : null,
       allergen_overrides: allergenOverrides,
     };
   }
@@ -2293,6 +2320,61 @@ export function RecipeForm({
                 <p className="mt-1 text-xs text-muted">
                   Bij {targetFoodCostPct || "—"}% foodcost
                 </p>
+              </Field>
+              <Field label="Contributiemarge per portie (excl. btw)">
+                <div className="flex h-10 items-center gap-2">
+                  <span className="text-sm text-muted">€</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={marginIsDefault ? (defaultMargin !== null ? defaultMargin.toFixed(2) : "") : contributionMargin}
+                    onChange={(e) => {
+                      setMarginEdited(true);
+                      setContributionMargin(e.target.value);
+                    }}
+                    placeholder="bv. 25"
+                    className="input w-28"
+                    aria-label="Contributiemarge in euro"
+                  />
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  {marginPriceInclVat !== null && Number.isFinite(marginPriceInclVat) ? (
+                    <>
+                      <span className="text-muted">
+                        Advies <span className="tabular font-medium text-foreground">€ {marginPriceInclVat.toFixed(2)}</span> incl. btw
+                        {marginPriceFoodcostPct !== null && ` · ${marginPriceFoodcostPct.toFixed(1)}% foodcost`}
+                        {marginIsDefault && ` (standaard, volgt ${targetFoodCostPct || "—"}%)`}
+                      </span>
+                      {!marginIsDefault && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMarginEdited(false);
+                            setContributionMargin("");
+                          }}
+                          className="text-muted hover:underline"
+                          title="Terug naar de marge die bij het foodcost% hoort"
+                        >
+                          standaard
+                        </button>
+                      )}
+                      {marginPriceInclVat > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSalesPrice(marginPriceInclVat.toFixed(2))}
+                          className="text-teal hover:underline"
+                          title="Zet deze prijs in het veld Verkoopprijs"
+                        >
+                          overnemen
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-muted">
+                      {costIncomplete ? "Kostprijs onvolledig" : "Kostprijs + marge, daarna btw"}
+                    </span>
+                  )}
+                </div>
               </Field>
               </>
               )}

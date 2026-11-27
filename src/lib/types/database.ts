@@ -459,6 +459,7 @@ export type Recipe = {
   party_full_containers?: boolean;
   waste_percentage: number;
   margin_free_costs: number;
+  contribution_margin?: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
