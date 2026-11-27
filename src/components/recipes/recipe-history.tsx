@@ -26,6 +26,7 @@ const TRACKED: { key: string; label: string }[] = [
   { key: "waste_percentage", label: "Productieverlies %" },
   { key: "margin_free_costs", label: "Overige kosten" },
   { key: "contribution_margin", label: "Contributiemarge" },
+  { key: "target_foodcost_pct", label: "Gewenst foodcost%" },
   { key: "status", label: "Status" },
   { key: "shelf_life_days", label: "Houdbaarheid (dagen)" },
   { key: "storage_method", label: "Bewaarmethode" },

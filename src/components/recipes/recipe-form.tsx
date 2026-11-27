@@ -245,7 +245,9 @@ export function RecipeForm({
   const [vatRate, setVatRate] = useState(
     initialRecipe?.vat_rate?.toString() ?? "9"
   );
-  const [targetFoodCostPct, setTargetFoodCostPct] = useState("30");
+  const [targetFoodCostPct, setTargetFoodCostPct] = useState(
+    initialRecipe?.target_foodcost_pct != null ? String(Number(initialRecipe.target_foodcost_pct)) : "30"
+  );
   const [wastePercentage, setWastePercentage] = useState(
     initialRecipe?.waste_percentage?.toString() ?? "0"
   );
@@ -1080,9 +1082,10 @@ export function RecipeForm({
     costStatus,
     salesPriceExclEstimate,
   );
+  const targetPctNum = Number(String(targetFoodCostPct).replace(",", "."));
   const advisedPrice =
-    !costIncomplete && targetFoodCostPct && Number(targetFoodCostPct) > 0
-      ? costBeforeMarginFree / (Number(targetFoodCostPct) / 100) + marginFreeCostsNum
+    !costIncomplete && targetPctNum > 0
+      ? costBeforeMarginFree / (targetPctNum / 100) + marginFreeCostsNum
       : null;
   const advisedPriceInclVat =
     advisedPrice !== null ? advisedPrice * (1 + Number(vatRate) / 100) : null;
@@ -1794,6 +1797,11 @@ export function RecipeForm({
       vat_rate: Number(vatRate),
       waste_percentage: wastePercentage ? Number(wastePercentage) : 0,
       margin_free_costs: marginFreeCosts ? Number(marginFreeCosts) : 0,
+      target_foodcost_pct:
+        recipeKind === "gerecht" && Number(String(targetFoodCostPct).replace(",", ".")) > 0 &&
+        Number(String(targetFoodCostPct).replace(",", ".")) !== 30
+          ? Math.round(Number(String(targetFoodCostPct).replace(",", ".")) * 100) / 100
+          : null,
       contribution_margin:
         recipeKind === "gerecht" && !marginIsDefault && Number.isFinite(contributionMarginNum)
           ? Math.round(contributionMarginNum * 100) / 100
@@ -2317,9 +2325,28 @@ export function RecipeForm({
                       </button>
                     )}
                 </div>
-                <p className="mt-1 text-xs text-muted">
-                  Bij {targetFoodCostPct || "—"}% foodcost
-                </p>
+                <div className="mt-1 flex items-center gap-1 text-xs text-muted">
+                  <span>Bij</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={targetFoodCostPct}
+                    onChange={(e) => setTargetFoodCostPct(e.target.value)}
+                    className="h-7 w-14 rounded-md border border-border bg-surface px-1.5 text-right text-xs text-foreground"
+                    aria-label="Gewenst foodcost-percentage"
+                  />
+                  <span>% foodcost</span>
+                  {targetPctNum !== 30 && (
+                    <button
+                      type="button"
+                      onClick={() => setTargetFoodCostPct("30")}
+                      className="ml-1 hover:underline"
+                      title="Terug naar de standaard van 30%"
+                    >
+                      standaard
+                    </button>
+                  )}
+                </div>
               </Field>
               <Field label="Contributiemarge per portie (excl. btw)">
                 <div className="flex h-10 items-center gap-2">
@@ -3216,7 +3243,7 @@ export function RecipeForm({
               <Stat
                 label="Foodcost%"
                 value={costIncomplete ? "Kostprijs onvolledig" : foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
-                tone={costIncomplete ? undefined : foodCostPct !== null && foodCostPct > Number(targetFoodCostPct) ? "bad" : "good"}
+                tone={costIncomplete ? undefined : foodCostPct !== null && foodCostPct > targetPctNum ? "bad" : "good"}
               />
               <Stat
                 label="Brutomarge (excl. btw)"

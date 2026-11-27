@@ -460,6 +460,7 @@ export type Recipe = {
   waste_percentage: number;
   margin_free_costs: number;
   contribution_margin?: number | null;
+  target_foodcost_pct?: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
